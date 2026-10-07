@@ -72,3 +72,30 @@ SnakeYAML engine allows recursive anchors; an adversarial stream could blow up t
 - `docs/03-specifications/RESOURCE_DECODER_SPI.md` — the API surface.
 - `docs/02-architecture/DATA_AND_SHAPE_MODEL.md` — `ValueNode` and `SourceMap` definitions.
 - ROADMAP §M2.A/B/C/Exit — cycle boundary.
+
+## Implementation status (M2 WU-4, 2026-10)
+
+WU-1 (D11.1 dual-bucket decision): closed. The root `build.gradle.kts`
+splits the allowlist into `coreAllowedCoords` and `parserAllowedCoords`;
+each parser submodule mirrors its bucket in its own `build.gradle.kts`
+and fails the gate on any declared dep outside its bucket.
+
+WU-2 (D-02/D-03/D-04, JSON + YAML parser submodules): closed. Decoders
+are in `policy-decoders-json/` and `policy-decoders-yaml/`; both
+support the four-item mutation gate items 2 (DUPLICATE_KEY) and 4
+(canonicalDigest ignores SourceMap).
+
+WU-3 (D-05/D11.1 hand-rolled CSV + Map adapter): closed. Decoders are
+in `policy-decoders-csv/` (hand-rolled RFC 4180 tokenizer) and
+`policy-decoders-map/` (recursive descent, no reflection). Both
+support mutation gate items 1 (default TEXT_ONLY) and 3 (SCHEMA_FROZEN).
+
+WU-4 (spec anchor + ADR cross-links + mutation gate harness): closed.
+The conceptual API sketch in `RESOURCE_DECODER_SPI.md §2` now binds
+each conceptual name to the concrete Kotlin type. §11 records the
+four-item mutation gate.
+
+Smoke test: with `settings.gradle.kts` excluding every
+`policy-decoders-*` line, `:app:check` still passes — verified by
+the `ArchitectureFitnessGuardDualAllowlistTest` (no-parsers smoke
+check).
