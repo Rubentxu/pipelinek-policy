@@ -36,7 +36,7 @@ class ArchitectureFitnessGuardDualAllowlistTest {
         ),
         ":policy-decoders-yaml" to setOf(
             "org.jetbrains.kotlin:kotlin-stdlib",
-            "org.yaml:snakeyaml-engine",
+            "org.snakeyaml:snakeyaml-engine",
         ),
         ":policy-decoders-csv" to setOf(
             "org.jetbrains.kotlin:kotlin-stdlib",
@@ -75,7 +75,7 @@ class ArchitectureFitnessGuardDualAllowlistTest {
     @Test
     fun `policy-decoders-yaml accepts declared snakeyaml-engine coord`() {
         val bucket = parserAllowedCoords[":policy-decoders-yaml"]!!
-        assertTrue("org.yaml:snakeyaml-engine" in bucket)
+        assertTrue("org.snakeyaml:snakeyaml-engine" in bucket)
         assertTrue("org.jetbrains.kotlin:kotlin-stdlib" in bucket)
     }
 

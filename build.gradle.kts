@@ -30,7 +30,7 @@ val parserAllowedCoords: Map<String, Set<String>> = mapOf(
     ),
     ":policy-decoders-yaml" to setOf(
         "org.jetbrains.kotlin:kotlin-stdlib",
-        "org.yaml:snakeyaml-engine",
+        "org.snakeyaml:snakeyaml-engine",
     ),
     ":policy-decoders-csv" to setOf(
         "org.jetbrains.kotlin:kotlin-stdlib",
