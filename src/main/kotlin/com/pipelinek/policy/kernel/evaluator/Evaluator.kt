@@ -11,8 +11,8 @@ import com.pipelinek.policy.kernel.policy.PolicyViolation
 import com.pipelinek.policy.kernel.policy.RuleEvaluation
 import com.pipelinek.policy.kernel.policy.ViolationCode
 import com.pipelinek.policy.kernel.selector.Selector
+import com.pipelinek.policy.kernel.value.ValueDigest
 import com.pipelinek.policy.kernel.value.ValueNode
-import java.security.MessageDigest
 
 /**
  * Spec REQ §"Policy/Rule and pure evaluator" + §"PolicyReport and canonical value hashing".
@@ -186,33 +186,7 @@ object Evaluator {
 
     /** Canonical fingerprint for the resource tree (insertion-order independent). */
     private fun canonicalFingerprint(tree: ValueNode): String =
-        sha256(canonicalString(tree))
-
-    /** Canonical, deterministic JSON-ish stringification for any ValueNode. */
-    private fun canonicalString(node: ValueNode): String = when (node) {
-        ValueNode.Missing -> "{\"type\":\"missing\"}"
-        ValueNode.Null -> "{\"type\":\"null\"}"
-        is ValueNode.TextValue -> "{\"type\":\"text\",\"v\":\"${escape(node.text)}\"}"
-        is ValueNode.NumberValue -> "{\"type\":\"number\",\"v\":${node.number.toString()}}"
-        is ValueNode.BooleanValue -> "{\"type\":\"boolean\",\"v\":${node.boolean}}"
-        is ValueNode.SequenceValue -> node.elements.joinToString(prefix = "[", postfix = "]") { canonicalString(it) }
-        is ValueNode.MappingValue -> {
-            // Sorted by key for canonical content equality (insertion-order independent).
-            val entries = node.entries.entries.sortedBy { it.key }
-            entries.joinToString(prefix = "{", postfix = "}") { (k, v) ->
-                "\"${escape(k)}\":${canonicalString(v)}"
-            }
-        }
-    }
-
-    private fun escape(s: String): String =
-        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
-
-    private fun sha256(input: String): String {
-        val md = MessageDigest.getInstance("SHA-256")
-        val bytes = md.digest(input.toByteArray(Charsets.UTF_8))
-        return bytes.joinToString("") { "%02x".format(it) }
-    }
+        tree.canonicalDigest()
 
     private class PolicyEvalException(val violation: PolicyViolation) :
         RuntimeException(violation.message)
@@ -237,7 +211,6 @@ data class PolicyReport(
 
     /** Combined hex-encoded SHA-256 over `policySetId` + `resourceFingerprint` + sorted results. */
     val digest: String by lazy {
-        val md = MessageDigest.getInstance("SHA-256")
         val serialized = buildString {
             append(policySetId).append('|')
             append(resourceFingerprint).append('|')
@@ -247,8 +220,7 @@ data class PolicyReport(
                 append(canonicalEvaluation(ev)).append(';')
             }
         }
-        md.digest(serialized.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+        ValueDigest.sha256Hex(serialized.toByteArray(Charsets.UTF_8))
     }
 
     private fun canonicalEvaluation(ev: RuleEvaluation): String = when (ev) {

@@ -1,11 +1,18 @@
 [versions]
 kotlin = "2.4.20"
 junit = "5.10.2"
+jackson = "2.18.2"
+snakeyaml = "2.9"
 
 [libraries]
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+# ADR-0011 D11.2: jackson-core only — no databind, no reflection (law 5).
+jackson-core = { module = "com.fasterxml.jackson.core:jackson-core", version.ref = "jackson" }
+# ADR-0011 D11.2: snakeyaml-engine is the maintained fork that exposes the
+# event API needed for alias/anchor caps and source-span tracking.
+snakeyaml-engine = { module = "org.yaml:snakeyaml-engine", version.ref = "snakeyaml" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
