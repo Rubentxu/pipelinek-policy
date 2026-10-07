@@ -5,8 +5,8 @@
 ## Estado inicial
 
 ```text
-M0  Grounding / bootstrap                    IN_PROGRESS · BLOCKED-fixture-license
-M1  Pure Value + Policy Kernel               BLOCKED-BY-M0
+M0  Grounding / bootstrap                    DONE · fixture-import DEFERRED (license/PII)
+M1  Pure Value + Policy Kernel               NEXT
 M2  Decoder SPI + source-aware resources     BLOCKED-BY-M1
 M3  Canonical Kotlin DSL                     BLOCKED-BY-M1
 M4  FIR Kotlin authoring                     BLOCKED-BY-M3
