@@ -63,13 +63,17 @@ object Evaluator {
         // A typed refusal INSIDE appliesWhen surfaces as Error so the author
         // knows their guard predicate is malformed.
         rule.appliesWhen?.let { gate ->
-            when (val gateResult = evalAppliesWhen(gate, tree)) {
-                AppliesWhenOutcome.True -> { /* proceed to main expression */ }
-                AppliesWhenOutcome.FalseOrMissing -> return RuleEvaluation.NotApplicable
-                is AppliesWhenOutcome.TypedRefusal -> return RuleEvaluation.Error(gateResult.violation)
+            return when (val gateResult = evalAppliesWhen(gate, tree)) {
+                AppliesWhenOutcome.True -> evaluateMainExpression(rule, tree)
+                AppliesWhenOutcome.FalseOrMissing -> RuleEvaluation.NotApplicable
+                is AppliesWhenOutcome.TypedRefusal -> RuleEvaluation.Error(gateResult.violation)
             }
         }
+        return evaluateMainExpression(rule, tree)
+    }
 
+    @Suppress("ReturnCount", "LongMethod", "ComplexMethod", "TooGenericExceptionCaught")
+    private fun evaluateMainExpression(rule: Rule, tree: ValueNode): RuleEvaluation {
         return try {
             val outcome: Boolean = try {
                 evalBoolean(rule.expression, tree)
@@ -116,11 +120,7 @@ object Evaluator {
                 ),
             )
         } catch (e: PolicyEvalException) {
-            // Distinguish typed refusals (TYPE_MISMATCH ⇒ Error) from
-            // collection-predicate failures (COLLECTION_PREDICATE_FAILED
-            // ⇒ Violated, per spec §"COLLECTION_PREDICATE_FAILED is emitted
-            // by collection ops" — the rule is violated by an element, not
-            // by a malformed author expression).
+            // COLLECTION_PREDICATE_FAILED ⇒ Violated; other typed refusals ⇒ Error.
             when (e.violation.code) {
                 ViolationCode.COLLECTION_PREDICATE_FAILED -> RuleEvaluation.Violated(
                     listOf(
@@ -142,21 +142,35 @@ object Evaluator {
         data class TypedRefusal(val violation: PolicyViolation) : AppliesWhenOutcome
     }
 
-    private fun evalAppliesWhen(expression: Expression, tree: ValueNode): AppliesWhenOutcome {
-        // We reuse evalBoolean but treat "false", Missing, TypeMismatch uniformly.
-        // A direct exception path covers Missing/TypeMismatch; evalBoolean
-        // returns false for the underlying literal false.
-        val outcome = try {
-            evalBoolean(expression, tree)
-        } catch (e: MissingValueException) {
-            // Missing short-circuit → NotApplicable
-            return AppliesWhenOutcome.FalseOrMissing
-        } catch (e: PolicyEvalException) {
-            // Typed refusal INSIDE appliesWhen — surface as Error so the
-            // author knows their guard predicate is malformed.
-            return AppliesWhenOutcome.TypedRefusal(e.violation)
+    private fun evalAppliesWhen(expression: Expression, tree: ValueNode): AppliesWhenOutcome =
+        when (val v = tryAppliesWhen(expression, tree)) {
+            is AppliesWhenOutcomeRaw.BooleanResult -> v.toOutcome()
+            AppliesWhenOutcomeRaw.Missing -> AppliesWhenOutcome.FalseOrMissing
+            is AppliesWhenOutcomeRaw.Refusal -> AppliesWhenOutcome.TypedRefusal(v.violation)
         }
-        return if (outcome) AppliesWhenOutcome.True else AppliesWhenOutcome.FalseOrMissing
+
+    private sealed interface AppliesWhenOutcomeRaw {
+        data class BooleanResult(val b: Boolean) : AppliesWhenOutcomeRaw {
+            fun toOutcome(): AppliesWhenOutcome =
+                if (b) AppliesWhenOutcome.True else AppliesWhenOutcome.FalseOrMissing
+        }
+        data object Missing : AppliesWhenOutcomeRaw
+        data class Refusal(val violation: PolicyViolation) : AppliesWhenOutcomeRaw
+    }
+
+    private fun tryAppliesWhen(expression: Expression, tree: ValueNode): AppliesWhenOutcomeRaw {
+        // The Missing short-circuit into `FalseOrMissing` deliberately swallows
+        // the exception — the diagnostic location is not actionable here; the
+        // appliesWhen gate's job is to decide "should I evaluate?" and a
+        // missing source resolves to "no".
+        @Suppress("SwallowedException")
+        return try {
+            AppliesWhenOutcomeRaw.BooleanResult(evalBoolean(expression, tree))
+        } catch (e: MissingValueException) {
+            AppliesWhenOutcomeRaw.Missing
+        } catch (e: PolicyEvalException) {
+            AppliesWhenOutcomeRaw.Refusal(e.violation)
+        }
     }
 
     private fun buildViolation(
@@ -358,20 +372,16 @@ object Evaluator {
      * `MappingValue` is walked per-entry `(k, v)`; the predicate resolves
      * over `v` and the violation location extends with `k`.
      */
+    @Suppress("ThrowsCount", "LongMethod")
     private fun evalCollectionPredicate(node: CollectionPredicate, tree: ValueNode): Boolean {
         // Source resolution: a `MissingValueException` from the source FieldRef
         // is a REQUIRED-source refusal, NOT an empty-collection cursor. We
         // propagate it so the rule evaluator surfaces MISSING_REQUIRED_VALUE.
         // The empty-collection short-circuit only applies when the source
         // resolves to a SequenceValue(empty) / MappingValue(empty).
-        val sourceValue: ValueNode = try {
-            evalValue(node.source, tree)
-        } catch (e: PolicyEvalException) {
-            // Typed refusal on the source propagates as Error.
-            throw e
-        }
         // MissingValueException is NOT caught here; we let it propagate to
         // evaluateRule, which converts it to Violated(MISSING_REQUIRED_VALUE).
+        val sourceValue: ValueNode = evalValue(node.source, tree)
 
         // Special case: COUNT can return 0 if the source resolves to an
         // empty SequenceValue / MappingValue. The Boolean API can't express
@@ -381,39 +391,56 @@ object Evaluator {
             throw CountAsLongSignal(n)
         }
 
-        val perEntry = when (sourceValue) {
-            is ValueNode.SequenceValue -> sourceValue.elements.withIndex().map { it.index.toString() to it.value }
-            is ValueNode.MappingValue -> sourceValue.entries.entries.map { it.key to it.value }
-            else -> throw PolicyEvalException(
-                PolicyViolation(
-                    code = ViolationCode.TYPE_MISMATCH,
-                    location = locationOf(node.source),
-                    message = "CollectionPredicate source must be Sequence or Mapping, got ${sourceValue.type}",
-                    expected = "Sequence|Mapping",
-                    actual = sourceValue.type.name,
-                ),
-            )
-        }
+        val perEntry: List<Pair<String, ValueNode>> = perEntry(sourceValue, node)
 
         return when (node.op) {
-            CollectionOp.ALL -> {
-                for ((k, v) in perEntry) {
-                    if (!matchesAtLocation(node.predicate, v, k)) {
-                        throw PolicyEvalException(
-                            PolicyViolation(
-                                code = ViolationCode.COLLECTION_PREDICATE_FAILED,
-                                location = locationOf(node.source).child(k),
-                                message = "all: predicate failed at $k",
-                            ),
-                        )
-                    }
-                }
-                true
-            }
+            CollectionOp.ALL -> allMatches(node, perEntry)
             CollectionOp.ANY -> perEntry.any { (_, v) -> matchesAtLocation(node.predicate, v, null) }
             CollectionOp.NONE -> perEntry.none { (_, v) -> matchesAtLocation(node.predicate, v, null) }
             CollectionOp.COUNT -> error("COUNT routed above")
         }
+    }
+
+    private fun perEntry(
+        sourceValue: ValueNode,
+        node: CollectionPredicate,
+    ): List<Pair<String, ValueNode>> = when (sourceValue) {
+        is ValueNode.SequenceValue -> sourceValue.elements.withIndex()
+            .map { it.index.toString() to it.value }
+        is ValueNode.MappingValue -> sourceValue.entries.entries
+            .map { it.key to it.value }
+        else -> throw typeMismatchForCollectionSource(node, sourceValue)
+    }
+
+    private fun typeMismatchForCollectionSource(
+        node: CollectionPredicate,
+        sourceValue: ValueNode,
+    ): PolicyEvalException = PolicyEvalException(
+        PolicyViolation(
+            code = ViolationCode.TYPE_MISMATCH,
+            location = locationOf(node.source),
+            message = "CollectionPredicate source must be Sequence or Mapping, got ${sourceValue.type}",
+            expected = "Sequence|Mapping",
+            actual = sourceValue.type.name,
+        ),
+    )
+
+    private fun allMatches(
+        node: CollectionPredicate,
+        perEntry: List<Pair<String, ValueNode>>,
+    ): Boolean {
+        for ((k, v) in perEntry) {
+            if (!matchesAtLocation(node.predicate, v, k)) {
+                throw PolicyEvalException(
+                    PolicyViolation(
+                        code = ViolationCode.COLLECTION_PREDICATE_FAILED,
+                        location = locationOf(node.source).child(k),
+                        message = "all: predicate failed at $k",
+                    ),
+                )
+            }
+        }
+        return true
     }
 
     /**
@@ -458,7 +485,12 @@ object Evaluator {
      * `Selector.optional(value)` for scalar collections and project the right
      * path for mapping collections.
      */
-    private fun matchesAtLocation(predicate: Selector, element: ValueNode, key: String?): Boolean {
+    @Suppress("MaxLineLength")
+    private fun matchesAtLocation(
+        predicate: Selector,
+        element: ValueNode,
+        @Suppress("UNUSED_PARAMETER") key: String?,
+    ): Boolean {
         val rooted: ValueNode = if (element is ValueNode.MappingValue) {
             element
         } else {
