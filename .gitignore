@@ -1,0 +1,18 @@
+# Gradle / Kotlin / JetBrains standard ignores
+.gradle/
+build/
+out/
+*.iml
+.idea/
+local.properties
+.kotlin/
+
+# Original blueprint source (preserved untouched, not tracked)
+pipelinek-policy-blueprint/
+pipelinek-policy-blueprint (1).zip
+
+# OS / editor scratch
+.DS_Store
+Thumbs.db
+*~
+*.swp
