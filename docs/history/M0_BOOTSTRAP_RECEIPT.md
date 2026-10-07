@@ -3,176 +3,129 @@ cycle: p-dd1a1c7a7d448b0c/m0-bootstrap
 phase: apply
 work_item: 12788213-822a-428f-8470-c9ca58106019
 m0_status: INCOMPLETE · BLOCKED-fixture-license
-parent_sha: fca1ff3aba812230f783f67fc21861e55e6f566b
-build_sha: a4390f35789d2bf1b8c19759b3489a4d0680daa1
-recorded: 2026-10-07T17:40Z
+parent_sha: 62dc4a0e34e93101a70393d25868351f7e039b85
+baseline_sha: a4390f35789d2bf1b8c19759b3489a4d0680daa1
+docs_promotion_sha: fca1ff3aba812230f783f67fc21861e55e6f566b
+recorded: 2026-10-07T17:45Z
+sdki_workitem: 12788213-822a-428f-8470-c9ca58106019
 ---
 
 # M0 Bootstrap Receipt
 
 ## M0 INCOMPLETE — BLOCKED-fixture-license
 
-M0 remains **INCOMPLETE**. Legacy `framework_modular` fixtures
-(`build/resources/test/policies/*` including `personal.csv`) cannot
-be imported because the original fixture tree ships without a
-`LICENSE` file and includes `personal.csv` (personally identifying
-data). Until the fixture is relicensed or replaced, M0 only ships
-the build skeleton, documentation, and the architecture fitness guard.
-No production package depends on PipelineK yet; the bootstrap is
-deliberately greenfield-only.
+M0 remains **INCOMPLETE**. The legacy host repository
+`/var/mnt/DiscoChino2-fast/Proyectos/giss/framework_modular` (an
+external path on the developer machine, NOT inside this workspace and
+NOT inside the blueprint directory) ships test resources at
+`modules/policies/build/resources/test/policies/` that include
+`inputs/personal.csv` (potential privacy concerns — content not
+inspected for PII classification) together with rule YAMLs. The
+legacy host repo has no `LICENSE` file. Until the legacy fixtures
+are relicensed or replaced with synthetic fixtures, M0 cannot close.
+
+This M0 cycle therefore delivers the build skeleton, the
+documentation promotion, and the architecture fitness guard — but
+**not** the fixture import. ROADMAP.md M0 row stays
+`IN_PROGRESS · BLOCKED-fixture-license` and M1 stays
+`BLOCKED-BY-M0` until the fixture license/PII review closes.
 
 The full M0 deliverable list (see `ROADMAP.md` §M0) is therefore
 partially complete:
 
-- ✅ Gradle Kotlin/JVM skeleton
-- ✅ Kotlin 2.4.20 pin
-- ✅ JDK 21 toolchain
-- ✅ SDDK wiring (state out of repo)
-- ✅ ROADMAP as single sequencing authority
-- ✅ ADR-0001..0009 carried over from blueprint
-- ❌ fixtures imported/copied-as-tests from `framework_modular`
-- ✅ characterization document (DOCUMENTED sources only, see
-  `M0_CHARACTERIZATION.md`)
-- ✅ baseline build/test local — no GitHub Actions as CI authority
+- ✅ Gradle Kotlin/JVM skeleton (Kotlin 2.4.20, JDK 21 toolchain)
+- ✅ Single smoke test asserting runtime JVM == 21 and Kotlin == 2.4.20
+- ✅ Architecture fitness guard (declared-dep + reserved-module-dir + resolved-component hooks)
+- ✅ ROADMAP.md as single sequencing authority (state: M0 IN_PROGRESS, M1 BLOCKED-BY-M0)
+- ✅ ADR-0001..0009 carried over from blueprint (initial accepted status)
+- ✅ Negative probes captured (Probe A: com.pipelinek:plugin-sdk refused at config time; Probe B: pipelinek-policy-plugin/ refused at task execution)
+- ❌ fixtures imported/copied-as-tests from `framework_modular` (BLOCKED — license + PII review)
+- ✅ Characterization document (DOCUMENTED sources only, see `M0_CHARACTERIZATION.md`)
+- ✅ baseline local build/test green — no GitHub Actions / external tags / releases as CI authority
 
 ## Pinned SHAs
 
 | Role | SHA |
 |---|---|
-| Baseline (parent of receipt; commit fca1ff3) | `fca1ff3aba812230f783f67fc21861e55e6f566b` |
-| Build + guard commit (this receipt's parent) | `a4390f35789d2bf1b8c19759b3489a4d0680daa1` |
+| Docs promotion commit (root of the four-commit history) | `fca1ff3aba812230f783f67fc21861e55e6f566b` |
+| First build + guard commit | `a4390f35789d2bf1b8c19759b3489a4d0680daa1` |
+| Receipt v1 (parent_sha mis-targeted fca1ff3 — superseded) | `1ab8f4c8d66ceb1d3aea46b3250c913f2951465c` |
+| Build-fix (compact 94-line guard, JDK21 green) | `62dc4a0e34e93101a70393d25868351f7e039b85` |
+| **Parent of THIS receipt (real baseline)** | `62dc4a0e34e93101a70393d25868351f7e039b85` |
 
-The pinned SHA for the receipt is `a4390f3...` (the commit immediately
-preceding the receipt). It is the SHA that satisfies all M0 §Build
-deliverables: green `./gradlew check` plus documented red/green
-guard probe.
+The receipt is pinned to `62dc4a0...` (the build-fix commit
+immediately preceding this receipt commit) — NOT self-referential.
 
-## Reproducible commands
+## Reproducible commands (verbatim, executed against this receipt)
 
-All four commands are recorded verbatim. The first three are the
-acceptance evidence; the fourth is the binary-hash step.
+```bash
+# (1) Wrapper bootstrap (already committed; here for reproducibility)
+./gradlew wrapper --gradle-version 8.14.5 --distribution-type bin
 
-1. `./gradlew wrapper --gradle-version 8.14.5 --distribution-type bin`
-   Materialized `gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar`,
-   `gradle/wrapper/gradle-wrapper.properties` (with
-   `distributionSha256Sum=6f74b601422d6d6fc4e1f9a1ab6522f642c2fdcbc15ae33ebd30ba3d7198e854`).
-2. `JAVA_HOME=$JAVA_HOME ./gradlew check --no-daemon`
-   Exits 0. Toolchain resolves JDK 21.0.8 (Temurin 21.0.8+9-LTS).
-   `BootstrapSmokeTest` runs 2 tests, both PASSED:
-   - `JVM runtime is JDK 21`
-   - `Kotlin runtime matches declared 2_4_20`
-   `architectureFitnessGuard` runs as part of `check` and logs
-   `architectureFitnessGuard OK`.
-3. `git rev-parse HEAD` (run after the build commit, before this
-   receipt commit) returned `a4390f35789d2bf1b8c19759b3489a4d0680daa1`.
-4. `sha256sum` of the build artifacts:
+# (2) Green check (this receipt's parent_sha=62dc4a0)
+JAVA_HOME=/home/rubentxu/.asdf/installs/java/temurin-21.0.8+9.0.LTS \
+  ./gradlew check --no-daemon --no-build-cache
 
-| Path | SHA256 |
+# (3) HEAD pin
+git rev-parse HEAD
+
+# (4) sha256 of build artefacts
+sha256sum build.gradle.kts settings.gradle.kts gradle/libs.versions.toml \
+          gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties \
+          src/test/kotlin/com/pipelinek/policy/bootstrap/BootstrapSmokeTest.kt
+```
+
+## Observed command outcomes (XDG evidence)
+
+Evidence paths under `/home/rubentxu/.local/share/sddk/evidence/p-dd1a1c7a7d448b0c/m0-bootstrap/`:
+
+| File | Contents |
 |---|---|
-| `gradle/wrapper/gradle-wrapper.jar` | `7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172` |
-| `build.gradle.kts` | `6759c1a7c3e94d5b0d90516e1e8b8955b0c8d1a465ab9e1bc2f8f5df96d053d1` |
-| `settings.gradle.kts` | `2eed6f3225143f95461b65140fd1ed0e06d7eb97187aa57de8e322d20e86d73f` |
-| `gradle/libs.versions.toml` | `0b5d68b5252941e92932bbc82c6823d09b4aa9f38bc04f393247e41c862245d6` |
-| `src/test/kotlin/com/pipelinek/policy/bootstrap/BootstrapSmokeTest.kt` | `cf71adf97824d6cfc6bf0af4e2b6fa218d63bed697bfbd95b399c6401646cb98` |
+| `probes/probe-a-stderr.txt` | Probe A stderr: `architectureFitnessGuard FAIL (declared) coords: - compileClasspath:com.pipelinek:plugin-sdk:0.1.0-SNAPSHOT / - runtimeClasspath:com.pipelinek:plugin-sdk:0.1.0-SNAPSHOT` (guard caught reserved group BEFORE Maven 404) |
+| `probes/probe-a-stdout.txt` | Probe A stdout (Gradle banner + daemon fork) |
+| `probes/probe-a-exit.txt` | `1` (build failed as expected) |
+| `probes/probe-a-init-script.sha256` | `920a7ee8...` sha256 of the init-script used for probe A |
+| `probes/probe-b-stderr.txt` | Probe B stderr: `architectureFitnessGuard FAIL reserved module dir present: /var/home/rubentxu/Proyectos/kotlin/PoliciesPlugin/pipelinek-policy-plugin` |
+| `probes/probe-b-stdout.txt` | Probe B stdout |
+| `probes/probe-b-exit.txt` | `1` (build failed as expected) |
+| `probes/probe-b-marker-count.txt` | `11` bytes count (probe marker file this session created) |
+| `probes/post-restore-check.log` | Full green restore: `architectureFitnessGuard OK`, `BootstrapSmokeTest > JVM runtime is JDK 21() PASSED`, `BootstrapSmokeTest > Kotlin runtime matches declared 2_4_20() PASSED`, `BUILD SUCCESSFUL in 18s` |
+| `probes/post-restore-test-results.xml` | JUnit XML: `tests="2" skipped="0" failures="0" errors="0"` |
+| `probes/post-restore.sha256` | sha256 of build artefacts (see below) |
 
-The wrapper JAR SHA matches the official Gradle 8.14.5 reference
-at <https://gradle.org/release-checksums/>:
-
-```
-8.14.5
-  Binary-only (-bin) ZIP Checksum: 6f74b601422d6d6fc4e1f9a1ab6522f642c2fdcbc15ae33ebd30ba3d7198e854
-  Wrapper JAR Checksum:           7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172
-```
-
-## Architecture fitness guard evidence
-
-### GREEN baseline (baseline `./gradlew check`)
+### Post-restore sha256 (probe A + probe B cleanly removed)
 
 ```
-> Task :architectureFitnessGuard
-architectureFitnessGuard OK
-
-> Task :test
-BootstrapSmokeTest > JVM runtime is JDK 21() PASSED
-BootstrapSmokeTest > Kotlin runtime matches declared 2_4_20() PASSED
-> Task :check
-BUILD SUCCESSFUL in 9s
+67cfe0a6c3768f096b8dcd360b6415a34a1e346a70c72cd7e715d36115f48d8a  build.gradle.kts
+2eed6f3225143f95461b65140fd1ed0e06d7eb97187aa57de8e322d20e86d73f  settings.gradle.kts
+0b5d68b5252941e92932bbc82c6823d09b4aa9f38bc04f393247e41c862245d6  gradle/libs.versions.toml
+7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172  gradle/wrapper/gradle-wrapper.jar
+242d7eeb2236de06e7d40b2dc4b2e33fb9eec0cb2884b6dd81daec0cf683c3ca  gradle/wrapper/gradle-wrapper.properties
+cf71adf97824d6cfc6bf0af4e2b6fa218d63bed697bfbd95b399c6401646cb98  src/test/kotlin/com/pipelinek/policy/bootstrap/BootstrapSmokeTest.kt
 ```
 
-### RED probe (negative test for the guard)
+The wrapper jar sha256 `7d3a4ac4...` matches the official Gradle 8.14.5
+wrapper jar (regenerated from
+`/home/rubentxu/.asdf/installs/gradle/8.14.5/bin/gradle wrapper
+--gradle-version 8.14.5 --distribution-type bin` in a scratch dir;
+distribution zip SHA256 `6f74b601...` per
+`gradle/wrapper/gradle-wrapper.properties` `distributionSha256Sum`).
 
-In `build.gradle.kts`, temporarily added inside the `dependencies { }`
-block (then removed):
+### Negative probes — summary
 
-```kotlin
-implementation("com.pipelinek:plugin-sdk:0.1.0-SNAPSHOT")
-```
+| Probe | Mechanism | Expected | Observed |
+|---|---|---|---|
+| A — `com.pipelinek:plugin-sdk:0.1.0-SNAPSHOT` injected via Gradle init-script (the `implementation` configuration inherits the dep) | config-time `afterEvaluate` hook refuses non-allowlisted production dep BEFORE Gradle hits the network | Guard fails with `FAIL (declared)` naming the coord; exit 1; NO Maven 404 | ✅ match: `coords: - compileClasspath:com.pipelinek:plugin-sdk:0.1.0-SNAPSHOT / - runtimeClasspath:com.pipelinek:plugin-sdk:0.1.0-SNAPSHOT`, exit 1 |
+| B — `pipelinek-policy-plugin/` directory created in repo root | task-level `doLast` hook refuses the reserved module directory | Guard fails with `FAIL reserved module dir present:` naming the absolute path; exit 1 | ✅ match: `reserved module dir present: /var/home/rubentxu/Proyectos/kotlin/PoliciesPlugin/pipelinek-policy-plugin`, exit 1 |
 
-Then `./gradlew check --no-daemon --offline` produced:
+Probe cleanup: only this session's marker file
+`pipelinek-policy-plugin/marker.txt` + the empty probe directory were
+removed (narrow `rm` + `rmdir`). No user files were touched.
 
-```
-FAILURE: Build failed with an exception.
+## Out-of-scope (intentionally NOT done)
 
-* What went wrong:
-A problem occurred configuring root project 'pipelinek-policy'.
-> architectureFitnessGuard FAIL (declared)
-    buildFile: /var/home/rubentxu/Proyectos/kotlin/PoliciesPlugin/build.gradle.kts
-    coords:   compileClasspath:com.pipelinek:plugin-sdk
-    runtimeClasspath:com.pipelinek:plugin-sdk
-  Reason: production allowlist is exactly org.jetbrains.kotlin:kotlin-stdlib, org.jetbrains:annotations; non-external deps are fail-closed.
-```
-
-Crucially, the message originates from the **`afterEvaluate` configuration-time
-hook** — the failure happens before Gradle resolves dependencies and
-therefore before any network request is attempted. Typos and reserved
-groups surface as configuration errors, not network errors, as
-required by the spec.
-
-After removing the probe line, `./gradlew check` returned to green.
-
-## Why M0 is INCOMPLETE
-
-The `framework_modular` blueprint directory preserved in the repo
-contains a `build/resources/test/policies/` tree, including a
-`personal.csv` file with personally identifying data, and no LICENSE
-file. Until that fixture is replaced (or relicensed) and the legacy
-import path is re-enabled, M0 is intentionally closed at "skeleton
-+ guard" only. See `M0_CHARACTERIZATION.md` for the research notes
-on the legacy system (DOCUMENTED only — no path under
-`build/resources/test/policies/` is referenced).
-
-## Local validation checklist
-
-- [x] `./gradlew check` exits 0
-- [x] Exactly 1 test class (`BootstrapSmokeTest`)
-- [x] No `docs/ROADMAP.md` (ROADMAP at root only)
-- [x] `AGENTS.md` byte-identical to blueprint
-- [x] `README.md` quickstart section complete
-- [x] Wrapper JAR SHA matches official reference
-- [x] `architectureFitnessGuard` red/green evidence recorded above
-- [x] `.gitignore` matches both `pipelinek-policy-blueprint/` and
-      `pipelinek-policy-blueprint (1).zip`
-- [x] No GitHub Actions / `.github/workflows/` (M0 prohibits)
-- [x] No external tag / release (M0 prohibits while blocker open)
-- [x] No push to remote (orchestrator owns publication)
-
-## Cycle handoff
-
-The slice's commit graph is:
-
-```
-fca1ff3  docs(M0): promote blueprint tree to repo root
-a4390f3  build(M0): Gradle Kotlin/JVM skeleton + architecture fitness guard
-<this>   docs(history): M0 bootstrap receipt + characterization
-```
-
-This is the receipt commit. It contains only `docs/history/M0_BOOTSTRAP_RECEIPT.md`
-and `docs/history/M0_CHARACTERIZATION.md`; no product code.
-
-## References
-
-- Spec: `cycle-artifacts/m0-bootstrap/spec/spec.md` (REQs honored)
-- Tasks: `cycle-artifacts/m0-bootstrap/tasks/tasks.md`
-- ROADMAP: `ROADMAP.md` §Estado inicial / §M0 / §M1
-- ADRs: `docs/04-adrs/ADR-0001..0009`
-- Characterization: `docs/history/M0_CHARACTERIZATION.md`
+- M1 domain code (`policy-core/`, `ValueNode`, selector DSL, evaluator, IR, decoder SPI).
+- Importing legacy fixtures (`build/resources/test/policies/*`) — blocked by license + privacy/PII review.
+- External tags / GitHub releases / `.github/workflows/` CI (prohibited while blocker is open).
+- ktlint / detekt / kover (out of M0 per spec).
+- Multi-module Gradle layout (single root module by design).
