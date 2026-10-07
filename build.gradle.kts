@@ -1,19 +1,21 @@
-// pipelinek-policy · root build (M0 partial bootstrap)
-// M0 production allowlist (EXACT coords only): org.jetbrains.kotlin:kotlin-stdlib,
-// org.jetbrains:annotations. Pinning lives in gradle/libs.versions.toml.
+// pipelinek-policy · root build (M1 preflight)
+// M1 production allowlist (EXACT coords only): org.jetbrains.kotlin:kotlin-stdlib.
+// INC-002: libs.jetbrains.annotations (org.jetbrains:annotations) dropped — not
+//   referenced by any M1 domain code (evaluator forbids I/O per architectural law 5).
+//   Pinning lives in gradle/libs.versions.toml.
 
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 
-plugins { alias(libs.plugins.kotlin.jvm) }
+plugins { alias(libs.plugins.kotlin.jvm); alias(libs.plugins.detekt) }
 
 group = "com.pipelinek.policy"
-version = "0.1.0-M0"
+version = "0.1.0-M1"
 
 kotlin { jvmToolchain(21) }
 
 val productionConfigs = setOf("compileClasspath", "runtimeClasspath")
-val allowedCoords = setOf("org.jetbrains.kotlin:kotlin-stdlib", "org.jetbrains:annotations")
+val allowedCoords = setOf("org.jetbrains.kotlin:kotlin-stdlib")
 
 // Declared-dep guard: fails BEFORE network on any non-allowlisted
 // production dep. Project/file deps are fail-closed in M0.
@@ -49,11 +51,18 @@ afterEvaluate {
 }
 
 dependencies {
-    implementation(libs.kotlin.stdlib)
-    implementation(libs.jetbrains.annotations)
+    implementation(libs.kotlin.stdlib) {
+        // INC-002: org.jetbrains:annotations is a kotlin-stdlib transitive but no
+        // M1 domain code uses it (evaluator forbids I/O per architectural law 5).
+        // Excluding it keeps the production classpath lean and lets the architecture
+        // fitness guard report any future drift.
+        exclude(group = "org.jetbrains", module = "annotations")
+    }
     testImplementation(kotlin("test-junit5"))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // dev.detekt: lint wiring for :check (INC-004). Plugin lives in pluginManagement;
+    // dev.detekt coordinates never enter compileClasspath/runtimeClasspath.
 }
 
 tasks.test {
@@ -94,4 +103,19 @@ val architectureFitnessGuard by tasks.registering {
     }
 }
 
-tasks.named("check") { dependsOn(architectureFitnessGuard) }
+// INC-004: detekt wired into :check (single lint tool, BEFORE first domain slice).
+// detekt 2.0.0-alpha.6 is already in the local Gradle cache; offline-reproducible.
+// Config is minimal — built-in defaults, with severity=tolerance tightened for
+// production paths so domain code cannot slip a regression past :check.
+detekt {
+    buildUponDefaultConfig = true
+    allRules = false
+    autoCorrect = false
+    config.setFrom(files("config/detekt/detekt.yml"))
+    basePath = projectDir
+}
+
+tasks.named("check") {
+    dependsOn(architectureFitnessGuard)
+    dependsOn("detekt")
+}

@@ -4,7 +4,8 @@ phase: apply
 work_item: 12788213-822a-428f-8470-c9ca58106019
 m0_status: INCOMPLETE · BLOCKED-fixture-license
 parent_sha: 62dc4a0e34e93101a70393d25868351f7e039b85
-baseline_sha: a4390f35789d2bf1b8c19759b3489a4d0680daa1
+first_build_sha: a4390f35789d2bf1b8c19759b3489a4d0680daa1
+baseline_sha: 62dc4a0e34e93101a70393d25868351f7e039b85
 docs_promotion_sha: fca1ff3aba812230f783f67fc21861e55e6f566b
 recorded: 2026-10-07T17:45Z
 sdki_workitem: 12788213-822a-428f-8470-c9ca58106019
