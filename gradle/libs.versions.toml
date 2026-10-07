@@ -1,0 +1,15 @@
+[versions]
+kotlin = "2.4.20"
+junit = "5.10.2"
+
+[libraries]
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+jetbrains-annotations = { module = "org.jetbrains:annotations", version = "24.1.0" }
+
+[bundles]
+junit5 = ["junit-jupiter"]
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

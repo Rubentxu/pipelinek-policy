@@ -66,3 +66,49 @@ La idea central es deliberadamente distinta de «OPA escrito en Kotlin» y de «
 - Los ADR fijan decisiones, no estados de ejecución.
 - Los receipts/evidencias se crearán durante la implementación y se moverán a `docs/history/` al quedar superados.
 - El estado operativo de SDDK no se guarda en el repo; vive en el directorio de usuario por proyecto.
+
+## Quickstart (M0 — parcial)
+
+Estado: **M0 INCOMPLETE · BLOCKED-fixture-license** (ver `ROADMAP.md`).
+
+El repositorio contiene ya un esqueleto Gradle Kotlin/JVM mínimo ejecutable. No hay
+código de producto en M0 (la base de tipos de policy vive en M1).
+
+Requisitos:
+
+- JDK 21 (cualquier distribución estándar: Temurin, Zulu, Liberica). El toolchain se
+  resuelve automáticamente via Gradle toolchain auto-detection; no se commitea path
+  absoluto de usuario.
+- Gradle 8.14.5 vía wrapper (`./gradlew`). El wrapper JAR está versionado en
+  `gradle/wrapper/gradle-wrapper.jar` (SHA256 verificado contra el oficial publicado
+  en <https://gradle.org/release-checksums/>).
+- Red disponible para resolver Maven Central en la primera compilación.
+
+Construir y ejecutar la suite (1 test class genérico, sin tipos de dominio):
+
+```bash
+JAVA_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null || echo "$JAVA_HOME") ./gradlew check
+```
+
+El comando debe terminar con `BUILD SUCCESSFUL` y `BootstrapSmokeTest` PASSED para:
+
+- `JVM runtime is JDK 21` (`Runtime.version().feature() == 21`)
+- `Kotlin runtime matches declared 2_4_20` (`KotlinVersion.CURRENT.toString() == "2.4.20"`)
+
+**Guard automático**: el task `architectureFitnessGuard` corre como parte de `check`
+y rechaza cualquier dependencia que no esté en la allowlist de producción
+(`org.jetbrains.kotlin:kotlin-stdlib`, `org.jetbrains:annotations`), cualquier
+directorio `pipelinek-policy-plugin/` presente en la raíz, y cualquier coordenada
+reservada (`com.pipelinek:*`, `io.pipelinek:*`, `dev.pipelinek:*`,
+`com.pipelinek.app:*`, `com.pipelinek.plugin:*`).
+
+Para regenerar solo el wrapper (no necesario normalmente):
+
+```bash
+JAVA_HOME=<jdk-21> gradle wrapper --gradle-version 8.14.5 --distribution-type bin
+```
+
+Para inspeccionar receipts y caracterización del M0:
+
+- `docs/history/M0_BOOTSTRAP_RECEIPT.md` — SHA baseline, comandos, hashes
+- `docs/history/M0_CHARACTERIZATION.md` — notas de investigación DOCUMENTED
