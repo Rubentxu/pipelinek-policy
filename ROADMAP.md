@@ -7,8 +7,8 @@
 ```text
 M0  Grounding / bootstrap                    DONE · fixture-import DEFERRED (license/PII)
 M1  Pure Value + Policy Kernel               DONE · managed-closure (vault 7e822b78)
-M2  Decoder SPI + source-aware resources     NEXT
-M3  Canonical Kotlin DSL                     BLOCKED-BY-M1
+M2  Decoder SPI + source-aware resources     DONE · managed-closure (vault 744b1242)
+M3  Canonical Kotlin DSL                     NEXT
 M4  FIR Kotlin authoring                     BLOCKED-BY-M3
 M5  Policy IR + reproducible bundle          BLOCKED-BY-M3/M4
 M6  PipelineK external plugin                BLOCKED-BY-M5 + PipelineK S6 certified
