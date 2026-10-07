@@ -107,10 +107,17 @@ class PolicySetTest {
 
     @Test
     fun `ViolationCode enum covers the UAT-required cases`() {
+        // M3 ADDS ViolationCode.COLLECTION_PREDICATE_FAILED (ordinal=3, back-compat).
         val codes = ViolationCode.values().toSet()
         assertTrue(ViolationCode.MISSING_REQUIRED_VALUE in codes)
         assertTrue(ViolationCode.TYPE_MISMATCH in codes)
         assertTrue(ViolationCode.COMPARISON_FAILED in codes)
+        assertTrue(ViolationCode.COLLECTION_PREDICATE_FAILED in codes)
+        // Back-compat: the first three ordinals MUST stay 0, 1, 2 — the canonical
+        // PolicyReport digest and M1 tests rely on them.
+        assertEquals(0, ViolationCode.MISSING_REQUIRED_VALUE.ordinal)
+        assertEquals(1, ViolationCode.TYPE_MISMATCH.ordinal)
+        assertEquals(2, ViolationCode.COMPARISON_FAILED.ordinal)
     }
 
     @Test

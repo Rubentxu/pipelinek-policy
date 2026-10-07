@@ -44,6 +44,7 @@ class ExpressionTest {
 
     @Test
     fun `Operator enum covers the comparison alphabet and distinguishes GTE vs GT`() {
+        // M3 ADDS Operator.TEXT_EQUALS / BOOLEAN_EQUALS (additive only).
         val ops = Expression.Operator.values().toSet()
         assertEquals(
             setOf(
@@ -53,6 +54,8 @@ class ExpressionTest {
                 Expression.Operator.GTE,
                 Expression.Operator.LT,
                 Expression.Operator.LTE,
+                Expression.Operator.TEXT_EQUALS,
+                Expression.Operator.BOOLEAN_EQUALS,
             ),
             ops,
         )

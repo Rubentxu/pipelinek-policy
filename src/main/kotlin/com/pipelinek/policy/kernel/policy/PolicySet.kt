@@ -8,6 +8,19 @@ import com.pipelinek.policy.kernel.path.DocumentPath
  *
  * All shapes are immutable `data` types so structural equality is automatic and
  * the PolicyReport can fingerprint the IR deterministically.
+ *
+ * M3 ADDS (additive-only; back-compat with M1):
+ *   - `Rule.appliesWhen: Expression?` (default null): if non-null and evaluates
+ *     to false / Missing / TypeMismatch, the rule short-circuits to
+ *     `RuleEvaluation.NotApplicable` (NOT `Violated`). Spec §"appliesWhen(false)
+ *     yields NotApplicable" REQ-Rule-Combinators.
+ *   - `Rule.code` / `expected` / `actual`: typed metadata propagated to the
+ *     `PolicyViolation` without string parsing (architectural law 9 + spec
+ *     §"Rule carries violation metadata as data").
+ *   - `Rule.params: Map<String, ParamValue>` (default empty): compile-DSL
+ *     substitution data, never re-resolved by the kernel.
+ *   - `ViolationCode.COLLECTION_PREDICATE_FAILED`: emitted by the
+ *     `CollectionPredicate` evaluator branch.
  */
 
 data class PolicySet(
@@ -24,6 +37,11 @@ data class Rule(
     val id: String,
     val message: String,
     val expression: Expression,
+    val appliesWhen: Expression? = null,
+    val code: String? = null,
+    val expected: String? = null,
+    val actual: String? = null,
+    val params: Map<String, ParamValue> = emptyMap(),
 )
 
 /**
@@ -68,8 +86,17 @@ data class PolicyViolation(
     val actual: String? = null,
 )
 
+/**
+ * Ordinals of the first three values (0..2) MUST stay stable — M1 tests and
+ * the canonical PolicyReport digest rely on them. M3 appends
+ * `COLLECTION_PREDICATE_FAILED` without reordering.
+ */
 enum class ViolationCode {
     MISSING_REQUIRED_VALUE,
     TYPE_MISMATCH,
     COMPARISON_FAILED,
+    // M3: emitted by CollectionPredicate when the predicate verdict (per op)
+    // fails (per-element type mismatch, element missing, or ALL/ANY/NONE/COUNT
+    // verdict based on the cursor over SequenceValue.elements / MappingValue.entries).
+    COLLECTION_PREDICATE_FAILED,
 }
