@@ -15,6 +15,10 @@ import kotlinx.serialization.Serializable
  * operational result, not an engine defect. REFUSED also fails (fail-closed,
  * REQ-01b), with a distinct message so a decode refusal can never masquerade
  * as a policy pass.
+ *
+ * M7 REQ-M7-04: in SHADOW enforcement the verdict and findings are preserved
+ * (would-deny is data), but the outcome NEVER fails — the pipeline result is
+ * unchanged while the evidence is still reported.
  */
 @Serializable
 data class PolicyCheckOutput(
@@ -24,21 +28,30 @@ data class PolicyCheckOutput(
     val policySetId: String? = null,
     val ruleSummaries: List<RuleSummary> = emptyList(),
     val refusalReason: String? = null,
+    val enforcement: EnforcementMode = EnforcementMode.ENFORCED,
+    /** True iff verdict==VIOLATED && enforcement==SHADOW (would have denied). */
+    val wouldDeny: Boolean = false,
 ) : TypedStepOutput {
 
     /**
-     * DERIVED from [verdict]; never serialized (StepOutcome is a runtime ADT,
-     * not wire data — the verdict enum is the wire form of the same fact).
+     * DERIVED from [verdict] and [enforcement]; never serialized (StepOutcome
+     * is a runtime ADT, not wire data — the verdict enum is the wire form of
+     * the same fact).
      */
     @kotlinx.serialization.Transient
     override val outcome: StepOutcome = when (verdict) {
         PolicyCheckVerdict.PASSED -> StepOutcome.Success
-        PolicyCheckVerdict.VIOLATED -> StepOutcome.Failure(
-            PipelineFailure(
-                kind = FailureKind.PLUGIN,
-                message = "policy check VIOLATED: $violationsCount violation(s), report digest $reportDigest",
-            ),
-        )
+        PolicyCheckVerdict.VIOLATED -> if (enforcement == EnforcementMode.SHADOW) {
+            // Shadow: would-deny is evidence, not an execution decision (spec §6).
+            StepOutcome.Success
+        } else {
+            StepOutcome.Failure(
+                PipelineFailure(
+                    kind = FailureKind.PLUGIN,
+                    message = "policy check VIOLATED: $violationsCount violation(s), report digest $reportDigest",
+                ),
+            )
+        }
         PolicyCheckVerdict.REFUSED -> StepOutcome.Failure(
             PipelineFailure(
                 kind = FailureKind.PLUGIN,
@@ -64,12 +77,15 @@ data class PolicyCheckOutput(
             reportDigest: String,
             policySetId: String,
             ruleSummaries: List<RuleSummary>,
+            enforcement: EnforcementMode = EnforcementMode.ENFORCED,
         ): PolicyCheckOutput = PolicyCheckOutput(
             verdict = PolicyCheckVerdict.VIOLATED,
             violationsCount = violationsCount,
             reportDigest = reportDigest,
             policySetId = policySetId,
             ruleSummaries = ruleSummaries,
+            enforcement = enforcement,
+            wouldDeny = enforcement == EnforcementMode.SHADOW,
         )
 
         fun refused(reason: String): PolicyCheckOutput =

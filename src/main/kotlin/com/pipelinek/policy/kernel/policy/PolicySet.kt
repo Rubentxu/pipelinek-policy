@@ -21,6 +21,11 @@ import com.pipelinek.policy.kernel.path.DocumentPath
  *     substitution data, never re-resolved by the kernel.
  *   - `ViolationCode.COLLECTION_PREDICATE_FAILED`: emitted by the
  *     `CollectionPredicate` evaluator branch.
+ *
+ * M7 ADDS (additive-only; back-compat with M1/M3/M5/M6):
+ *   - `Rule.supersession: Supersession?` (default null): explicit layer
+ *     supersession metadata consumed by `LayerComposer` (spec §3). The
+ *     evaluator ignores it; bundles packed before M7 deserialize to null.
  */
 
 data class PolicySet(
@@ -42,6 +47,7 @@ data class Rule(
     val expected: String? = null,
     val actual: String? = null,
     val params: Map<String, ParamValue> = emptyMap(),
+    val supersession: Supersession? = null,
 )
 
 /**

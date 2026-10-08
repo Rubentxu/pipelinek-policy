@@ -103,6 +103,8 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
                 violationsCount = output.violationsCount,
                 reportDigest = output.reportDigest,
                 policySetId = output.policySetId,
+                enforcement = output.enforcement,
+                wouldDeny = output.wouldDeny,
             ),
         )
         output
@@ -151,7 +153,7 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
         val violations = report.results.values.count { it is RuleEvaluation.Violated }
 
         return if (violations > 0) {
-            PolicyCheckOutput.violated(violations, report.digest, report.policySetId, summaries)
+            PolicyCheckOutput.violated(violations, report.digest, report.policySetId, summaries, input.enforcement)
         } else {
             PolicyCheckOutput.passed(report.digest, report.policySetId, summaries)
         }
