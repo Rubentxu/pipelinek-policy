@@ -24,7 +24,7 @@ class M4SpikeGatesTest {
     @Test
     fun `gate 1 canonical FIR sugar equals explicit path and mutation is killed`() {
         val explicit = PathExprFirSupport.ruleForGate1("anything.whatever")
-        val sugar = CachingFirCompilation.compileAndLoadRules(
+        val sugar = CachingFirCompilation.compileAndLoadSyntheticRules(
             "fun rule() = root.anything?.whatever?.text()",
             kotlin.io.path.createTempDirectory("fir-gate1"),
         ).single()

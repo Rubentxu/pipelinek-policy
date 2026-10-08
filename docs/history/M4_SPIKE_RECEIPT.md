@@ -36,9 +36,18 @@ WU-0 PASS and WU-1 PASS were committed before this implementation block.
 
 ## 5. WU-2/WU-4 gate receipt
 
+The per-gate evidence contract is persisted in
+`docs/history/M4_GATE_EVIDENCE_CONTRACT.json`. Each entry contains the exact
+command, output SHA-256, log path, input fingerprint and explicit outcome.
+
 Implementation date: 2026-10-08. HEAD before this block: `cc259732cd6b0df5d67952af28328373abb12d19`.
 
 **Verdict: controlled FAIL / Option C.** K2JVMCompiler 2.4.10 is reachable by reflection and exposes `main(String[])`, but the cached 2.4.10 `ExtensionStorage` ABI does not expose the expected unary-plus registration overload for the proposed provider shape. The cached scripting compiler does not expose `kotlin.scripting.jvmhost.JvmScriptCompiler`, and the offline IDE baseline cannot exercise IntelliJ binary diagnostics. Option A is therefore not declared green.
+
+The method formerly named `compileAndLoadRules` is now
+`compileAndLoadSyntheticRules`. It invokes K2 only for reachability and uses a
+Regex-based synthetic lowering bridge for the narrow test syntax. It is not a
+real FIR implementation and is not represented as one in the evidence.
 
 | Gate | Result | Evidence |
 |---|---|---|

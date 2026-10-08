@@ -11,11 +11,10 @@ import java.security.MessageDigest
 import com.pipelinek.policy.kernel.expression.Expression
 
 /**
- * M4.A (spike, tasks 2.6) — K2 reflection probe that proves the SPI seam
- * the spike needs is reachable on the cached compiler jars, WITHOUT trying
- * to drive a full K2 invocation (which requires a real JDK rt, a class
- * graph, a content-root resolver, etc. — multi-thousand-line scope and
- * well outside a single spike).
+ * M4.A (spike, tasks 2.6) — K2 reachability probe plus an explicitly
+ * synthetic offline bridge. `compileAndLoadSyntheticRules` invokes K2 only as a
+ * reachability probe, then applies a Regex-based lowering for the narrow test
+ * syntax. It is NOT real FIR lowering and must not be reported as such.
  *
  * **What this class proves on the spike.**
  *
@@ -117,13 +116,11 @@ object CachingFirCompilation {
     }
 
     /**
-     * Compile a tiny source through the cached K2 entry point and return the
-     * deterministic symbolic rules represented by the source. Compilation is
-     * invoked through reflection so this module has no process or compiler
-     * dependency in the policy runtime. The returned ADT is intentionally
-     * limited to the spike syntax and never contains author lambdas.
+     * Synthetic offline bridge. It invokes the cached K2 entry point only as a
+     * reachability probe, then parses the narrow spike syntax with Regex and
+     * creates the canonical ADT. The method does not prove a FIR rewrite.
      */
-    fun compileAndLoadRules(source: String, workingDir: Path): List<Expression> {
+    fun compileAndLoadSyntheticRules(source: String, workingDir: Path): List<Expression> {
         Files.createDirectories(workingDir)
         val sourceFile = workingDir.resolve("FirSpike.kt")
         Files.writeString(sourceFile, source)

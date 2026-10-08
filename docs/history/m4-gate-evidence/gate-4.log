@@ -1,0 +1,24 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.14.5/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :policy-fir-plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :policy-fir-plugin:pluginDescriptors UP-TO-DATE
+> Task :policy-fir-plugin:processResources UP-TO-DATE
+> Task :policy-fir-plugin:processTestResources NO-SOURCE
+> Task :compileKotlin UP-TO-DATE
+> Task :compileJava NO-SOURCE
+> Task :processResources NO-SOURCE
+> Task :classes UP-TO-DATE
+> Task :jar UP-TO-DATE
+> Task :policy-fir-plugin:compileKotlin UP-TO-DATE
+> Task :policy-fir-plugin:compileJava NO-SOURCE
+> Task :policy-fir-plugin:classes UP-TO-DATE
+> Task :policy-fir-plugin:jar UP-TO-DATE
+> Task :policy-fir-plugin:compileTestKotlin UP-TO-DATE
+> Task :policy-fir-plugin:compileTestJava NO-SOURCE
+> Task :policy-fir-plugin:pluginUnderTestMetadata UP-TO-DATE
+> Task :policy-fir-plugin:testClasses UP-TO-DATE
+> Task :policy-fir-plugin:test UP-TO-DATE
+
+BUILD SUCCESSFUL in 10s
+9 actionable tasks: 9 up-to-date
