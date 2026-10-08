@@ -19,21 +19,36 @@ data class PolicyIrDocument(
 }
 
 data class ShapeConstraint(val path: String, val type: ValueNode.Type, val authority: String)
-data class PolicySourceRef(val file: String, val startLine: Int, val startColumn: Int, val endLine: Int, val endColumn: Int, val symbol: String)
+data class PolicySourceRef(
+    val file: String,
+    val startLine: Int,
+    val startColumn: Int,
+    val endLine: Int,
+    val endColumn: Int,
+    val symbol: String,
+)
 
 enum class IrOpcode { LITERAL, FIELD_REF, COMPARISON, REFERENCE, COLLECTION_PREDICATE }
 
-sealed class IrRefusal(message: String) : IllegalArgumentException(message) {
-    class CorruptEncoding(message: String) : IrRefusal(message)
+sealed class IrRefusal(message: String, cause: Throwable? = null) : IllegalArgumentException(message) {
+    init { cause?.let { initCause(it) } }
+    class CorruptEncoding(message: String, cause: Throwable? = null) : IrRefusal(message, cause)
     class UnsupportedExpression(message: String) : IrRefusal(message)
     class ShapeContradiction(message: String) : IrRefusal(message)
 }
 
 object PolicyIrLowerer {
-    fun lower(policySet: PolicySet, functions: List<String> = emptyList(), shapes: List<ShapeConstraint> = emptyList()): PolicyIrDocument {
+    fun lower(
+        policySet: PolicySet,
+        functions: List<String> = emptyList(),
+        shapes: List<ShapeConstraint> = emptyList(),
+    ): PolicyIrDocument {
         validatePolicy(policySet)
         validateShapes(policySet, shapes)
-        return PolicyIrDocument(policySet, functions.sorted(), emptyMap(), shapes.sortedWith(compareBy({ it.path }, { it.authority })))
+        return PolicyIrDocument(
+            policySet, functions.sorted(), emptyMap(),
+            shapes.sortedWith(compareBy({ it.path }, { it.authority })),
+        )
     }
 
     private fun validatePolicy(set: PolicySet) {
@@ -66,9 +81,13 @@ object PolicyIrLowerer {
     private fun validateShapes(set: PolicySet, shapes: List<ShapeConstraint>) {
         val refs = set.policies.flatMap { it.rules }.flatMap { listOfNotNull(it.expression, it.appliesWhen) }
         shapes.forEach { shape ->
-            if (shape.path.isBlank() || shape.authority.isBlank()) throw IrRefusal.ShapeContradiction("invalid shape constraint")
+            if (shape.path.isBlank() || shape.authority.isBlank()) {
+                throw IrRefusal.ShapeContradiction("invalid shape constraint")
+            }
             refs.filterIsInstance<Expression.FieldRef>().filter { it.path.toString() == shape.path }.forEach {
-                if (it.expectedType != shape.type) throw IrRefusal.ShapeContradiction("shape ${shape.path} contradicts ${it.expectedType}")
+                if (it.expectedType != shape.type) {
+                    throw IrRefusal.ShapeContradiction("shape ${shape.path} contradicts ${it.expectedType}")
+                }
             }
         }
     }

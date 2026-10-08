@@ -148,3 +148,32 @@ No usar esta metadata como autoridad si puede derivarse del IR; validar contra I
 - unknown opcode -> refuse;
 - changed opcode semantics -> major IR version;
 - new opcode -> capability negotiation por manifest.
+
+## 11. Algoritmos ejecutables M5 (implementación v1)
+
+Field order canónico del JSON (orden de emisión, verificable en golden tests):
+
+```text
+irVersion, languageVersion, policySetId, functions[] (sorted),
+policies[] (sorted by id) -> rules[] (sorted by id) -> {id, message, expression, appliesWhen?},
+sourceRefs{} (sorted keys) -> {file, startLine, startColumn, endLine, endColumn, symbol}
+```
+
+### semanticDigest
+
+`sha256( canonicalJsonBytes(PolicyIrDocument) )` — hex lowercase.
+El JSON canónico excluye parameters/shapes/metadata del digest semántico (estabilidad entre checkouts).
+
+### artifactDigest
+
+`sha256( canonicalJsonBytes(document) + metadataBytes )` donde `metadataBytes` es la
+serialización determinista (claves ordenadas, `k=v\n`) del metadata del bundle.
+
+### Number encoding (canonical)
+
+Los números se emiten como STRING con su representación léxica original
+(`"3"`, `"3.5"`), preservada en decode vía `numberOfLexical` (Long para enteros,
+Double en caso contrario). Esto garantiza `digest(decode(encode(d))) == digest(d)`.
+
+Verificado por: `M5UatAcceptanceTest` (UAT1, UAT2), `PolicyBundleRemediationTest`,
+`BundleReproducibilityTest` (byte-identical double pack).

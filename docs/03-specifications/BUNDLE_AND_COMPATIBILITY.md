@@ -93,3 +93,25 @@ digest
 ```
 
 Version sin digest es convenience, no identidad fuerte.
+
+## Formato de pack PKB1 (implementación v1)
+
+```text
+"PKB1" magic (4 bytes)
+entry x4, en orden lexicográfico de nombre:
+  nameLen  Int32 BE | name UTF-8 | size Int64 BE | payload bytes
+```
+
+Entradas requeridas (exactamente 4): `manifest.json`, `metadata.txt`,
+`policy-source-map.txt`, `policy.ir.json`.
+
+Admission (fail-closed, `BundleVerifier.verifyPacked`):
+
+1. magic y estructura de entradas validadas (longitudes, trailing bytes);
+2. decode del IR con rechazo de opcodes desconocidos;
+3. manifest embebido debe contener los digests recalculados del documento;
+4. capabilities: IR version soportada y funciones requeridas disponibles;
+5. cualquier fallo -> `BundleRefusal` (corrupt/unsupported/digest-mismatch).
+
+Reproducibilidad: doble build del mismo documento produce bytes idempotentes
+(`BundleReproducibilityTest`).
