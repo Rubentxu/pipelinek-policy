@@ -10,7 +10,7 @@ M1  Pure Value + Policy Kernel               DONE · managed-closure (vault 7e82
 M2  Decoder SPI + source-aware resources     DONE · managed-closure (vault 744b1242)
 M3  Canonical Kotlin DSL                     DONE · managed-closure (vault a6300bf3)
 M4  FIR Kotlin authoring                     FAIL documentado · Opción C adoptada · spike branch m4-fir-spike conservada
-M5  Policy IR + reproducible bundle          BLOCKED-BY-M3/M4
+M5  Policy IR + reproducible bundle          NEXT (M4 resuelto vía Opción C)
 M6  PipelineK external plugin                BLOCKED-BY-M5 + PipelineK S6 certified
 M7  Layers / waivers / shadow / diff         BLOCKED-BY-M5
 M8  Datasets / streaming / indexing          BLOCKED-BY-M2/M5
