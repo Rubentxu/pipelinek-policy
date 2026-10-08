@@ -1,5 +1,6 @@
 [versions]
 kotlin = "2.4.20"
+kotlin-fir-spike = "2.4.10"  # M4.A: 2.4.10 mirrors the kotlin-reflect pin (M3); the cache only has full transitive metadata at 2.4.10 for compiler-embeddable + scripting SPI (docs/history/M4_SPIKE_RECEIPT.md §2).
 junit = "5.10.2"
 jackson = "2.15.3"
 snakeyaml = "2.10"
@@ -7,6 +8,18 @@ snakeyaml = "2.10"
 [libraries]
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
+# M4.A (spike): `kotlin.compiler.embeddable` and `kotlin.scripting.compiler.embeddable`
+# are wired ONLY in `policy-fir-plugin/`; the root module stays on the broad
+# `coreAllowedCoords = { kotlin-stdlib }` allowlist. Version pinned to 2.4.10
+# (see `kotlin-fir-spike` above) so the spike is reproducible offline without
+# touching Maven Central. ADR-0011 D11.1 third-bucket policy applies.
+kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin-fir-spike" }
+kotlin-scripting-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-scripting-compiler-embeddable", version.ref = "kotlin-fir-spike" }
+# M4.A (spike): the Gradle-side `KotlinCompilerPluginSupportPlugin` SPI
+# lives in `kotlin-gradle-plugin-api`. This is what the host Gradle runtime
+# injects into the plugin classpath; the spike compiles against it as
+# `compileOnly` so the produced jar does not bundle a Gradle plugin runtime.
+kotlin-gradle-plugin-api = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin-api", version.ref = "kotlin-fir-spike" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 # ADR-0011 D11.2: jackson-core only — no databind, no reflection (law 5).
 # Pinned to 2.15.3 because that's the version available in the local

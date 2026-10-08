@@ -41,9 +41,26 @@ val parserAllowedCoords: Map<String, Set<String>> = mapOf(
 )
 val parserModulePaths = parserAllowedCoords.keys
 
-/** Resolve the allowlist bucket for a project path (core or parser). */
+// M4.A (spike, design A1 + ADR-0011 D11.1): third opt-in allowlist bucket
+// for the FIR plugin submodule. The bucket is RECOGNISED ONLY for the
+// project path `:policy-fir-plugin`; any other project path that declares a
+// compiler-embeddable coordinate MUST fail the guard before network resolution.
+// The spike pins to 2.4.10 (see libs.versions.toml `kotlin-fir-spike`).
+val firPluginAllowedCoords: Map<String, Set<String>> = mapOf(
+    ":policy-fir-plugin" to setOf(
+        "org.jetbrains.kotlin:kotlin-stdlib",
+        "org.jetbrains.kotlin:kotlin-compiler-embeddable",
+        "org.jetbrains.kotlin:kotlin-scripting-compiler-embeddable",
+        "org.jetbrains.kotlin:kotlin-gradle-plugin-api",
+    ),
+)
+val firPluginModulePaths = firPluginAllowedCoords.keys
+
+/** Resolve the allowlist bucket for a project path (core, parser, or fir-plugin). */
 fun allowedCoordsFor(projectPath: String): Set<String> =
-    parserAllowedCoords[projectPath] ?: coreAllowedCoords
+    firPluginAllowedCoords[projectPath]
+        ?: parserAllowedCoords[projectPath]
+        ?: coreAllowedCoords
 
 // Declared-dep guard: fails BEFORE network on any non-allowlisted
 // production dep. Project/file deps are fail-closed in M0/M1 and remain so.
@@ -103,6 +120,66 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     testLogging { events("passed", "skipped", "failed"); showStandardStreams = false }
+}
+
+// M4.A (spike, tasks 1.9–1.10): exposes the bucket rule so the root
+// `architectureFitnessGuard` AND the `:policy-fir-plugin` submodule can both
+// query the same source of truth. Returning the empty set for non-FIR project
+// paths is the opt-in semantics: a non-FIR module declaring a compiler coord
+// has no allowed coords at all and MUST fail the guard.
+fun firPluginBucketRule(moduleName: String): Set<String> =
+    if (moduleName == "policy-fir-plugin") {
+        firPluginAllowedCoords[":policy-fir-plugin"] ?: emptySet()
+    } else {
+        emptySet()
+    }
+
+// Stash a back-reference at the root so the :policy-fir-plugin submodule can
+// evaluate the same predicate without duplicating the map (subprojects
+// evaluate this rootProject.extra hook via `rootProject.extra`).
+rootProject.extra["firPluginBucketRule"] = ::firPluginBucketRule
+
+// Subproject-level guard: every non-root project that has a fir-plugin bucket
+// entry MUST be in `firPluginAllowedCoords`. We register the guard inside
+// `subprojects {}` so it applies to parser + fir-plugin submodules without
+// having to copy-paste the walk in each build.gradle.kts.
+subprojects {
+    afterEvaluate {
+        val subPath = project.path
+        val bucket: Set<String> = allowedCoordsFor(subPath)
+        val cfgs: org.gradle.api.artifacts.ConfigurationContainer = configurations
+        val failing = mutableListOf<String>()
+        cfgs.matching { it.name in productionConfigs }.forEach { cfg ->
+            val depSet: org.gradle.api.artifacts.DependencySet = cfg.allDependencies
+            depSet.forEach { dep ->
+                val coord: String? = when (dep) {
+                    is org.gradle.api.artifacts.ExternalModuleDependency ->
+                        "${dep.group}:${dep.name}:${dep.version}"
+                    is org.gradle.api.artifacts.ProjectDependency -> {
+                        // Project deps are NOT bucket-restricted: the root
+                        // `:kernel.*` classes are part of the production
+                        // surface of every parser subproject per ADR-0011
+                        // D11.2 + the parser bucket pattern.
+                        null
+                    }
+                    is org.gradle.api.artifacts.FileCollectionDependency -> {
+                        // File deps are fail-closed in M0/M1 and remain so.
+                        null
+                    }
+                    else -> null
+                }
+                if (coord != null && coord.substringBeforeLast(':') !in bucket) {
+                    failing += "${cfg.name}:${coord}"
+                }
+            }
+        }
+        if (failing.isNotEmpty()) throw GradleException(
+            "architectureFitnessGuard FAIL (subproject $subPath)\n" +
+                failing.joinToString("\n", prefix = "  coords: ") { "  - $it" } +
+                "\nReason: ADR-0011 D11.1 dual + M4.A third bucket; " +
+                "bucket = " + bucket.joinToString()
+        )
+    }
 }
 
 /**
