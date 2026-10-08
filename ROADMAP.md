@@ -12,8 +12,8 @@ M3  Canonical Kotlin DSL                     DONE · managed-closure (vault a630
 M4  FIR Kotlin authoring                     FAIL documentado · Opción C adoptada · spike branch m4-fir-spike conservada
 M5  Policy IR + reproducible bundle          DONE · managed-closure (vault 3c8b593c)
 M6  PipelineK external plugin                DONE · SDK 0.47.0 mavenLocal desde s6-plugin-sdk (merge S6→main externo abierto) · UAT installDist s6 HEAD
-M7  Layers / waivers / shadow / diff         BLOCKED-BY-M5
-M8  Datasets / streaming / indexing          BLOCKED-BY-M2/M5
+M7  Layers / waivers / shadow / diff         DONE · managed-closure (vault 6ada0fb9) · commit b9b8f43 feat/m7
+M8  Datasets / streaming / indexing          BLOCKED-BY-M2/M5 (deps DONE; next)
 M9  Agent/CLI production surface             BLOCKED-BY-M5/M7
 M10 Production certification                 BLOCKED-BY-M6..M9
 ```
