@@ -15,7 +15,7 @@ M6  PipelineK external plugin                DONE · SDK 0.47.0 mavenLocal desde
 M7  Layers / waivers / shadow / diff         DONE · managed-closure (vault 6ada0fb9) · commit b9b8f43 feat/m7
 M8  Datasets / streaming / indexing          BLOCKED-BY entrada (casos reales medidos)
 M9  Agent/CLI production surface             DONE · managed-closure (vault 0bdb853e) · commit e7020f2 feat/m9
-M10 Production certification                 READY (M6..M9 DONE)
+M10 Production certification                 DONE · managed-closure (vault 3e3c3589) · commit 09a1266 feat/m10 · matrix LTS 273/273 · RC ledger
 ```
 
 ---
