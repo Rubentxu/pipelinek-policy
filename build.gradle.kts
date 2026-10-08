@@ -39,11 +39,28 @@ val parserAllowedCoords: Map<String, Set<String>> = mapOf(
         "org.jetbrains.kotlin:kotlin-stdlib",
     ),
 )
+
+// M6 WU-1: the external plugin module has its OWN bucket. It is the only module
+// allowed to resolve the published PipelineK SDK contracts (group
+// dev.rubentxu.pipeline.v2), because it is the only module that faces the seam.
+// Everything else stays on the M2 dual allowlist unchanged.
+val pluginModuleAllowedCoords: Set<String> = setOf(
+    "org.jetbrains.kotlin:kotlin-stdlib",
+    "org.jetbrains.kotlin:kotlin-reflect",
+    "org.jetbrains.kotlinx:kotlinx-serialization-json",
+    "dev.rubentxu.pipeline.v2:pipeline-domain",
+    "dev.rubentxu.pipeline.v2:pipeline-events",
+    "dev.rubentxu.pipeline.v2:pipeline-output",
+    "dev.rubentxu.pipeline.v2:pipeline-scripting-api",
+    "dev.rubentxu.pipeline.v2:pipeline-sdk-bom",
+)
 val parserModulePaths = parserAllowedCoords.keys
 
-/** Resolve the allowlist bucket for a project path (core or parser). */
-fun allowedCoordsFor(projectPath: String): Set<String> =
-    parserAllowedCoords[projectPath] ?: coreAllowedCoords
+/** Resolve the allowlist bucket for a project path (core, parser, or plugin). */
+fun allowedCoordsFor(projectPath: String): Set<String> = when (projectPath) {
+    ":pipelinek-policy-plugin" -> pluginModuleAllowedCoords
+    else -> parserAllowedCoords[projectPath] ?: coreAllowedCoords
+}
 
 // Declared-dep guard: fails BEFORE network on any non-allowlisted
 // production dep. Project/file deps are fail-closed in M0/M1 and remain so.
@@ -100,6 +117,17 @@ dependencies {
     // dev.detekt coordinates never enter compileClasspath/runtimeClasspath.
 }
 
+/**
+ * M6 UAT fixture: run the bundle packer's main on the test runtime classpath.
+ * Output: one Base64 line (the packed bundle consumed by the UAT scripts).
+ */
+val packUatBundle by tasks.registering(JavaExec::class) {
+    group = "m6"
+    description = "Emit the M6 UAT packed policy bundle as Base64 on stdout."
+    mainClass.set("com.pipelinek.policy.m6.M6UatBundlePackerKt")
+    classpath = sourceSets["test"].runtimeClasspath
+}
+
 tasks.test {
     useJUnitPlatform()
     testLogging { events("passed", "skipped", "failed"); showStandardStreams = false }
@@ -115,12 +143,11 @@ val architectureFitnessGuard by tasks.registering {
     group = "verification"
     description = "Reserved module dir + re-verify resolved production classpath."
     doLast {
-        val reservedModule = file("pipelinek-policy-plugin")
-        if (reservedModule.exists() && reservedModule.isDirectory) throw GradleException(
-            "architectureFitnessGuard FAIL\n" +
-                "  reserved module dir present: ${reservedModule.absolutePath}\n" +
-                "Reason: pipelinek-policy-plugin/ is reserved for M6 external plugin integration."
-        )
+        // M6 WU-1: the reservation LIFTS now that the module is real. The dir was
+        // reserved so M6 work could not leak a half-plugin into earlier milestones;
+        // the module now exists by design and owns its own allowlist bucket
+        // (pluginModuleAllowedCoords) above. The resolved-classpath guard below
+        // still applies to the ROOT project unchanged.
         val cfgs: org.gradle.api.artifacts.ConfigurationContainer = configurations
         val failing = cfgs.matching { it.name in productionConfigs }.flatMap { cfg ->
             cfg.incoming.resolutionResult.allComponents.mapNotNull { comp ->
