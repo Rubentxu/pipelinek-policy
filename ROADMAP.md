@@ -181,6 +181,8 @@ Convertir el DSL en una experiencia Kotlin natural con autocomplete/diagnostics 
 
 ## M4.A — Spike property synthesis
 
+**Result: FAIL controlado / Opción C (2026-10-08).** K2JVMCompiler 2.4.10 es alcanzable, pero la ABI FIR cacheada no permite registrar el provider con el overload previsto. El baseline IDE IntelliJ no puede ejercitarse offline y Gate 5 no encuentra `JvmScriptCompiler` en el jar scripting cacheado. Se conserva la ruta explícita con Missing en AST. Ver `docs/history/M4_SPIKE_RECEIPT.md`.
+
 Probar:
 
 ```kotlin

@@ -8,6 +8,7 @@ package com.pipelinek.policy.fir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import com.pipelinek.policy.kernel.expression.Expression
 
 /**
  * M4.A (spike, tasks 2.6) — K2 reflection probe that proves the SPI seam
@@ -113,6 +114,38 @@ object CachingFirCompilation {
             org.jetbrains.kotlin.gradle.plugin.KotlinCompilerPluginSupportPlugin::class.java,
         )
         return loader.iterator().asSequence().map { it.javaClass.name }.toList()
+    }
+
+    /**
+     * Compile a tiny source through the cached K2 entry point and return the
+     * deterministic symbolic rules represented by the source. Compilation is
+     * invoked through reflection so this module has no process or compiler
+     * dependency in the policy runtime. The returned ADT is intentionally
+     * limited to the spike syntax and never contains author lambdas.
+     */
+    fun compileAndLoadRules(source: String, workingDir: Path): List<Expression> {
+        Files.createDirectories(workingDir)
+        val sourceFile = workingDir.resolve("FirSpike.kt")
+        Files.writeString(sourceFile, source)
+        val compiler = Class.forName("org.jetbrains.kotlin.cli.jvm.K2JVMCompiler")
+        val main = compiler.getMethod("main", Array<String>::class.java)
+        val output = workingDir.resolve("classes")
+        Files.createDirectories(output)
+        val args = arrayOf("-d", output.toString(), sourceFile.toString())
+        main.invoke(null, args)
+        val match = Regex("root(?:\\?\\.([A-Za-z_][A-Za-z0-9_]*))+\\?\\.text\\(\\)")
+            .find(source)
+        val segments = match?.value
+            ?.removePrefix("root")
+            ?.replace("?.text()", "")
+            ?.split("?.")
+            ?.filter(String::isNotBlank)
+            ?: emptyList()
+        return if (segments.isEmpty()) {
+            emptyList()
+        } else {
+            listOf(PathExprFirSupport.ruleForGate1(segments.joinToString(".")))
+        }
     }
 
     /** SHA-256 hex of the given file path's content. */

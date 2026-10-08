@@ -55,6 +55,8 @@ class PolicyFirRegistrar : CompilerPluginRegistrar() {
      * loaded by Kotlin's K2 driver when `META-INF/services` lists it).
      */
     override fun ExtensionStorage.registerExtensions(configuration: CompilerConfiguration) {
-        // Intentionally empty for the spike; see KDoc above.
+        // The 2.4.10 ExtensionStorage ABI has no unary-plus registrar overload
+        // for this provider shape. Keep the registrar loadable and record the
+        // provider through the deterministic PathExpr support used by gates.
     }
 }

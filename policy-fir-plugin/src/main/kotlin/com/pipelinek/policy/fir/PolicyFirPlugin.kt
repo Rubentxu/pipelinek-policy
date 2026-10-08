@@ -37,7 +37,7 @@ class PolicyFirPlugin : KotlinCompilerPluginSupportPlugin {
         SubpluginArtifact(
             groupId = "com.pipelinek.policy",
             artifactId = "policy-fir-plugin",
-            version = "0.2.0-M4-fir-spike",
+            version = "0.2.0-M4",
         )
 
     override fun isApplicable(kotlinCompilation: KotlinCompilation<*>): Boolean = true

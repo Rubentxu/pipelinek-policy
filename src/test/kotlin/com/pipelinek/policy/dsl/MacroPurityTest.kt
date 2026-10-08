@@ -36,6 +36,24 @@ import kotlin.test.assertTrue
 class MacroPurityTest {
 
     @Test
+    fun purity_with_fir_plugin_active() {
+        if (System.getProperty("policy.fir.spike") != "true") return
+        val set = policy("fir-purity") {
+            policy("p") {
+                rule("r") {
+                    require {
+                        root().optionalField("anything").optionalField("whatever")
+                            .asText().eqText(text("hello"))
+                    }
+                }
+            }
+        }
+        val reachable = set.policies.single().rules.single().expression::class.java
+        assertTrue(!reachable.name.contains("Lambda") && !reachable.name.contains("Function"))
+        assertTrue(!reachable.name.contains("System"))
+    }
+
+    @Test
     fun `policy macro is declared inline in the DSL package`() {
         // The static contract is enforced by `compileTestKotlin`: if `policy`
         // is declared as `fun` (not `inline fun`) the compiler would refuse
