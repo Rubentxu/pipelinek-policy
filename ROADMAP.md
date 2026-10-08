@@ -9,7 +9,7 @@ M0  Grounding / bootstrap                    DONE · fixture-import DEFERRED (li
 M1  Pure Value + Policy Kernel               DONE · managed-closure (vault 7e822b78)
 M2  Decoder SPI + source-aware resources     DONE · managed-closure (vault 744b1242)
 M3  Canonical Kotlin DSL                     DONE · managed-closure (vault a6300bf3)
-M4  FIR Kotlin authoring                     NEXT
+M4  FIR Kotlin authoring                     FAIL documentado · Opción C adoptada · spike branch m4-fir-spike conservada
 M5  Policy IR + reproducible bundle          BLOCKED-BY-M3/M4
 M6  PipelineK external plugin                BLOCKED-BY-M5 + PipelineK S6 certified
 M7  Layers / waivers / shadow / diff         BLOCKED-BY-M5
@@ -200,6 +200,8 @@ sin schema.
 ### Gate FAIL
 
 Adoptar fallback `root.anything.whatever.text()` con missing en AST. No bloquear proyecto.
+
+**Resultado M4.A (2026-10-08): FAIL documentado · Opción C adoptada · spike branch `m4-fir-spike` conservada.** Ver [`docs/history/M4_SPIKE_RECEIPT.md`](docs/history/M4_SPIKE_RECEIPT.md) y [`docs/history/M4_CLOSURE_ADDENDUM.md`](docs/history/M4_CLOSURE_ADDENDUM.md).
 
 ## M4.B — Purity checker
 
