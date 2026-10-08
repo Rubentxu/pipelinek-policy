@@ -27,4 +27,5 @@ include(
     "policy-decoders-csv",
     "policy-decoders-map",
     "pipelinek-policy-plugin",
+    "pipelinek-policy-cli",
 )

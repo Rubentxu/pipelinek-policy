@@ -57,8 +57,17 @@ val pluginModuleAllowedCoords: Set<String> = setOf(
 val parserModulePaths = parserAllowedCoords.keys
 
 /** Resolve the allowlist bucket for a project path (core, parser, or plugin). */
+// M9: the CLI module owns its own bucket — it is the only place allowed to
+// bundle format libraries transitively via the decoder submodules plus the
+// pure core. No SDK coordinates may leak into it (that is the plugin bucket).
+val cliModuleAllowedCoords: Set<String> = setOf(
+    "org.jetbrains.kotlin:kotlin-stdlib",
+    "com.fasterxml.jackson.core:jackson-core",
+    "org.snakeyaml:snakeyaml-engine",
+)
 fun allowedCoordsFor(projectPath: String): Set<String> = when (projectPath) {
     ":pipelinek-policy-plugin" -> pluginModuleAllowedCoords
+    ":pipelinek-policy-cli" -> cliModuleAllowedCoords
     else -> parserAllowedCoords[projectPath] ?: coreAllowedCoords
 }
 
