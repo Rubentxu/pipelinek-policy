@@ -1,6 +1,7 @@
 package com.pipelinek.policy.dsl
 
 import com.pipelinek.policy.kernel.policy.ParamValue as KernelParamValue
+import com.pipelinek.policy.kernel.value.ValueNode
 
 /**
  * Spec REQ §"DSL rule combinators" — typed primitive parameters carried on the
@@ -49,6 +50,15 @@ sealed interface DslParamValue {
             is DoubleV -> KernelParamValue.DoubleV(v.value)
             is StringV -> KernelParamValue.StringV(v.value)
             is BooleanV -> KernelParamValue.BooleanV(v.value)
+        }
+
+        /** Convert to a `ValueNode` for substitution into `Expression.Literal`. */
+        fun toValueNode(v: DslParamValue): ValueNode = when (v) {
+            is IntV -> ValueNode.NumberValue(v.value)
+            is LongV -> ValueNode.NumberValue(v.value.toDouble())
+            is DoubleV -> ValueNode.NumberValue(v.value)
+            is StringV -> ValueNode.TextValue(v.value)
+            is BooleanV -> ValueNode.BooleanValue(v.value)
         }
     }
 }

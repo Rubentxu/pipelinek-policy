@@ -88,6 +88,13 @@ dependencies {
     }
     testImplementation(kotlin("test-junit5"))
     testImplementation(libs.junit.jupiter)
+    // M3: kotlin-reflect is needed by MacroPurityTest to introspect
+    // `::policy.isInline`. Restricted to test scope — production core
+    // still matches `coreAllowedCoords = { kotlin-stdlib }` (ADR-0011 D11.1).
+    // Pinned to 2.4.10 (kotlin-reflect 2.4.20 is not in the offline cache;
+    // 2.4.10 is the closest cached version that the build can resolve
+    // without network access).
+    testImplementation("org.jetbrains.kotlin:kotlin-reflect:2.4.10")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     // dev.detekt: lint wiring for :check (INC-004). Plugin lives in pluginManagement;
     // dev.detekt coordinates never enter compileClasspath/runtimeClasspath.

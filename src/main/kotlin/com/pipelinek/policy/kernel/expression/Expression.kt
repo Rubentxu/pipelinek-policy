@@ -51,6 +51,21 @@ sealed interface Expression {
     }
 
     /**
+     * Spec REQ §"DSL rule combinators" — parameter reference. The DSL produces
+     * this node when the author writes `ref("min")`; the
+     * `com.pipelinek.policy.dsl.ParamSubstitutor` walks the expression tree and
+     * replaces every `Reference` with the corresponding `Literal(ParamValue)`
+     * BEFORE handing the `Rule` to the kernel. The kernel evaluator MUST NOT
+     * see a `Reference` (it would emit `TYPE_MISMATCH` — a defensive default).
+     * This data class lives in the kernel sealed hierarchy so it can substitute
+     * transparently into `Comparison.left`/`right` without an `Any?` escape
+     * hatch (architectural law 7).
+     */
+    data class Reference(val name: String) : Expression {
+        override val displayName: String get() = "Reference(\$$name)"
+    }
+
+    /**
      * Spec REQ §"DSL collection predicates" — cursor over a collection
      * `source` (`SequenceValue` or `MappingValue`) with a `Selector`
      * predicate. `op` discriminates the verdict shape. `Missing` on the

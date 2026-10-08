@@ -36,11 +36,17 @@ inline fun policy(
     block: context(BuilderCtx) PolicySetBuilder.() -> Unit,
 ): PolicySet {
     val builder = PolicySetBuilder(id)
-    // The user's lambda is `context(BuilderCtx) PolicySetBuilder.() -> Unit`.
-    // We invoke it by entering both receivers — BuilderCtx as the context
-    // parameter, and PolicySetBuilder as the extension receiver.
     BuilderCtx.root().run {
         builder.block()
     }
     return builder.toPolicySet()
 }
+
+/**
+ * Internal alias kept for tests that want to introspect the `policy` macro
+ * via reflection (`::policySignature.isInline`, `.name`). NOT part of the
+ * author-facing DSL surface.
+ */
+@Suppress("unused")
+@PublishedApi
+internal val policySignature: (String, context(BuilderCtx) PolicySetBuilder.() -> Unit) -> PolicySet = ::policy

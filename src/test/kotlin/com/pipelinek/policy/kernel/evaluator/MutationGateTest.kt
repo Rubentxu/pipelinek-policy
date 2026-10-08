@@ -1,5 +1,6 @@
 package com.pipelinek.policy.kernel.evaluator
 
+import com.pipelinek.policy.kernel.expression.Expression
 import com.pipelinek.policy.kernel.expression.Expression.CollectionOp
 import com.pipelinek.policy.kernel.expression.Expression.CollectionPredicate
 import com.pipelinek.policy.kernel.expression.Expression.Comparison
@@ -16,8 +17,10 @@ import com.pipelinek.policy.kernel.selector.Selector
 import com.pipelinek.policy.kernel.value.ValueNode
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 /**
  * M3 mutation gate. Each test below corresponds to a SPECIFIC mutation that
@@ -315,5 +318,52 @@ class MutationGateTest {
         val eval = report.results.values.first()
         assertIs<RuleEvaluation.Violated>(eval)
         assertEquals(ViolationCode.MISSING_REQUIRED_VALUE, eval.violations.single().code)
+    }
+
+    @Test
+    fun `M5 ParamSubstitutor bypass is killed — Reference reaching kernel is impossible`() {
+        // M5: a buggy ParamSubstitutor that forgot to walk the tree would
+        // emit the rule with an unresolved `Expression.Reference(name)`
+        // node. The kernel has a defensive `is Expression.Reference ->
+        // error(...)` branch in `evalBoolean`, `evalValue`, `locationOf`.
+        // Under canonical behaviour the kernel NEVER receives a Reference
+        // node — the DSL ParamSubstitutor replaces every Reference with
+        // the matching Literal before handing the rule to the kernel.
+        //
+        // This test builds a rule that contains an Expression.Reference
+        // directly (simulating the bypassed-substitutor bug) and asserts
+        // the kernel REJECTS it loudly — proving the kernel contract
+        // (law 4: kernel MUST NOT execute author JVM bytecode; law 8:
+        // Missing/Null/TypeMismatch remain distinct; new M3 contract:
+        // Reference must NEVER leak to the kernel).
+        val rule = Rule(
+            id = "m5-bypass",
+            message = "Reference bypass should be impossible at the kernel",
+            expression = Comparison(
+                left = Expression.Reference("min"),
+                op = Operator.GTE,
+                right = FieldRef(
+                    path = DocumentPath.ROOT.child("spec").child("replicas"),
+                    expectedType = ValueNode.Type.NUMBER,
+                ),
+            ),
+        )
+        val set = PolicySet(
+            id = "m5",
+            policies = listOf(Policy(id = "p", rules = listOf(rule))),
+        )
+        val tree = ValueNode.MappingValue(
+            linkedMapOf("spec" to ValueNode.MappingValue(linkedMapOf("replicas" to ValueNode.NumberValue(5)))),
+        )
+        // The kernel must REJECT the Reference (defensive error), not
+        // silently evaluate it as Missing/Null. We assert the error is
+        // raised by the `evaluate` call.
+        val ex = assertFailsWith<IllegalStateException> {
+            Evaluator.evaluate(set, tree)
+        }
+        assertTrue(
+            ex.message?.contains("Expression.Reference reached the kernel") == true,
+            "Kernel must reject Expression.Reference defensively. Got: ${ex.message}",
+        )
     }
 }

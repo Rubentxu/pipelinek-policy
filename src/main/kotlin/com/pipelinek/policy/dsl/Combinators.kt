@@ -162,24 +162,39 @@ class PolicySetBuilder(private val id: String) {
 
 /**
  * Spec §"Params are substituted at compile-DSL time": walk the expression
- * tree and replace every `ParamRef(name)` with the corresponding
- * `Literal(ParamValue)`. Pure data — no closure retained.
+ * tree and replace every `Expression.Reference(name)` with the corresponding
+ * `Literal(ValueNode)`. Pure data — no closure retained.
  *
- * The substitution syntax is `Ref("name")` for `$name`. The DSL accepts
- * `number(Ref("min"))` etc. (compile-DSL).
+ * Unresolved references are preserved as-is so the kernel's defensive
+ * branch surfaces a deterministic error (instead of silently substituting a
+ * default value).
  */
 object ParamSubstitutor {
+
+    /** Substitute every `Reference(name)` in `expr` with the matching
+     *  `Literal(DslParamValue.toValueNode(v))`. Unresolved names are kept
+     *  (the kernel's defensive branch will emit the error). */
     fun substitute(expr: Expression, params: Map<String, DslParamValue>): Expression {
-        if (params.isEmpty()) return expr
-        return when (expr) {
-            is Expression.Literal -> expr
-            is Expression.FieldRef -> expr
-            is Expression.Comparison -> {
-                val l = substitute(expr.left, params)
-                val r = substitute(expr.right, params)
-                if (l === expr.left && r === expr.right) expr else expr
+        return walk(expr, params)
+    }
+
+    private fun walk(expr: Expression, params: Map<String, DslParamValue>): Expression = when (expr) {
+        is Expression.Literal -> expr
+        is Expression.FieldRef -> expr
+        is Expression.Reference -> {
+            val p = params[expr.name]
+            if (p != null) {
+                Expression.Literal(DslParamValue.toValueNode(p))
+            } else {
+                expr
             }
-            is Expression.CollectionPredicate -> expr
         }
+        is Expression.Comparison -> {
+            val l = walk(expr.left, params)
+            val r = walk(expr.right, params)
+            if (l === expr.left && r === expr.right) expr
+            else Expression.Comparison(left = l, op = expr.op, right = r)
+        }
+        is Expression.CollectionPredicate -> expr
     }
 }

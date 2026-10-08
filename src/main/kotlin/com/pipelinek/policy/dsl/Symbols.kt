@@ -122,3 +122,13 @@ fun text(s: String): Expression = Literal(ValueNode.TextValue(s))
 
 context(ctx: BuilderCtx)
 fun boolean(b: Boolean): Expression = Literal(ValueNode.BooleanValue(b))
+
+/**
+ * Param reference builder. The DSL author writes `ref("min")` to substitute
+ * a declared `params(mapOf("min" to IntV(3)))`. At the boundary, the
+ * `ParamSubstitutor` walks the expression tree and replaces every
+ * `Expression.Reference(name)` with the matching `Literal(ParamValue)`. The
+ * resulting `Rule.expression` carries no author-side closure (law 4).
+ */
+context(ctx: BuilderCtx)
+fun ref(name: String): Expression = Expression.Reference(name)

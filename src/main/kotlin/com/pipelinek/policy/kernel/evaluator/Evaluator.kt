@@ -228,6 +228,11 @@ object Evaluator {
             compare(leftVal, expression.op, rightVal, expression)
         }
         is CollectionPredicate -> evalCollectionPredicate(expression, tree)
+        is Expression.Reference ->
+            error(
+                "Expression.Reference reached the kernel — DSL ParamSubstitutor " +
+                    "failed to substitute \${${expression.name}}",
+            )
     }
 
     /** Recursively evaluate an expression that resolves to a leaf value. */
@@ -263,6 +268,11 @@ object Evaluator {
         }
         is Comparison -> error("comparison is not a leaf value")
         is CollectionPredicate -> error("collection predicate is not a leaf value")
+        is Expression.Reference ->
+            error(
+                "Expression.Reference reached the kernel — DSL ParamSubstitutor " +
+                    "failed to substitute \${${expression.name}}",
+            )
     }
 
     private fun compare(left: ValueNode, op: Operator, right: ValueNode, src: Comparison): Boolean {
@@ -514,6 +524,7 @@ object Evaluator {
         is FieldRef -> expression.path
         is Comparison -> locationOf(expression.left)
         is CollectionPredicate -> locationOf(expression.source)
+        is Expression.Reference -> DocumentPath.ROOT
     }
 
     private fun describeOperator(c: Comparison?): String? = c?.op?.let {

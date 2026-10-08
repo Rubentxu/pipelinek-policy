@@ -159,6 +159,7 @@ class ParityTest {
                 walkExpression(expr.source, seen)
                 seen += expr.predicate::class.java
             }
+            is Expression.Reference -> seen += expr::class.java
         }
     }
 }
