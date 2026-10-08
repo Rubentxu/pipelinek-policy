@@ -98,3 +98,27 @@ stage("Policy") {
     }
 }
 ```
+
+## 8. CLI (M9): check accionable por agentes
+
+```bash
+# Compilar una política (IR canónico JSON) a bundle reproducible
+policy-cli compile policy.json --out acme.pkpolicy
+
+# Evaluar un corpus y emitir findings JSONL (una línea = un finding accionable)
+policy-cli check acme.pkpolicy corpus/ --format jsonl
+
+# Cada línea JSONL lleva: policyId, ruleId, resourceId, severity, state,
+# location (fichero/línea/celda), remediation y fingerprint:
+# {"policyId":"acme","ruleId":"no-gpl","resourceId":"sbom.json", ...,
+#  "location":{"file":"build/sbom.json","cell":{"row":3,"column":5}},
+#  "remediation":"...","fingerprint":"sha256:..."}
+
+# Otros comandos: test (fixtures allow/deny), diff (dos corpora),
+# explain (regla + árbol), inspect (IR canónico), shape (conteos),
+# bundle verify (integridad), --json-help (autodescubrimiento para agentes)
+```
+
+Exit codes estables: `0` OK, `1` violaciones, `2` error de uso/entrada,
+`3` error interno. Los comandos citados existen en el `CommandRegistry`
+(verificado por cross-check en `HelpAndExitCodesTest` 05b).

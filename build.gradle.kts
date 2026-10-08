@@ -15,7 +15,9 @@ plugins { alias(libs.plugins.kotlin.jvm); alias(libs.plugins.detekt) }
 group = "com.pipelinek.policy"
 version = "0.2.0-M2"
 
-kotlin { jvmToolchain(21) }
+// M10 (REQ 02): the test JVM is parameterizable for the compiler matrix
+// (scripts/m10/compiler-matrix.sh). Default stays 21 (LTS gate).
+kotlin { jvmToolchain(providers.gradleProperty("testJvm").getOrElse("21").toInt()) }
 
 val productionConfigs = setOf("compileClasspath", "runtimeClasspath")
 

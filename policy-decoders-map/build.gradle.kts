@@ -16,7 +16,7 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-kotlin { jvmToolchain(21) }
+kotlin { jvmToolchain(providers.gradleProperty("testJvm").getOrElse("21").toInt()) }
 
 tasks.test {
     useJUnitPlatform()

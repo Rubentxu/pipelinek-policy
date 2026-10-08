@@ -28,13 +28,32 @@ application {
     mainClass.set("com.pipelinek.policy.cli.PolicyCliKt")
 }
 
-kotlin { jvmToolchain(21) }
+// M10 (REQ 02): parameterizable test JVM for the compiler matrix.
+kotlin { jvmToolchain(providers.gradleProperty("testJvm").getOrElse("21").toInt()) }
 
 tasks.test {
     useJUnitPlatform()
+    // M10 characterization: 64 MiB CSV materializes ~1M rows (≈6M ValueNode
+    // cells + per-cell source anchors) — needs headroom. OBSERVED OOM at default.
+    maxHeapSize = "4g"
     testLogging { events("passed", "skipped", "failed"); showStandardStreams = false }
 }
 
 tasks.named("check") {
     dependsOn("test")
+}
+
+/**
+ * M10 REQ 05c · On-demand 1 GiB CSV characterization entry point (NOT CI).
+ * Usage: ./gradle-jdk21.sh :pipelinek-policy-cli:certCsv1gib -PcertCsvBytes=1073741824
+ */
+val certCsv1gib by tasks.registering(JavaExec::class) {
+    group = "m10"
+    description = "Run the on-demand CSV characterization harness (default 1 GiB)."
+    mainClass.set("com.pipelinek.policy.cli.cert.CertCsvMain")
+    classpath = sourceSets["test"].runtimeClasspath
+    if (project.hasProperty("certCsvBytes")) {
+        args(project.property("certCsvBytes").toString())
+    }
+    jvmArgs("-Xmx24g")
 }

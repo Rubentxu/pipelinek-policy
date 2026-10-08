@@ -41,7 +41,7 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-kotlin { jvmToolchain(21) }
+kotlin { jvmToolchain(providers.gradleProperty("testJvm").getOrElse("21").toInt()) }
 
 tasks.test {
     useJUnitPlatform()
@@ -172,6 +172,18 @@ val emitPolicyManifest = tasks.register<JavaExec>("emitPolicyManifest") {
 
     dependsOn(computePolicyRelease)
     mainClass.set("com.pipelinek.policy.plugin.PolicyCheckContributorKt")
+
+    // M10 (REQ 02): run on the module toolchain JVM — with -PtestJvm=25 the
+    // daemon (21) cannot link v69 classfiles (UnsupportedClassVersionError).
+    javaLauncher.set(
+        javaToolchains.launcherFor {
+            languageVersion.set(
+                JavaLanguageVersion.of(
+                    providers.gradleProperty("testJvm").getOrElse("21").toInt(),
+                ),
+            )
+        },
+    )
 
     classpath = files(
         sourceSets["main"].runtimeClasspath,

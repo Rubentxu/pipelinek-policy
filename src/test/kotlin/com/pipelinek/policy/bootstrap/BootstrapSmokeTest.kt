@@ -13,8 +13,13 @@ import kotlin.test.assertEquals
 class BootstrapSmokeTest {
 
     @Test
-    fun `JVM runtime is JDK 21`() {
-        assertEquals(21, Runtime.version().feature())
+    fun `JVM runtime is a certified LTS (21 or 25)`() {
+        // M10 (REQ 02): the compiler matrix certifies the suite on both LTS
+        // toolchains (Temurin 21 and 25). The runtime must be one of them.
+        org.junit.jupiter.api.Assertions.assertTrue(
+            Runtime.version().feature() in setOf(21, 25),
+            "runtime must be a certified LTS, got ${Runtime.version().feature()}",
+        )
     }
 
     @Test

@@ -25,7 +25,7 @@ dependencies {
     testImplementation(project(":policy-decoders-yaml"))
 }
 
-kotlin { jvmToolchain(21) }
+kotlin { jvmToolchain(providers.gradleProperty("testJvm").getOrElse("21").toInt()) }
 
 tasks.test {
     useJUnitPlatform()
