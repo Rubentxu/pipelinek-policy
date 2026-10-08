@@ -1,3 +1,8 @@
+@file:Suppress(
+    "TooGenericExceptionCaught",
+    "ReturnCount",
+)
+
 package com.pipelinek.policy.fir
 
 import java.nio.file.Files
@@ -60,12 +65,9 @@ object CachingFirCompilation {
             cls.getConstructor().newInstance()
             cls.name
         } catch (t: Throwable) {
-            return Result(
-                reachable = false,
-                k2CompilerClass = null,
-                scriptingRegistrarClass = null,
-                errorMessage = "K2 JVM compiler NOT reachable: ${t.javaClass.name}: ${t.message}",
-            ).also { cachedResult = it }
+            return failResult(
+                msg = "K2 JVM compiler NOT reachable: ${t.javaClass.name}: ${t.message}",
+            )
         }
 
         val scriptingRegistrar = try {
@@ -73,12 +75,10 @@ object CachingFirCompilation {
                 "org.jetbrains.kotlin.scripting.compiler.plugin.FirScriptingCompilerExtensionRegistrar",
             ).name
         } catch (t: Throwable) {
-            return Result(
-                reachable = false,
-                k2CompilerClass = k2,
-                scriptingRegistrarClass = null,
-                errorMessage = "Scripting registrar NOT reachable: ${t.javaClass.name}: ${t.message}",
-            ).also { cachedResult = it }
+            return failResult(
+                msg = "Scripting registrar NOT reachable: ${t.javaClass.name}: ${t.message}",
+                k2 = k2,
+            )
         }
 
         return Result(
@@ -87,6 +87,17 @@ object CachingFirCompilation {
             scriptingRegistrarClass = scriptingRegistrar,
             errorMessage = null,
         ).also { cachedResult = it }
+    }
+
+    private fun failResult(msg: String, k2: String? = null): Result {
+        val r = Result(
+            reachable = false,
+            k2CompilerClass = k2,
+            scriptingRegistrarClass = null,
+            errorMessage = msg,
+        )
+        cachedResult = r
+        return r
     }
 
     /**

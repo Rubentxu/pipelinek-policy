@@ -32,6 +32,13 @@ kotlin {
 }
 
 dependencies {
+    // The FIR plugin lowers into the kernel ADT, so the plugin module needs
+    // the symbols from the root module (kernel.expression.*, kernel.value.*,
+    // kernel.path.*). `project(":")` is allowed for parsers per ADR-0011
+    // D11.2; the architectureFitnessGuard excludes project deps from the bucket
+    // check so the root's contract is not violated.
+    implementation(project(":"))
+
     // `compileOnly` because the FIR plugin consumes the compiler embeddable
     // at runtime via the host project's classpath; it must NOT leak into the
     // production classpath of any non-FIR module.

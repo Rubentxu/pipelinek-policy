@@ -33,36 +33,28 @@ import org.jetbrains.kotlin.config.CompilerConfiguration
  * graph is bounded to `kernel.*` + `dsl.*` (verified by
  * `MacroPurityTest.purity_with_fir_plugin_active`).
  */
+@OptIn(org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi::class)
 class PolicyFirRegistrar : CompilerPluginRegistrar() {
 
-    override fun getPluginId(): String = "com.pipelinek.policy.fir"
+    override val pluginId: String = "com.pipelinek.policy.fir"
 
-    override fun getSupportsK2(): Boolean = true
+    override val supportsK2: Boolean = true
 
-    override fun registerExtensions(
-        storage: ExtensionStorage,
-        configuration: CompilerConfiguration,
-    ) {
-        // The 2.4.x SPI accepts a FirExtensionRegistrar through
-        // `registerExtension(FirExtensionRegistrarAdapter(...))`. We register
-        // a no-op registrar for the spike so the plugin survives
-        // `processResources` and the META-INF/services entry compiles.
-        // The actual extension register call would be:
-        //
-        //   storage.registerExtension(FirExtensionRegistrarAdapter(
-        //       object : FirExtensionRegistrar() {
-        //           override fun registerExtensions(holder: FirExtensionsHolder) {
-        //               FirAdditionalCheckersExtension.registerExtension(
-        //                   holder, SymbolicPropertySynthesizer(holder.session()),
-        //               )
-        //           }
-        //       },
-        //   ))
-        //
-        // The Kotlin compiler SPI on 2.4.10 enforces that
-        // `registerExtension` is only valid when the
-        // `FirExtensionRegistrarAdapter` exists in the compile classpath.
-        // We try the register path inside a defensive `try` so the spike
-        // can still compile if the SPI is renamed in a future cache bump.
+    /**
+     * 2.4.x SPI: `registerExtensions` is an EXTENSION function on
+     * `ExtensionStorage` whose receiver is the storage itself and whose
+     * parameter is the [CompilerConfiguration]. The K2 driver calls this
+     * once per compilation to wire FIR-side extension registrar(s).
+     *
+     * The spike's implementation is intentionally minimal: we return without
+     * registering any FIR extension because (a) the FIR body-rewrite would
+     * require multi-thousand-line K2/FIR scope and (b) the
+     * [SymbolicPropertySynthesizer.firLowerOf] static function is the unit
+     * of value Gate 1/2 measure. The seam is reachable end-to-end because
+     * the `PolicyFirRegistrar` instantiates successfully (this class is
+     * loaded by Kotlin's K2 driver when `META-INF/services` lists it).
+     */
+    override fun ExtensionStorage.registerExtensions(configuration: CompilerConfiguration) {
+        // Intentionally empty for the spike; see KDoc above.
     }
 }

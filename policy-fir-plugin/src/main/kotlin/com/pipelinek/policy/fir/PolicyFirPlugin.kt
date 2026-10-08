@@ -22,6 +22,12 @@ import org.jetbrains.kotlin.gradle.plugin.SubpluginOption
  * an empty list — the actual FIR extension work is done by the
  * `PolicyFirRegistrar` (a `CompilerPluginRegistrar`) which Kotlin's K2 driver
  * discovers via the runtime classpath of the host compilation.
+ *
+ * The 2.4.x SPI exposes: `apply(Project)`, `isApplicable(KotlinCompilation)`,
+ * `applyToCompilation(KotlinCompilation)`, `getCompilerPluginId()`,
+ * `getPluginArtifact()`. `getPluginArtifactForNative()` is NOT part of the
+ * 2.4.x interface (it was added in a later minor); we deliberately do NOT
+ * override it so the plugin compiles against both 2.4.10 and 2.4.20.
  */
 class PolicyFirPlugin : KotlinCompilerPluginSupportPlugin {
 
@@ -43,5 +49,10 @@ class PolicyFirPlugin : KotlinCompilerPluginSupportPlugin {
         return project.objects.listProperty(SubpluginOption::class.java)
     }
 
-    override fun getPluginArtifactForNative(): SubpluginArtifact? = null
+    override fun apply(project: Project) {
+        // No-op: the spike's only job is to be discoverable by the Kotlin
+        // Gradle plugin (so it registers via `META-INF/services`) and to
+        // carry the FIR extension SPI metadata (`PolicyFirRegistrar`).
+        // Real work is done by `PolicyFirRegistrar.registerExtensions`.
+    }
 }

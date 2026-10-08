@@ -49,7 +49,13 @@ class FirBucketGuardTest {
                 emptySet()
             }
 
-        for (nonFir in listOf("app", "policy-decoders-json", "policy-decoders-yaml", "policy-decoders-csv", "policy-decoders-map")) {
+        for (nonFir in listOf(
+            "app",
+            "policy-decoders-json",
+            "policy-decoders-yaml",
+            "policy-decoders-csv",
+            "policy-decoders-map",
+        )) {
             assertEquals(emptySet(), rule(nonFir), "$nonFir MUST not inherit the fir bucket")
         }
     }
@@ -57,7 +63,11 @@ class FirBucketGuardTest {
     @Test
     fun `firPluginBucketRule is opt-in per module name`() {
         fun rule(moduleName: String): Set<String> =
-            if (moduleName == "policy-fir-plugin") setOf("org.jetbrains.kotlin:kotlin-compiler-embeddable") else emptySet()
+            if (moduleName == "policy-fir-plugin") {
+                setOf("org.jetbrains.kotlin:kotlin-compiler-embeddable")
+            } else {
+                emptySet()
+            }
 
         // Two assertions in one test, two distinct names — the opt-in
         // contract holds iff the rule returns a non-empty bucket ONLY for
