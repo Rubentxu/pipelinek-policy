@@ -429,10 +429,12 @@ versionada (fixture IR v1 y digest fijo; pack PKB1 verificado por la API públic
 
 Evidencia trazable por requisito y gates: `docs/history/B2_RECEIPT.md`.
 
-## B3 — Fidelidad de recursos, source maps y CLI (P1) — PENDIENTE
+## B3 — Fidelidad de recursos, source maps y CLI (P1) — DONE (2026-10-09)
 Identidad estructural de nodos; JSON/YAML/CSV con spans reales; finding
 estructurado completo; dedup sin pérdida; CLI para agentes; ADR exit codes;
 test/explain sin falsos éxitos.
+
+Evidencia trazable por criterio y gate: `docs/history/B3_RECEIPT.md`.
 
 ## B4 — Gobierno de políticas y plugin completo (P0/P1) — PENDIENTE
 Layers con autoridad verificada; waivers aislados; enforcement como
