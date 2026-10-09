@@ -436,25 +436,140 @@ test/explain sin falsos éxitos.
 
 Evidencia trazable por criterio y gate: `docs/history/B3_RECEIPT.md`.
 
-## B4 — Gobierno de políticas y plugin completo (P0/P1) — PENDIENTE
+## B4 — Gobierno de políticas y plugin completo (P0/P1) — EN CURSO
 Layers con autoridad verificada; waivers aislados; enforcement como
 responsabilidad diferenciada; shadow fiel; PolicyDiff semántico; policy.check
 con plan coherente; ingress acotado; replay/fingerprint completo; UAT real
 instalada (20 recursos).
 
+Descomposición (cada ítem cierra con su prueba de falsificación):
+
+- B4.1 Layers con autoridad verificada. `Supersession.authority` pasa de `String`
+  a `SupersessionAuthority(issuer, grantedLayers, grantDigest)`; `LayerComposer.compose`
+  recibe un `AuthorityRegistry` **por parámetro** (ley 10) con default `EMPTY`
+  = fail-closed. El bundle **reclama** el grant en `metadata.txt`; el **host**
+  lo concede. Un bundle puede pedir, no otorgar. Falsificación: un `authority`
+  no vacío sin grant compone hoy (verde) y debe refizarse (rojo).
+  ADR-0014.
+- B4.2 Waivers aislados. `datasetScope`/`projectScope` hoy están **declarados y
+  nunca leídos**; el matching debe exigirlos. El instante se inyecta. Mismo
+  `ruleId` en dos policies: solo la cubierta queda `Waived`. Expirado ⇒
+  `ActiveWithDiagnostic(WaiverExpired)`, la violación sigue activa.
+- B4.3 Enforcement como responsabilidad diferenciada.
+  `PolicyEvaluation` / `WaiverApplication` / `EnforcementDecision` / `StepOutcome`
+  separadas. El evaluador no decide el resultado operativo. (Cierra también
+  `D-B0-1`, P2.)
+- B4.4 Shadow y activación. SHADOW produce los mismos findings que ACTIVE con
+  `wouldDeny` y localización. `ERRORED` y `REFUSED` **no** se degradan a éxito
+  en SHADOW. `PolicyCheckInput.enforcement` ya existe con default `ENFORCED`;
+  lo que falta es la exposición desde el DSL.
+- B4.5 PolicyDiff semánticamente completo. `SEVERITY_CHANGED` deja de ser un
+  `else` ciego: `Rule.severity: RuleSeverity?` explícito, emitida solo cuando
+  ambos lados la declaran y difieren. Sin tabla de severidad inventada
+  (origen normativo en `KOTLIN_POLICY_DSL.md:20,160` y
+  `EVALUATION_SEMANTICS.md:94`). ADR-0015.
+- B4.6 Integración en `policy.check`. `PolicyCheckPlan` **calculado** por el
+  kernel, nunca serializado en el input (si viajara, el host afirmaría su propia
+  validez). Reloj inyectado. Un plan no calculable es `REFUSED`, también en
+  SHADOW. ADR-0016.
+- B4.7 Resource ingress y controlador ligero. Presupuesto tipado
+  `ResourceIngressLimits` (default 64 MiB, techo 256 MiB) con guarda O(1) sobre
+  `String.length` **antes** de decodificar, y `Files.size` antes de leer en el
+  host. El exceso es `REFUSED`, nunca `throw`. El paquete `ingress/` citado en
+  el Propose **no existe**: va en `kernel/governance/`.
+- B4.8 Replay, eventos y datos sensibles. Fingerprint con todos los inputs
+  semánticos. **Hit/miss de `ReplayPolicy.MEMOIZED`: NOT_MEASURED** (dependencia
+  del SDK); B4 demuestra solo la condición necesaria, el hit/miss se mide en B6.
+- B4.9 UAT real instalada. 20 ficheros reales por plugin instalado
+  (`--plugin-jar`). El harness verifica la precondición **por comportamiento**
+  (ruta inválida ⇒ admisión de plugin, RC=2), nunca parseando `--help`; un
+  `installDist` normal puede salir 0 sin reconstruir y hay que usar
+  `--rerun-tasks`.
+
+Guardarraíles que condicionan B4 (decididos, no opcionales):
+
+- **Guarda de pureza:** `DomainIoPurityTest` selecciona por sufijo contra
+  nombres sueltos, así que `kernel/governance` y el preexistente
+  `kernel/dataset` quedan **fuera** de la ley 5 verificada. Un
+  `import java.nio.file.Files` en `DatasetPlanner.kt` pasa verde hoy. Se corrigen
+  ambos en el mismo commit; si no, la ley 5 de B4 sería decorativa.
+- **`EnforcementMode` al core como enum PLANO, sin `@Serializable`.** El core
+  solo admite `kotlin-stdlib`; meter la anotación rompería el bucket de
+  ADR-0011. La anotación es innecesaria: el evento parsea con
+  `EnforcementMode.valueOf(parts[5])` y kotlinx serializa enums por `name`.
+- **`bundleVersion` NO se bumpea.** Bumpear movería el `artifactDigest` de
+  bundles sin `supersession`. El rechazo del formato antiguo ya es explícito vía
+  `manifestMatches`, que compara el manifiesto recomputado.
+- **Paridad CLI/plugin por construcción:** ambos adaptadores delegan en un
+  único núcleo puro; ninguno implementa reglas.
+
 ## B5 — Streaming real, datasets y presupuestos (P1) — PARCIAL (M8 WU-1..6)
-Pendiente: streaming por chunks (hoy ByteArray), una sola semántica de parsing
-CSV, RuleKey en datasets, Sum exacto, presupuesto tipado (no excepción
-incidental), medición reproducible (RSS/heap/throughput), límites de
-integración documentados. Ya cubierto: planner/shapes, accumulators con cap,
-CLI stream, UAT 64 MiB plana, GLOBAL rechazado.
+
+Descomposición:
+
+- B5.1 Reclasificar M8: de BLOCKED-BY por ausencia de mediciones a trabajo
+  ejecutable, conservando los límites de las mediciones históricas.
+- B5.2 Streaming de verdad. `CsvRowSource`/`JsonlSource` reciben `ByteArray`;
+  evolucionar a fuente incremental por chunks en la **capa adaptadora**. El
+  kernel no hace I/O (ley 5). Un parser streaming no almacena todas las filas.
+- B5.3 Una sola semántica de parsing. Compartir tokenizer y validación entre
+  CSV materializado e incremental, sin acoplar el dominio al parser.
+- B5.4 Dataset planning completo. `DatasetShapeAnalyzer`, `DatasetPlanner`,
+  `DatasetPlan`, `IndexPlan`, `StreamingEvaluator`. LOCAL / AGGREGATE / GLOBAL
+  explícitos. **No degradar GLOBAL a LOCAL para que un test pase.**
+- B5.5 Identidad de reglas en datasets: la `RuleKey(policySetId, policyId, ruleId)`
+  de B1, no solo `rule.id`.
+- B5.6 Acumuladores. `Accumulator.Sum` con numérico exacto. Límite excedido ⇒
+  resultado tipado de presupuesto, **no** excepción incidental ni truncamiento.
+- B5.7 CLI `stream`: CSV, JSONL, bundle verificado, resultados JSONL, métricas
+  estructuradas, exit codes coherentes, `--json-help`.
+- B5.8 Medición real y repetible: 64 MiB con heap limitado, 1 GiB bajo
+  caracterización independiente. RSS, heap, throughput, filas, tamaño máximo
+  retenido. **Sin umbral arbitrario de tiempo como gate semántico.**
+- B5.9 Límite de integración PipelineK. Si el SDK no da ejecución externa,
+  entregar streaming por CLI primero y **registrar la dependencia concreta**.
+  No bloquear el kernel por una limitación de integración externa.
+
+Nota de solape con B4: B4 deja el patrón de presupuesto tipado
+(`ResourceIngressLimits`); B5.6 debe migrar `BudgetExceededException` a ese
+patrón en lugar de crear un segundo.
 
 ## B6 — Certificación real y release (Release gate) — PENDIENTE
-Certificación del SHA exacto (no marker estático); matriz JDK+Kotlin real;
-CsvParityTest sobre salida real de decoders; fuzz ampliado; mutation testing
-auténtico (mutación compila → test falla → restore); adversarial limits;
-plugin instalado con provenance; replay/memoización reevaluado;
-reconciliación documental; release admission con checksums.
+
+Descomposición:
+
+- B6.1 Certificación del SHA exacto. Sustituir el anclaje por archivo estático y
+  el recuento de `*Test.kt`. Certificar SHA, árbol de fuentes, módulos y tests
+  realmente ejecutados, toolchain, dependencias resueltas y artefactos. Los
+  informes deben ser **nuevos**, no reutilizar XML antiguo.
+- B6.2 Matriz real JDK 21/25, distinguiendo versión del compilador Kotlin y ABI
+  del Plugin SDK. Dos JVM con el mismo número de tests no certifican dos
+  compiladores.
+- B6.3 Paridad multiformato. Reparar `CsvParityTest`: debe consumir la **salida
+  real** de cada decodificador, no un árbol construido a mano.
+- B6.4 Property-based y fuzzing sobre JSON/YAML/CSV válidos y malformados,
+  Unicode, claves duplicadas, números extremos, round-trip IR, bundle corrupto,
+  límites de profundidad. Registrar seeds.
+- B6.5 Mutation testing auténtico: mutación válida → **compila** → test
+  dirigido **falla por la aserción esperada** → restore → test verde. Un fallo
+  de compilación **no** cuenta como detección semántica.
+- B6.6 Certificación adversaria: límites de bundle, reglas, profundidad,
+  selectores, entrada y agregación; ausencia de I/O oculto y de ejecución
+  arbitraria. Distinguir ejecutar con éxito un caso grande de **rechazar
+  correctamente** los que exceden el límite.
+- B6.7 Plugin instalado con procedencia. Nada de instalaciones antiguas ni
+  mavenLocal sin identificar. Registrar SHA/digest de las dependencias de
+  integración. Recorrer el Step instalado, no solo `evaluate()`.
+- B6.8 Replay y memoización: reevaluar la declaración N/A de M10 cuando el SDK
+  exponga el recorrido; sin extrapolar la pureza del evaluador a toda la
+  integración.
+- B6.9 Reconciliación documental: ROADMAP, README, ejemplos, contratos CLI,
+  matriz de compatibilidad, estado de M4 y M8, ledger de deuda, notas de
+  release. **La ausencia de TODO/FIXME no prueba ausencia de deuda.**
+- B6.10 Release admission: versión coherente, SHA de fuentes, checksums,
+  provenance, resultados de gates, compatibilidad declarada, deuda aceptada,
+  limitaciones conocidas e instrucciones de reproducción. No promover release
+  production-ready con defectos críticos abiertos.
 
 ## Reglas transversales (vinculantes)
 Arquitectura emergente (extraer módulos solo con necesidad demostrada);
@@ -463,3 +578,48 @@ compatibilidad con ADR en cambios de contrato; evidencia por bloque en
 PASS/FAIL/PARTIAL/NOT_MEASURED/N-A sin conversions; no rebajar DEFERRED
 defectos P0/P1; trabajo excluido (FIR completo, UI, MCP, etc.) permanece
 excluido.
+
+### Autoridad única por concepto (ley 12)
+
+Ningún adaptador establece una segunda semántica:
+
+| Concepto | Autoridad |
+|---|---|
+| Datos de recurso | `ValueTree` |
+| Semántica de policy | `PolicyIR` |
+| Evaluación | Pure Evaluator |
+| Posición en origen | `SourceMap` |
+| Composición | `LayerComposer` |
+| Exenciones | `WaiverMatcher` |
+| Decisión operativa | Enforcement Interpreter |
+| Estado de PipelineK | PipelineK `StepOutcome` |
+| Evidencia de certificación | Receipts del HEAD ejecutado |
+
+### Cómo se cierra un bloque
+
+1. Cada criterio del bloque tiene un test que **falla antes** del cambio y
+   **pasa después**. Verde-después sin rojo-antes no es evidencia.
+2. Una mutación que **no compila** no cuenta como detección semántica.
+3. Los informes de gate son de la **ejecución actual**. Reutilizar XML o
+   receipts de una ejecución anterior es falsificar evidencia.
+4. Un `exit code` capturado a través de un pipe sin `pipefail` no es evidencia.
+5. Una precondición se verifica **por comportamiento**, no por la existencia de
+   un fichero ni por parsear la ayuda de un CLI.
+6. Cada commit se publica al remoto y se verifica que la ref remota coincide
+   con HEAD local antes de empezar la siguiente unidad.
+
+### Gate global de release
+
+**La certificación de producción sigue BLOQUEADA** mientras exista cualquier
+defecto P0/P1 semántico o de seguridad abierto de B0, B1, B2 o B4.
+
+`B6.10` (release admission) es PASS únicamente con: suite completa verde sobre
+el SHA candidato exacto, sin P0/P1 abiertos, UAT ejecutadas, AAT verificadas,
+matriz reproducible, mutaciones críticas detectadas, bundle y plugin
+certificados externamente, límites y seguridad demostrados, dependencias de
+integración identificadas, documentación coherente y ledger de deuda completo.
+
+**Reconciliación pendiente en B6.9:** M4 sigue FAIL documentado (Opción C, línea
+DX separada) y M8 sigue sin ciclo cerrado hasta que B5 lo cierre. Ninguno de
+los dos puede declararse DONE por el mero hecho de que el roadmap tenga la
+sección escrita.
