@@ -389,3 +389,71 @@ Cerrar no sólo features sino propiedades operativas.
 ## Release candidate condition
 
 No known semantic ambiguity puede quedar clasificada como pendiente informal; todo item abierto debe quedar explícitamente DEFERRED con rationale no bloqueante o BLOCK release.
+
+---
+
+# CONTINUACIÓN CORRECTIVA — BLOQUES B0–B6 (2026-10-09)
+
+**Origen:** auditoría sobre HEAD `90c3d0e` (obsoleto; baseline real: ver
+`docs/history/B0_BASELINE.md`, HEAD `a90e726`). Esta sección es la única
+autoridad de secuenciación a partir de ahora y sustituye cualquier lectura
+de cierre M0–M10 como "production ready".
+
+**Estado global:** M0–M7, M9 DONE (con deuda). M4 FAIL documentado (Opción C,
+línea DX separada). M8 en build (WU-1..6 verdes, ciclo SIN cerrar: su
+remediación vive ahora en B5). M10 = certificación histórica; su estado DONE
+se re-evalúa en B6 sobre el SHA exacto de release.
+
+**Certificación de producción: BLOQUEADA** mientras existan defectos P0/P1
+de B0/B1/B2/B4 sin resolver.
+
+## B0 — Admisión segura y baseline (P0) — EN CURSO
+- B0.4 Baseline de verdad → `docs/history/B0_BASELINE.md` (DONE)
+- B0.1 Error→PASSED fail-closed (PolicyCheckStepDefinition/Output, IrRuntimeAdapter, CheckCmd)
+- B0.2 Propagación tipada de errores (semántico/violación/inaplicable/refusal/adaptador/engine)
+- B0.3 Regression fortress (7 escenarios negativos + StepOutcome)
+- Gate B0: sin Error→PASSED posible; SHADOW no oculta errores; fitness afectado verde
+
+## B1 — Cierre semántico kernel/DSL (P0/P1) — PENDIENTE
+RuleKey contextual; numérico exacto (sin Double); forbid/negación declarativa;
+COUNT tipado (fuera CountAsLongSignal); Missing/Null/opcionalidad DSL→IR→evaluador;
+sustitución de params en appliesWhen; determinismo con digest.
+
+## B2 — PolicyIR canónico y bundles íntegros (P0/P1) — PENDIENTE
+decode(encode(IR)) ≡ IR; campos semánticos completos; selectores estructurales
+(sin toString); DatasetRef simétrico (reader); canonicalización; integridad
+PKB1 (semanticDigest vs artifactDigest); admission budgets; compatibilidad
+versionada (golden fixtures).
+
+## B3 — Fidelidad de recursos, source maps y CLI (P1) — PENDIENTE
+Identidad estructural de nodos; JSON/YAML/CSV con spans reales; finding
+estructurado completo; dedup sin pérdida; CLI para agentes; ADR exit codes;
+test/explain sin falsos éxitos.
+
+## B4 — Gobierno de políticas y plugin completo (P0/P1) — PENDIENTE
+Layers con autoridad verificada; waivers aislados; enforcement como
+responsabilidad diferenciada; shadow fiel; PolicyDiff semántico; policy.check
+con plan coherente; ingress acotado; replay/fingerprint completo; UAT real
+instalada (20 recursos).
+
+## B5 — Streaming real, datasets y presupuestos (P1) — PARCIAL (M8 WU-1..6)
+Pendiente: streaming por chunks (hoy ByteArray), una sola semántica de parsing
+CSV, RuleKey en datasets, Sum exacto, presupuesto tipado (no excepción
+incidental), medición reproducible (RSS/heap/throughput), límites de
+integración documentados. Ya cubierto: planner/shapes, accumulators con cap,
+CLI stream, UAT 64 MiB plana, GLOBAL rechazado.
+
+## B6 — Certificación real y release (Release gate) — PENDIENTE
+Certificación del SHA exacto (no marker estático); matriz JDK+Kotlin real;
+CsvParityTest sobre salida real de decoders; fuzz ampliado; mutation testing
+auténtico (mutación compila → test falla → restore); adversarial limits;
+plugin instalado con provenance; replay/memoización reevaluado;
+reconciliación documental; release admission con checksums.
+
+## Reglas transversales (vinculantes)
+Arquitectura emergente (extraer módulos solo con necesidad demostrada);
+compatibilidad con ADR en cambios de contrato; evidencia por bloque en
+`docs/history/B*.md`; commits atómicos; falsificación por semántica;
+PASS/FAIL/PARTIAL/NOT_MEASURED/N-A sin conversions; no rebajar DEFERRED
+defectos P0/P1; trabajo excluido (FIR completo, UI, MCP, etc.) permanece
+excluido.
