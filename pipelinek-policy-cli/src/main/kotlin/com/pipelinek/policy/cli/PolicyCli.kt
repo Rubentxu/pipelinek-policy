@@ -52,6 +52,7 @@ object PolicyCli {
             "inspect" -> com.pipelinek.policy.cli.commands.InspectCmd.run(args, out)
             "shape" -> com.pipelinek.policy.cli.commands.ShapeCmd.run(args, out)
             "bundle" -> com.pipelinek.policy.cli.commands.BundleCmd.run(args, out)
+            "stream" -> com.pipelinek.policy.cli.commands.StreamCmd.run(args, out)
             else -> ExitCodes.INTERNAL
         }
 

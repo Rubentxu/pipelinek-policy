@@ -92,6 +92,8 @@ object ExplainCmd {
                 "\"left\": ${renderExpression(e.left)}, \"right\": ${renderExpression(e.right)}}"
         is Expression.Reference ->
             "{\"kind\": \"reference\", \"name\": \"${e.name}\"}"
+        is Expression.DatasetRef ->
+            "{\"kind\": \"datasetRef\", \"name\": \"${e.name}\"}"
         is Expression.CollectionPredicate ->
             "{\"kind\": \"collectionPredicate\", \"op\": \"${e.op}\", \"predicate\": \"${e.predicate}\", " +
                 "\"source\": ${renderExpression(e.source)}}"

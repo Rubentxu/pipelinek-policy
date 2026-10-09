@@ -135,8 +135,8 @@ class CsvRowSource(private val bytes: ByteArray) {
     }
 }
 
-/** Streaming-specific refusal (kept distinct from the whole-document decoder's private one). */
-internal class CsvRowRefusal(
+/** Streaming refusal carrying the decoder-refusal contract (public: the CLI maps it to exit codes). */
+class CsvRowRefusal(
     val code: DecodeRefusalCode,
     val anchor: SourceAnchor,
 ) : RuntimeException()

@@ -21,6 +21,7 @@ object CommandRegistry {
         CommandSpec("inspect", "Dump the canonical IR of a bundle", listOf("policy")),
         CommandSpec("shape", "Structural summary of a bundle", listOf("policy")),
         CommandSpec("bundle", "Bundle operations (verify)", listOf("verify")),
+        CommandSpec("stream", "Stream a dataset through a policy bundle (csv/jsonl)", listOf("policy", "row-budget", "format-out")),
     )
 
     fun byName(name: String): CommandSpec? = commands.firstOrNull { it.name == name }

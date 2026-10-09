@@ -72,7 +72,7 @@ class HelpAndExitCodesTest {
         // handler (usage refusal, NOT "unknown command").
         val (_, help) = run("--json-help")
         val listed = Regex("\"name\": \"([a-z]+)\"").findAll(help).map { it.groupValues[1] }.toList()
-        assertEquals(8, listed.size, "help must advertise exactly the command set: $listed")
+        assertEquals(9, listed.size, "help must advertise exactly the command set: $listed")
         for (cmd in listed) {
             val (code, out) = run(cmd)
             assertTrue(
