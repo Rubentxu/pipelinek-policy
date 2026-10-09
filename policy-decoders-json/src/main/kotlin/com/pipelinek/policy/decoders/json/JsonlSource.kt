@@ -1,6 +1,7 @@
 package com.pipelinek.policy.decoders.json
 
 import com.fasterxml.jackson.core.JsonFactory
+import com.fasterxml.jackson.core.JsonParser
 import com.pipelinek.policy.decoder.DecodeRefusal
 import com.pipelinek.policy.decoder.DecodeRefusalCode
 import com.pipelinek.policy.decoder.SourceAnchor
