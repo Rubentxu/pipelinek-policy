@@ -140,9 +140,12 @@ class YamlResourceDecoder : ResourceDecoder {
         // Id AND span are registered BEFORE descending so pre-order ids stay
         // unique (post-registration let siblings collide on sourceMap.size).
         val id = NodeId(sourceMap.size.toLong())
-        val span = node.startMark
-            .map { it.toTextSpan() }
-            .orElseGet { SourceAnchor.TextSpan(1L, 1L, 1L, 1L) }
+        val span: SourceAnchor = if (node.startMark.isPresent) {
+            val start = node.startMark.get()
+            start.toTextSpan(node.endMark.orElse(start))
+        } else {
+            SourceAnchor.Logical("yaml://node-without-mark")
+        }
         sourceMap[id] = span
         return when (node) {
             is ScalarNode -> scalarValue(node)
@@ -212,6 +215,14 @@ class YamlResourceDecoder : ResourceDecoder {
         return out
     }
 
+    private fun Mark.toTextSpan(end: Mark): SourceAnchor.TextSpan = SourceAnchor.TextSpan(
+        startLine = line.toLong() + 1L,
+        startColumn = column.toLong() + 1L,
+        endLine = end.line.toLong() + 1L,
+        endColumn = end.column.toLong() + 1L,
+    )
+
+    /** A refusal mark identifies one character, so its exclusive end is the next column. */
     private fun Mark.toTextSpan(): SourceAnchor.TextSpan = SourceAnchor.TextSpan(
         startLine = line.toLong() + 1L,
         startColumn = column.toLong() + 1L,

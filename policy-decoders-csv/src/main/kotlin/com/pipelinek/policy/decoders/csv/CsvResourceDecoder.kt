@@ -39,9 +39,10 @@ import com.pipelinek.policy.kernel.value.ValueNode
  *
  * Source anchors:
  *   - Each cell carries `SourceAnchor.Cell(row, column)`.
- *   - Root mapping/sequence anchors default to `Logical("csv://...")`
- *     because we cannot cheaply derive a TextSpan from a streaming
- *     RFC 4180 tokenizer without a parallel line/offset counter.
+ *   - The WHOLE_DOCUMENT sequence root carries a logical anchor; each row
+ *     mapping is anchored at its first cell. In EACH_ROW mode the row mapping
+ *     is anchored at its first cell. Container anchors are registered before
+ *     children so NodeIds follow structural pre-order.
  */
 class CsvResourceDecoder : ResourceDecoder {
 
@@ -74,6 +75,16 @@ class CsvResourceDecoder : ResourceDecoder {
                 ),
             )
         }
+        val seenHeaders = mutableSetOf<String>()
+        val duplicateHeaderIndex = header.indexOfFirst { !seenHeaders.add(it) }
+        if (duplicateHeaderIndex >= 0) {
+            return DecodeResult.Refused(
+                DecodeRefusal(
+                    DecodeRefusalCode.DUPLICATE_KEY,
+                    anchor = SourceAnchor.Cell(row = 1L, column = (duplicateHeaderIndex + 1).toLong()),
+                ),
+            )
+        }
 
         // INFER_WITH_SAMPLE(N): sample the first N data rows and freeze
         // each column's kind. If any later row violates the kind, refuse
@@ -90,12 +101,11 @@ class CsvResourceDecoder : ResourceDecoder {
         return when (options.csvMode) {
             CsvMode.WHOLE_DOCUMENT -> {
                 val sourceMap = mutableMapOf<NodeId, SourceAnchor>()
+                sourceMap[NodeId(0L)] = SourceAnchor.Logical("csv://document/rows")
                 val elements = dataRows.mapIndexed { idx, row ->
                     rowToMapping(header, row, rowNumber = idx + 2, sourceMap)
                 }
                 val seq = ValueNode.SequenceValue(elements)
-                val rootId = NodeId(sourceMap.size.toLong())
-                sourceMap[rootId] = SourceAnchor.Logical("csv://document/rows")
                 val doc = ResourceDocument(
                     id = ResourceId("csv://document"),
                     format = ResourceFormat.CSV,
@@ -109,11 +119,6 @@ class CsvResourceDecoder : ResourceDecoder {
                 val documents = dataRows.mapIndexed { idx, row ->
                     val sourceMap = mutableMapOf<NodeId, SourceAnchor>()
                     val root = rowToMapping(header, row, rowNumber = idx + 2, sourceMap)
-                    val rootId = NodeId(sourceMap.size.toLong())
-                    sourceMap[rootId] = SourceAnchor.Cell(
-                        row = (idx + 2).toLong(),
-                        column = 1L,
-                    )
                     ResourceDocument(
                         id = ResourceId("csv://row-${idx + 2}"),
                         format = ResourceFormat.CSV,
@@ -147,6 +152,8 @@ class CsvResourceDecoder : ResourceDecoder {
         schema: Map<String, ColumnKind>? = null,
     ): ValueNode.MappingValue {
         val entries = linkedMapOf<String, ValueNode>()
+        val mappingId = NodeId(sourceMap.size.toLong())
+        sourceMap[mappingId] = SourceAnchor.Cell(row = rowNumber.toLong(), column = 1L)
         header.forEachIndexed { idx, col ->
             val raw = row.getOrNull(idx) ?: ""
             val node: ValueNode = if (schema != null) {

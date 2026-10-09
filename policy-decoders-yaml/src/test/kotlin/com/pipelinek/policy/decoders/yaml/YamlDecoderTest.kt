@@ -132,35 +132,40 @@ class YamlDecoderTest {
 
         val anchor = doc.anchorFor(team)
         assertTrue(
-            anchor is SourceAnchor.TextSpan && anchor.startLine == 3L,
-            "team scalar must anchor at line 3, got $anchor",
+            anchor == SourceAnchor.TextSpan(3L, 9L, 3L, 14L),
+            "team scalar must cover its exact token at line 3 column 9, got $anchor",
         )
     }
 
     @Test
-    fun `nested scalar on line 2 column 5 carries its real span`() {
-        val yaml = "spec:\n  replicas: 3\n".toByteArray()
+    fun `nested scalar on line 2 column 13 carries its complete span`() {
+        val yaml = "spec:\n  replicas: 3".toByteArray()
         val doc = (decoder.decode(yaml) as DecodeResult.Ok).documents.single()
         val spec = (doc.root as ValueNode.MappingValue).entries.getValue("spec") as ValueNode.MappingValue
         val replicas = spec.entries.getValue("replicas") as ValueNode.NumberValue
 
         val anchor = doc.anchorFor(replicas)
+        assertEquals(3, doc.sourceMap.entries.size, "root mapping, nested mapping, and scalar each need a NodeId")
+        assertEquals(setOf(NodeId(0L), NodeId(1L), NodeId(2L)), doc.sourceMap.entries.keys)
+        assertEquals(SourceAnchor.TextSpan(1L, 1L, 2L, 14L), doc.sourceMap.of(NodeId(0L)), "root mapping span")
+        assertEquals(SourceAnchor.TextSpan(2L, 3L, 2L, 14L), doc.sourceMap.of(NodeId(1L)), "nested mapping span")
         assertTrue(
-            anchor is SourceAnchor.TextSpan && anchor.startLine == 2L && anchor.startColumn >= 1L,
-            "replicas scalar must anchor at line 2, got $anchor",
+            anchor == SourceAnchor.TextSpan(2L, 13L, 2L, 14L),
+            "replicas scalar must cover its exact token at line 2 column 13, got $anchor",
         )
     }
 
     @Test
     fun `sequence elements carry distinct per-element spans`() {
-        val yaml = "items:\n  - a\n  - b\n".toByteArray()
+        val yaml = "items:\n  - a\n  - b".toByteArray()
         val doc = (decoder.decode(yaml) as DecodeResult.Ok).documents.single()
         val items = (doc.root as ValueNode.MappingValue).entries.getValue("items") as ValueNode.SequenceValue
 
+        assertEquals(SourceAnchor.TextSpan(2L, 3L, 3L, 6L), doc.anchorFor(items), "sequence span")
         val aAnchor = doc.anchorFor(items.elements[0])
         val bAnchor = doc.anchorFor(items.elements[1])
-        assertTrue(aAnchor is SourceAnchor.TextSpan && aAnchor.startLine == 2L, "a at line 2, got $aAnchor")
-        assertTrue(bAnchor is SourceAnchor.TextSpan && bAnchor.startLine == 3L, "b at line 3, got $bAnchor")
+        assertEquals(SourceAnchor.TextSpan(2L, 5L, 2L, 6L), aAnchor, "a token span")
+        assertEquals(SourceAnchor.TextSpan(3L, 5L, 3L, 6L), bAnchor, "b token span")
     }
 
     @Test
@@ -172,8 +177,8 @@ class YamlDecoderTest {
         val a = (second.root as ValueNode.MappingValue).entries.getValue("a")
         val anchor = second.anchorFor(a)
         assertTrue(
-            anchor is SourceAnchor.TextSpan && anchor.startLine >= 4L,
-            "doc-2 scalar must anchor at the physical line 4+ of the stream, got $anchor",
+            anchor == SourceAnchor.TextSpan(4L, 4L, 4L, 5L),
+            "doc-2 scalar must preserve its exact physical token span, got $anchor",
         )
     }
 

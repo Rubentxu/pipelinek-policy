@@ -4,6 +4,7 @@ import com.pipelinek.policy.decoder.CsvMode
 import com.pipelinek.policy.decoder.DecodeOptions
 import com.pipelinek.policy.decoder.DecodeRefusalCode
 import com.pipelinek.policy.decoder.DecodeResult
+import com.pipelinek.policy.decoder.NodeId
 import com.pipelinek.policy.decoder.SourceAnchor
 import com.pipelinek.policy.kernel.path.DocumentPath
 import com.pipelinek.policy.kernel.selector.Selector
@@ -103,9 +104,49 @@ class CsvDecoderTest {
     }
 
     @Test
+    fun `duplicate headers refuse instead of overwriting a cell and its source identity`() {
+        val result = decoder.decode("name,name\nalice,bob\n".toByteArray())
+
+        assertTrue(result is DecodeResult.Refused, "duplicate column keys lose a materialized node: $result")
+        assertEquals(DecodeRefusalCode.DUPLICATE_KEY, (result as DecodeResult.Refused).refusal.code)
+    }
+
+    @Test
     fun `empty bytes yields MALFORMED`() {
         val result = decoder.decode(ByteArray(0))
         assertTrue(result is DecodeResult.Refused)
         assertEquals(DecodeRefusalCode.MALFORMED, (result as DecodeResult.Refused).refusal.code)
+    }
+
+    @Test
+    fun `whole document source map follows every node in structural preorder`() {
+        val result = decoder.decode("name,count\nalice,1\nbob,2\n".toByteArray())
+        val doc = (result as DecodeResult.Ok).documents.single()
+
+        assertEquals(7, doc.sourceMap.entries.size, "sequence + 2 row mappings + 4 cell values")
+        assertEquals(SourceAnchor.Logical("csv://document/rows"), doc.sourceMap.of(NodeId(0)))
+        assertEquals(SourceAnchor.Cell(2L, 1L), doc.sourceMap.of(NodeId(1)))
+        assertEquals(SourceAnchor.Cell(2L, 1L), doc.sourceMap.of(NodeId(2)))
+        assertEquals(SourceAnchor.Cell(2L, 2L), doc.sourceMap.of(NodeId(3)))
+        assertEquals(SourceAnchor.Cell(3L, 1L), doc.sourceMap.of(NodeId(4)))
+        assertEquals(SourceAnchor.Cell(3L, 1L), doc.sourceMap.of(NodeId(5)))
+        assertEquals(SourceAnchor.Cell(3L, 2L), doc.sourceMap.of(NodeId(6)))
+    }
+
+    @Test
+    fun `each row source map assigns container before cell values`() {
+        val docs = (decoder.decode(
+            "name,count\nalice,1\nbob,2\n".toByteArray(),
+            DecodeOptions(csvMode = CsvMode.EACH_ROW),
+        ) as DecodeResult.Ok).documents
+
+        assertEquals(2, docs.size)
+        assertEquals(3, docs[0].sourceMap.entries.size, "mapping + 2 cells")
+        assertEquals(SourceAnchor.Cell(2L, 1L), docs[0].sourceMap.of(NodeId(0)))
+        assertEquals(SourceAnchor.Cell(2L, 1L), docs[0].sourceMap.of(NodeId(1)))
+        assertEquals(SourceAnchor.Cell(2L, 2L), docs[0].sourceMap.of(NodeId(2)))
+        assertEquals(SourceAnchor.Cell(3L, 1L), docs[1].sourceMap.of(NodeId(0)))
+        assertEquals(SourceAnchor.Cell(3L, 1L), docs[1].sourceMap.of(NodeId(1)))
+        assertEquals(SourceAnchor.Cell(3L, 2L), docs[1].sourceMap.of(NodeId(2)))
     }
 }

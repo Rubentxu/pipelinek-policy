@@ -17,7 +17,10 @@ value class NodeId(val value: Long)
  * display but NEVER in `canonicalDigest` (mutation gate item 4).
  */
 sealed interface SourceAnchor {
-    /** Text/byte span in a streaming source (JSON / YAML). 1-indexed line/column. */
+    /**
+     * Text/byte range in a streaming source (JSON / YAML).
+     * Coordinates are 1-indexed and the end is exclusive.
+     */
     data class TextSpan(
         val startLine: Long,
         val startColumn: Long,

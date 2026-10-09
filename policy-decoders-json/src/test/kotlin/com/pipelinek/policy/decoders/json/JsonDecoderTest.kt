@@ -2,6 +2,7 @@ package com.pipelinek.policy.decoders.json
 
 import com.pipelinek.policy.decoder.DecodeRefusalCode
 import com.pipelinek.policy.decoder.DecodeResult
+import com.pipelinek.policy.decoder.NodeId
 import com.pipelinek.policy.decoder.SourceAnchor
 import com.pipelinek.policy.kernel.value.ValueNode
 import org.junit.jupiter.api.Test
@@ -82,6 +83,56 @@ class JsonDecoderTest {
             .first()
         assertEquals(1L, rootAnchor.startLine, "root span MUST start at line 1")
         assertEquals(1L, rootAnchor.startColumn, "root span MUST start at column 1")
+    }
+
+    @Test
+    fun `every JSON node has a source span covering its complete token`() {
+        val json = " " + """
+            {
+              "text": "alpha",
+              "items": [true, null, {"whole": 7, "decimal": 2.5}]
+            }
+        """.trimIndent()
+        val doc = (decoder.decode(json.toByteArray()) as DecodeResult.Ok).documents.single()
+
+        assertEquals(8, doc.sourceMap.entries.size, "root, sequence, nested object, and five scalar nodes")
+        val rootStart = json.indexOf('{')
+        val textStart = json.indexOf("\"alpha\"")
+        val arrayStart = json.indexOf('[')
+        val trueStart = json.indexOf("true")
+        val nullStart = json.indexOf("null")
+        val nestedStart = json.indexOf('{', arrayStart)
+        val wholeStart = json.indexOf("7", nestedStart)
+        val decimalStart = json.indexOf("2.5", nestedStart)
+        val tokensByNodeId = mapOf(
+            NodeId(0L) to (rootStart to (json.lastIndexOf('}') + 1)),
+            NodeId(1L) to (textStart to (textStart + "\"alpha\"".length)),
+            NodeId(2L) to (arrayStart to (json.indexOf(']', arrayStart) + 1)),
+            NodeId(3L) to (trueStart to (trueStart + "true".length)),
+            NodeId(4L) to (nullStart to (nullStart + "null".length)),
+            NodeId(5L) to (nestedStart to (json.indexOf('}', nestedStart) + 1)),
+            NodeId(6L) to (wholeStart to (wholeStart + 1)),
+            NodeId(7L) to (decimalStart to (decimalStart + "2.5".length)),
+        )
+        fun coordinate(offset: Int): Pair<Long, Long> {
+            val prefix = json.substring(0, offset)
+            val lastLineBreak = prefix.lastIndexOf('\n')
+            return (prefix.count { it == '\n' }.toLong() + 1L) to
+                (prefix.length - lastLineBreak).toLong()
+        }
+
+        tokensByNodeId.forEach { (nodeId, offsets) ->
+            val (startOffset, endOffset) = offsets
+            assertTrue(startOffset >= 0 && endOffset > startOffset, "fixture token missing for $nodeId")
+            val (expectedStartLine, expectedStartColumn) = coordinate(startOffset)
+            val (expectedEndLine, expectedEndColumn) = coordinate(endOffset)
+            val anchor = doc.sourceMap.of(nodeId) as? SourceAnchor.TextSpan
+            assertTrue(anchor != null, "node $nodeId must have a TextSpan, got ${doc.sourceMap.of(nodeId)}")
+            assertEquals(expectedStartLine, anchor.startLine, "start line at NodeId $nodeId")
+            assertEquals(expectedStartColumn, anchor.startColumn, "start column at NodeId $nodeId")
+            assertEquals(expectedEndLine, anchor.endLine, "end line at NodeId $nodeId")
+            assertEquals(expectedEndColumn, anchor.endColumn, "end column at NodeId $nodeId")
+        }
     }
 
     @Test
