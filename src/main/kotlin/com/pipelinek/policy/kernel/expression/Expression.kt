@@ -96,6 +96,16 @@ sealed interface Expression {
         BOOLEAN_EQUALS,
     }
 
+    /**
+     * M8 addition (additive-only, like the M3 shapes): a reference to a
+     * NAMED DATASET. Inside a bounded `CollectionPredicate` it means
+     * AGGREGATE (single pass, capped); free-floating it means GLOBAL
+     * (law 12: only legal with an explicit index plan).
+     */
+    data class DatasetRef(val name: String) : Expression {
+        override val displayName: String get() = "DatasetRef($name)"
+    }
+
     /** Collection predicate ops. The verdict shape per op is fixed. */
     enum class CollectionOp {
         ALL,

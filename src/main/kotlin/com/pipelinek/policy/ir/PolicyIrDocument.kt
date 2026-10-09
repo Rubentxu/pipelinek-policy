@@ -66,6 +66,7 @@ object PolicyIrLowerer {
             is Expression.FieldRef -> Unit
             is Expression.Comparison -> { validateExpression(expression.left); validateExpression(expression.right) }
             is Expression.Reference -> require(expression.name.isNotBlank()) { "empty parameter reference" }
+            is Expression.DatasetRef -> require(expression.name.isNotBlank()) { "empty dataset reference" }
             is Expression.CollectionPredicate -> validateExpression(expression.source)
         }
     }

@@ -142,6 +142,7 @@ private object CanonicalPolicyJsonWriter {
         is Expression.FieldRef -> "{\"op\":\"fieldRef\",\"path\":${quote(e.path.toString())}" +
             ",\"type\":${quote(e.expectedType.name)}}"
         is Expression.Reference -> "{\"op\":\"reference\",\"name\":${quote(e.name)}}"
+        is Expression.DatasetRef -> "{\"op\":\"datasetRef\",\"name\":${quote(e.name)}}"
         is Expression.Comparison -> "{\"op\":\"comparison\",\"operator\":${quote(e.op.name)}" +
             ",\"left\":${expression(e.left)},\"right\":${expression(e.right)}}"
         is Expression.CollectionPredicate -> "{\"op\":\"collection\",\"kind\":${quote(e.op.name)}" +

@@ -64,6 +64,7 @@ class CombinatorsTest {
                 is Expression.Reference -> references += e
                 is Literal -> {}
                 is FieldRef -> {}
+                is Expression.DatasetRef -> {}
                 is Comparison -> { walk(e.left); walk(e.right) }
                 is Expression.CollectionPredicate -> walk(e.source)
             }

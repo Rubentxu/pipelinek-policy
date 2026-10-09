@@ -228,6 +228,11 @@ object Evaluator {
             compare(leftVal, expression.op, rightVal, expression)
         }
         is CollectionPredicate -> evalCollectionPredicate(expression, tree)
+        is Expression.DatasetRef ->
+            error(
+                "Expression.DatasetRef(${expression.name}) reached the per-row kernel — " +
+                    "dataset expressions are evaluated by StreamingEvaluator with a DatasetPlan",
+            )
         is Expression.Reference ->
             error(
                 "Expression.Reference reached the kernel — DSL ParamSubstitutor " +
@@ -268,6 +273,11 @@ object Evaluator {
         }
         is Comparison -> error("comparison is not a leaf value")
         is CollectionPredicate -> error("collection predicate is not a leaf value")
+        is Expression.DatasetRef ->
+            error(
+                "Expression.DatasetRef(${expression.name}) reached the per-row kernel — " +
+                    "dataset expressions are evaluated by StreamingEvaluator with a DatasetPlan",
+            )
         is Expression.Reference ->
             error(
                 "Expression.Reference reached the kernel — DSL ParamSubstitutor " +
@@ -524,6 +534,7 @@ object Evaluator {
         is FieldRef -> expression.path
         is Comparison -> locationOf(expression.left)
         is CollectionPredicate -> locationOf(expression.source)
+        is Expression.DatasetRef -> DocumentPath.ROOT
         is Expression.Reference -> DocumentPath.ROOT
     }
 

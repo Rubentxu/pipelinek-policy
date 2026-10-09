@@ -149,6 +149,7 @@ class ParityTest {
         when (expr) {
             is Literal -> seen += expr::class.java
             is FieldRef -> seen += expr::class.java
+            is Expression.DatasetRef -> seen += expr::class.java
             is Comparison -> {
                 seen += expr::class.java
                 walkExpression(expr.left, seen)

@@ -181,6 +181,7 @@ object ParamSubstitutor {
     private fun walk(expr: Expression, params: Map<String, DslParamValue>): Expression = when (expr) {
         is Expression.Literal -> expr
         is Expression.FieldRef -> expr
+        is Expression.DatasetRef -> expr
         is Expression.Reference -> {
             val p = params[expr.name]
             if (p != null) {
