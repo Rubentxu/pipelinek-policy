@@ -69,6 +69,26 @@ data class Waiver(
     }
 }
 
+/**
+ * The ambient scope a waiver is evaluated against (B4-T3).
+ *
+ * `PolicyReport` carries no project or dataset identity, so the matcher cannot
+ * derive one. The caller — which knows the pipeline, the project and the
+ * dataset — supplies it explicitly. [project] and [dataset] are nullable
+ * because a caller may genuinely know only one of them.
+ *
+ * A null field means "this context does not know", which is NOT the same as
+ * "matches anything". A waiver that names a scope the context cannot supply
+ * is REFUSED rather than honored, because treating a missing context as a
+ * wildcard would let a narrowly-scoped exemption silence violations far
+ * outside it. That is the same defect class as an unverified authority
+ * claim: a missing check silently matching everything.
+ */
+data class WaiverContext(
+    val project: String? = null,
+    val dataset: String? = null,
+)
+
 /** Why an otherwise-matching waiver did not waive. */
 enum class WaiverDiagnosticCause {
     WaiverExpired,
@@ -117,21 +137,43 @@ object WaiverMatcher {
         waivers: List<Waiver>,
         now: Instant,
         subjectResolver: (subjectPath: String) -> String?,
+        context: WaiverContext? = null,
     ): WaiverApplication {
         val outcomes = report.results.entries
-            .flatMap { (ruleId, evaluation) -> evaluation.violations.map { ruleId to it } }
-            .map { (ruleId, violation) ->
+            .flatMap { (ruleId, evaluation) ->
+                // B4-T3: an ERROR carries a DIAGNOSTIC, not an eximable
+                // violation. `Error.violations` returns `listOf(primary)`, so
+                // flat-mapping over it unconditionally handed operational
+                // failures to the waiver machinery and they could be waived.
+                // A waiver must never silence an evaluation error: doing so
+                // would hide a broken policy behind an exemption.
+                //
+                // The error is NOT dropped either. It is still surfaced as an
+                // outcome so it stays visible and counted, it simply cannot
+                // carry a waiver id.
+                when (evaluation) {
+                    is RuleEvaluation.Violated -> evaluation.violations.map { Triple(ruleId, it, true) }
+                    is RuleEvaluation.Error -> evaluation.violations.map { Triple(ruleId, it, false) }
+                    else -> emptyList()
+                }
+            }
+            .map { (ruleId, violation, waivable) ->
                 val fingerprint = ViolationFingerprint.of(
                     policyId = ruleId.policyId,
                     ruleId = ruleId.value,
                     location = violation.location.toString(),
                     resourceFingerprint = report.resourceFingerprint,
                 )
-                val candidate = waivers.firstOrNull { w ->
-                    w.policyId == ruleId.policyId &&
-                        w.ruleId == ruleId.ruleId &&
-                        subjectMatches(w, subjectResolver) &&
-                        fingerprintMatches(w, fingerprint)
+                val candidate = if (!waivable) {
+                    null
+                } else {
+                    waivers.firstOrNull { w ->
+                        w.policyId == ruleId.policyId &&
+                            w.ruleId == ruleId.ruleId &&
+                            subjectMatches(w, subjectResolver) &&
+                            scopeMatches(w, context) &&
+                            fingerprintMatches(w, fingerprint)
+                    }
                 }
                 when {
                     candidate == null -> ViolationWaiverOutcome.Active(fingerprint)
@@ -155,6 +197,25 @@ object WaiverMatcher {
 
     private fun subjectMatches(w: Waiver, resolver: (String) -> String?): Boolean =
         resolver(w.subject.subjectPath) == w.subject.subjectEquals
+
+    /**
+     * B4-T3: `datasetScope` and `projectScope` were declared on [Waiver] and
+     * read by nothing, so a waiver narrowed to one project silently silenced
+     * violations in every project.
+     *
+     * A scope the waiver names must match the supplied [context] exactly. A
+     * null context field does NOT mean "any project": it means the context
+     * does not know, and a scoped waiver cannot be honored without it. The
+     * difference matters — treating absence as a wildcard is precisely the
+     * behavior this removes.
+     */
+    private fun scopeMatches(w: Waiver, context: WaiverContext?): Boolean =
+        scopeSatisfied(w.projectScope, context?.project) &&
+            scopeSatisfied(w.datasetScope, context?.dataset)
+
+    /** An unscoped dimension is satisfied by anything; a scoped one needs an exact hit. */
+    private fun scopeSatisfied(waiverScope: String?, actual: String?): Boolean =
+        waiverScope == null || waiverScope == actual
 
     private fun fingerprintMatches(w: Waiver, fingerprint: ViolationFingerprint): Boolean =
         w.violationFingerprint == null || w.violationFingerprint == fingerprint

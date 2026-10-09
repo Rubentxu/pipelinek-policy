@@ -160,4 +160,156 @@ class WaiversTest {
         // Waived — 03b pins that. Here we additionally pin the fingerprint
         // equality path: a pinned waiver for another resource never waives.
     }
+
+    // --- B4-T3: waiver scoping ---
+
+    /** A report carrying an evaluation ERROR rather than a violation. */
+    private fun errorReportFor(): PolicyReport {
+        val tree = ValueNode.MappingValue(
+            mapOf("metadata" to ValueNode.MappingValue(mapOf("team" to ValueNode.NumberValue(7)))),
+        )
+        val report = Evaluator.evaluate(PolicySet("p1", listOf(Policy("p1", listOf(rule)))), tree)
+        check(report.results.values.any { it is RuleEvaluation.Error }) { "fixture must produce an Error" }
+        return report
+    }
+
+    /**
+     * B4-T3 constraint 1: an evaluation ERROR is a DIAGNOSTIC, never an
+     * eximable violation.
+     *
+     * `RuleEvaluation.Error.violations` returns `listOf(primary)` — a
+     * diagnostic describing WHY evaluation failed. The matcher flat-mapped
+     * over `evaluation.violations` for every evaluation, so an Error was
+     * handed to the waiver machinery as if it were a violation and could be
+     * waived. Waiving an error would hide an operational failure behind an
+     * exemption and let a broken policy read as a sanctioned one.
+     */
+    @Test
+    fun `03g an evaluation error is never waived`() {
+        val report = errorReportFor()
+        val waiver = waiverFor("payments")
+
+        val app = WaiverMatcher.apply(report, listOf(waiver), now, resolver)
+
+        assertEquals(0, app.waivedCount, "an evaluation ERROR must not be eximable")
+        // The error still appears, still counted, and carries no waiver id:
+        // it is surfaced, not silently dropped and not waived.
+        val outcome = app.outcomes.single()
+        assertIs<ViolationWaiverOutcome.Active>(outcome)
+        assertEquals(1, app.activeCount)
+    }
+
+    /**
+     * B4-T3 constraint 2, as a regression guard on the existing scenarios:
+     * an expired waiver keeps the violation ACTIVE and adds a diagnostic.
+     * 03b/03c already assert this; the explicit contract here is that no
+     * waiver state may ever convert an expired waiver into a Waived outcome.
+     */
+    @Test
+    fun `03h an expired waiver never yields a Waived outcome`() {
+        val report = reportFor("payments")
+        val expired = waiverFor(
+            "payments",
+            notBefore = now.minusSeconds(7200),
+            notAfter = now.minusSeconds(3600),
+        )
+
+        val app = WaiverMatcher.apply(report, listOf(expired), now, resolver)
+
+        assertTrue(app.outcomes.none { it is ViolationWaiverOutcome.Waived })
+        val diag = assertIs<ViolationWaiverOutcome.ActiveWithDiagnostic>(app.outcomes.single())
+        assertEquals(WaiverDiagnosticCause.WaiverExpired, diag.cause)
+    }
+
+    /**
+     * B4-T3 constraint 3: a project-scoped waiver needs project CONTEXT to
+     * match. With no context available the honest answer is to refuse the
+     * scoped match — a missing context that matched everything would let a
+     * narrowly-scoped waiver silence a violation far outside its project.
+     */
+    @Test
+    fun `03i a project-scoped waiver does not match when no project context is supplied`() {
+        val report = reportFor("payments")
+        val scoped = waiverFor("payments").copy(projectScope = "payments-project")
+
+        val app = WaiverMatcher.apply(report, listOf(scoped), now, resolver, context = null)
+
+        assertEquals(0, app.waivedCount, "a scoped waiver must not waive without its context")
+        assertIs<ViolationWaiverOutcome.Active>(app.outcomes.single())
+    }
+
+    /** The mirror case: with matching context the same waiver DOES waive. */
+    @Test
+    fun `03j a project-scoped waiver matches when the project context matches`() {
+        val report = reportFor("payments")
+        val scoped = waiverFor("payments").copy(projectScope = "payments-project")
+
+        val app = WaiverMatcher.apply(
+            report,
+            listOf(scoped),
+            now,
+            resolver,
+            context = WaiverContext(project = "payments-project"),
+        )
+
+        assertEquals(1, app.waivedCount)
+        assertIs<ViolationWaiverOutcome.Waived>(app.outcomes.single())
+    }
+
+    /** A project-scoped waiver must not waive inside a DIFFERENT project. */
+    @Test
+    fun `03k a project-scoped waiver does not leak across projects`() {
+        val report = reportFor("payments")
+        val scoped = waiverFor("payments").copy(projectScope = "payments-project")
+
+        val app = WaiverMatcher.apply(
+            report,
+            listOf(scoped),
+            now,
+            resolver,
+            context = WaiverContext(project = "some-other-project"),
+        )
+
+        assertEquals(0, app.waivedCount, "a waiver must not leak outside its project")
+        assertIs<ViolationWaiverOutcome.Active>(app.outcomes.single())
+    }
+
+    /** A dataset-scoped waiver needs dataset context for the same reason. */
+    @Test
+    fun `03l a dataset-scoped waiver does not match without dataset context`() {
+        val report = reportFor("payments")
+        val scoped = waiverFor("payments").copy(datasetScope = "payments-rows")
+
+        val app = WaiverMatcher.apply(report, listOf(scoped), now, resolver, context = null)
+
+        assertEquals(0, app.waivedCount)
+        assertIs<ViolationWaiverOutcome.Active>(app.outcomes.single())
+    }
+
+    /** With matching dataset context the scoped waiver applies. */
+    @Test
+    fun `03m a dataset-scoped waiver matches when the dataset context matches`() {
+        val report = reportFor("payments")
+        val scoped = waiverFor("payments").copy(datasetScope = "payments-rows")
+
+        val app = WaiverMatcher.apply(
+            report,
+            listOf(scoped),
+            now,
+            resolver,
+            context = WaiverContext(dataset = "payments-rows"),
+        )
+
+        assertEquals(1, app.waivedCount)
+    }
+
+    /** An UNSCOPED waiver must still work with no context at all. */
+    @Test
+    fun `03n an unscoped waiver is unaffected by absent context`() {
+        val report = reportFor("payments")
+
+        val app = WaiverMatcher.apply(report, listOf(waiverFor("payments")), now, resolver, context = null)
+
+        assertEquals(1, app.waivedCount, "an unscoped waiver must not require context it never asked for")
+    }
 }
