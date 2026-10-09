@@ -271,12 +271,12 @@ materialized into JVM bytecode at evaluation time (architectural law 4).
 | `PolicySetBuilder.policy(id, block)` | one policy in the set | `PolicyBuilder` |
 | `PolicyBuilder.rule(id, block)` | one rule in the policy | `RuleBuilder` |
 | `BuilderCtx.root()` | start a path | `PathExpr` rooted at `DocumentPath.ROOT` |
-| `PathExpr.field(name)` / `optionalField(name)` | descend into a key | `PathExpr` with segment `Key(name)` |
+| `PathExpr.field(name)` / `optionalField(name)` | descend into a required/optional key | `FieldRef` preserves the optional flag |
 | `PathExpr.asNumber() / asText() / asBoolean()` | leaf narrowing | `TypedExpr` |
 | `TypedExpr.eq(v) / neq(v) / gt(v) / gte(v) / lt(v) / lte(v)` | numeric comparisons | `Comparison(NUMBER, op, Literal(NumberValue))` |
 | `TypedExpr.eqText(v) / eqBool(v)` | text/boolean comparisons | `Comparison(TEXT/BOOLEAN, op, Literal)` |
 | `number(v) / text(v) / boolean(v)` | literal builders | `Literal(ValueNode.*)` |
-| `RuleBuilder.require { expr }` / `forbid { expr }` | assertion combinator | `Rule(expression, ...)` (forbid lowers to `eq(BooleanLiteral(false))` semantics) |
+| `RuleBuilder.require { expr }` / `forbid { expr }` | assertion combinator | `Rule(expression, ...)` (forbid lowers to explicit negation/operator inversion) |
 | `RuleBuilder.appliesWhen { expr }` | gate; falsy/Missing ⇒ `NotApplicable` | `Rule(appliesWhen = expr, ...)` |
 | `RuleBuilder.params { ... }` / `.code(...)` / `.expected(...)` / `.actual(...)` | metadata | `Rule(params, code, expected, actual)` |
 

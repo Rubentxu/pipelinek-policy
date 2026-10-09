@@ -47,6 +47,11 @@ Debe conservar:
 
 Una optional path ausente normalmente produce `NotApplicable`, si la expression no pidió explícitamente `missing()`.
 
+La misma distinción se conserva en la expresión principal: un `FieldRef`
+marcado optional cuya ruta está ausente produce `NotApplicable`; un `FieldRef`
+required ausente produce `Violation(MISSING_REQUIRED_VALUE)`. `Null` es un
+valor presente y no se trata como ausencia.
+
 ### En `require`
 
 Una field necesaria ausente produce violation o evaluation error según operador.

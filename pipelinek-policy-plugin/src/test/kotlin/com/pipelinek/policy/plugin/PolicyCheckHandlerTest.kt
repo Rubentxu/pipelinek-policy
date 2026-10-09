@@ -88,7 +88,7 @@ class PolicyCheckHandlerTest {
         assertEquals(0, out.violationsCount)
         assertTrue(out.reportDigest!!.length == 64)
         assertEquals("test-set", out.policySetId)
-        assertEquals(listOf(RuleSummary("replicas-limit", "passed")), out.ruleSummaries)
+        assertEquals(listOf(RuleSummary("replicas-limit", "passed", "p1")), out.ruleSummaries)
         assertEquals(StepOutcome.Success, out.outcome)
     }
 
@@ -115,8 +115,8 @@ class PolicyCheckHandlerTest {
         assertEquals(1, out.violationsCount)
         assertEquals(
             listOf(
-                RuleSummary("never-applies", "not-applicable"),
-                RuleSummary("replicas-limit", "violated"),
+                RuleSummary("never-applies", "not-applicable", "p1"),
+                RuleSummary("replicas-limit", "violated", "p1"),
             ),
             out.ruleSummaries,
         )

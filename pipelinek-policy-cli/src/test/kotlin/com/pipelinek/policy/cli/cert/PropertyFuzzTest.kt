@@ -88,7 +88,7 @@ class PropertyFuzzTest {
             // Total: a report exists, with the same rule ids, no exception.
             assertEquals(
                 listOf("metadata-team-text", "spec-replicas-gte"),
-                report.results.keys.map { k -> k.value }.sorted(),
+                report.results.keys.map { k -> k.ruleId }.sorted(),
             )
             // Consume the RNG symmetrically with the generator (determinism).
             r.nextInt(4)

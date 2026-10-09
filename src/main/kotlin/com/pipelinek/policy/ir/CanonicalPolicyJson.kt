@@ -66,7 +66,9 @@ object CanonicalPolicyJson : PolicyIrCodec {
         "fieldRef" -> Expression.FieldRef(
             path(o.req("path").asString()),
             ValueNode.Type.valueOf(o.req("type").asString()),
+            o["optional"]?.asBoolean() ?: false,
         )
+        "not" -> Expression.Not(decodeExpression(o.req("body").asObject()))
         "reference" -> Expression.Reference(o.req("name").asString())
         "comparison" -> Expression.Comparison(
             decodeExpression(o.req("left").asObject()),
@@ -140,9 +142,10 @@ private object CanonicalPolicyJsonWriter {
     private fun expression(e: Expression): String = when (e) {
         is Expression.Literal -> "{\"op\":\"literal\",\"value\":${value(e.value)}}"
         is Expression.FieldRef -> "{\"op\":\"fieldRef\",\"path\":${quote(e.path.toString())}" +
-            ",\"type\":${quote(e.expectedType.name)}}"
+            ",\"type\":${quote(e.expectedType.name)},\"optional\":${e.optional}}"
         is Expression.Reference -> "{\"op\":\"reference\",\"name\":${quote(e.name)}}"
         is Expression.DatasetRef -> "{\"op\":\"datasetRef\",\"name\":${quote(e.name)}}"
+        is Expression.Not -> "{\"op\":\"not\",\"body\":${expression(e.body)}}"
         is Expression.Comparison -> "{\"op\":\"comparison\",\"operator\":${quote(e.op.name)}" +
             ",\"left\":${expression(e.left)},\"right\":${expression(e.right)}}"
         is Expression.CollectionPredicate -> "{\"op\":\"collection\",\"kind\":${quote(e.op.name)}" +

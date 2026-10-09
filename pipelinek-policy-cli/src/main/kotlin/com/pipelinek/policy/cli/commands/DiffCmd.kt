@@ -63,7 +63,9 @@ object DiffCmd {
 
     internal fun diffJson(diff: PolicyDiff): String {
         val entries = diff.entries.joinToString(",\n") { e ->
-            "  {\"category\": \"${e.category.name}\", \"ruleId\": \"${e.ruleId}\", " +
+            "  {\"category\": \"${e.category.name}\", \"policySetId\": \"${e.policySetId}\", " +
+                "\"policyId\": \"${e.policyId}\", " +
+                "\"ruleId\": \"${e.ruleId}\", " +
                 "\"fingerprint\": \"${e.fingerprint}\", \"privilegeExpansion\": ${e.privilegeExpansion}}"
         }
         return "{\n  \"summary\": {\"entries\": ${diff.entries.size}},\n" +

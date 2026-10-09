@@ -10,6 +10,8 @@ import com.pipelinek.policy.kernel.expression.Expression.Operator
 import com.pipelinek.policy.kernel.path.DocumentPath
 import com.pipelinek.policy.kernel.policy.PolicySet
 import com.pipelinek.policy.kernel.policy.PolicyViolation
+import java.math.BigDecimal
+import java.math.BigInteger
 import com.pipelinek.policy.kernel.policy.Rule
 import com.pipelinek.policy.kernel.policy.RuleEvaluation
 import com.pipelinek.policy.kernel.policy.ViolationCode
@@ -47,9 +49,9 @@ import com.pipelinek.policy.kernel.value.ValueNode
 object Evaluator {
 
     fun evaluate(set: PolicySet, tree: ValueNode): PolicyReport {
-        val results: Map<RuleId, RuleEvaluation> = set.policies
+        val results: Map<RuleKey, RuleEvaluation> = set.policies
             .flatMap { policy -> policy.rules.map { it to policy.id } }
-            .associate { (rule, _) -> RuleId(rule.id) to evaluateRule(rule, tree) }
+            .associate { (rule, policyId) -> RuleKey.of(set.id, policyId, rule.id) to evaluateRule(rule, tree) }
         return PolicyReport(
             policySetId = set.id,
             resourceFingerprint = canonicalFingerprint(tree),
@@ -72,29 +74,10 @@ object Evaluator {
         return evaluateMainExpression(rule, tree)
     }
 
-    @Suppress("ReturnCount", "LongMethod", "ComplexMethod", "TooGenericExceptionCaught")
+    @Suppress("ReturnCount", "LongMethod", "ComplexMethod", "TooGenericExceptionCaught", "SwallowedException")
     private fun evaluateMainExpression(rule: Rule, tree: ValueNode): RuleEvaluation {
         return try {
-            val outcome: Boolean = try {
-                evalBoolean(rule.expression, tree)
-            } catch (e: CountAsLongSignal) {
-                // M3: a `CollectionPredicate(COUNT, ...)` is a Long-verdict
-                // expression; it never participates in `Passed`/`Violated`.
-                // We embed it in a numeric comparison with 0 to give the
-                // author a meaningful Pass/Fail when used as the rule's main
-                // expression (rare, but the spec leaves room for it).
-                return RuleEvaluation.Violated(
-                    listOf(
-                        PolicyViolation(
-                            code = ViolationCode.COMPARISON_FAILED,
-                            location = locationOf(rule.expression),
-                            message = rule.message,
-                            expected = "count>=1",
-                            actual = e.value.toString(),
-                        ),
-                    ),
-                )
-            }
+            val outcome: Boolean = evalBoolean(rule.expression, tree)
             if (outcome) RuleEvaluation.Passed
             else RuleEvaluation.Violated(
                 listOf(
@@ -106,6 +89,9 @@ object Evaluator {
                     ),
                 ),
             )
+        } catch (_: OptionalMissingValueException) {
+            // Optional absence is control flow here: it makes the rule NotApplicable.
+            RuleEvaluation.NotApplicable
         } catch (e: MissingValueException) {
             // Spec REQ §Policy/Rule scenario: missing required value -> Violated.
             RuleEvaluation.Violated(
@@ -158,18 +144,33 @@ object Evaluator {
         data class Refusal(val violation: PolicyViolation) : AppliesWhenOutcomeRaw
     }
 
+    @Suppress("SwallowedException") // both catches convert the failure into typed outcomes
     private fun tryAppliesWhen(expression: Expression, tree: ValueNode): AppliesWhenOutcomeRaw {
         // The Missing short-circuit into `FalseOrMissing` deliberately swallows
         // the exception — the diagnostic location is not actionable here; the
         // appliesWhen gate's job is to decide "should I evaluate?" and a
         // missing source resolves to "no".
-        @Suppress("SwallowedException")
         return try {
             AppliesWhenOutcomeRaw.BooleanResult(evalBoolean(expression, tree))
+        } catch (e: OptionalMissingValueException) {
+            AppliesWhenOutcomeRaw.Missing
         } catch (e: MissingValueException) {
             AppliesWhenOutcomeRaw.Missing
         } catch (e: PolicyEvalException) {
             AppliesWhenOutcomeRaw.Refusal(e.violation)
+        } catch (e: IllegalStateException) {
+            // B1.6: an unsubstituted Reference (or any malformed gate) is a
+            // LOUD typed refusal — never a silent NotApplicable skip.
+            // The original message is carried into the violation on purpose.
+            AppliesWhenOutcomeRaw.Refusal(
+                PolicyViolation(
+                    code = ViolationCode.TYPE_MISMATCH,
+                    location = DocumentPath.ROOT,
+                    message = "appliesWhen is not evaluable: ${e.message}",
+                    expected = "evaluable boolean expression",
+                    actual = "malformed gate",
+                ),
+            )
         }
     }
 
@@ -228,6 +229,9 @@ object Evaluator {
             compare(leftVal, expression.op, rightVal, expression)
         }
         is CollectionPredicate -> evalCollectionPredicate(expression, tree)
+        // B1.3: explicit negation — evaluate the body as a Boolean and flip.
+        // Typed refusals propagate (no silent coercion).
+        is Expression.Not -> !evalBoolean(expression.body, tree)
         is Expression.DatasetRef ->
             error(
                 "Expression.DatasetRef(${expression.name}) reached the per-row kernel — " +
@@ -243,36 +247,33 @@ object Evaluator {
     /** Recursively evaluate an expression that resolves to a leaf value. */
     private fun evalValue(expression: Expression, tree: ValueNode): ValueNode = when (expression) {
         is Literal -> expression.value
-        is FieldRef -> {
-            val sel = Selector.of(expression.path).expectingType(expression.expectedType)
-            when (val result = sel.resolve(tree)) {
-                is Selector.Result.Present -> result.node
-                is Selector.Result.Missing -> {
-                    if (sel.isRequired()) {
-                        throw MissingValueException(expression.path)
-                    } else {
-                        throw PolicyEvalException(
-                            PolicyViolation(
-                                code = ViolationCode.MISSING_REQUIRED_VALUE,
-                                location = expression.path,
-                                message = "missing optional value at ${expression.path}",
-                            ),
-                        )
-                    }
-                }
-                is Selector.Result.TypeMismatch -> throw PolicyEvalException(
+        is Expression.Not -> throw PolicyEvalException(
+            PolicyViolation(
+                code = ViolationCode.TYPE_MISMATCH,
+                location = locationOf(expression),
+                message = "boolean negation cannot be a numeric operand",
+                expected = "Number",
+                actual = "Not:Boolean",
+            ),
+        )
+        // B1.4: COUNT is a typed Long-valued expression (never a Boolean).
+        is CollectionPredicate -> {
+            if (expression.op == CollectionOp.COUNT) {
+                ValueNode.NumberValue(countOf(expression, tree))
+            } else {
+                throw PolicyEvalException(
                     PolicyViolation(
                         code = ViolationCode.TYPE_MISMATCH,
-                        location = expression.path,
-                        message = "expected ${expression.expectedType} at ${expression.path}, got ${result.actual}",
-                        expected = expression.expectedType.name,
-                        actual = result.actual.name,
+                        location = locationOf(expression),
+                        message = "${expression.op} produces a Boolean and cannot be a numeric operand",
+                        expected = "COUNT:Number",
+                        actual = "${expression.op}:Boolean",
                     ),
                 )
             }
         }
+        is FieldRef -> evalFieldRef(expression, tree)
         is Comparison -> error("comparison is not a leaf value")
-        is CollectionPredicate -> error("collection predicate is not a leaf value")
         is Expression.DatasetRef ->
             error(
                 "Expression.DatasetRef(${expression.name}) reached the per-row kernel — " +
@@ -282,8 +283,37 @@ object Evaluator {
             error(
                 "Expression.Reference reached the kernel — DSL ParamSubstitutor " +
                     "failed to substitute \${${expression.name}}",
-            )
+        )
     }
+
+    private fun evalFieldRef(expression: FieldRef, tree: ValueNode): ValueNode {
+        val baseSelector = if (expression.optional) {
+            Selector.optional(expression.path)
+        } else {
+            Selector.of(expression.path)
+        }
+        val sel = baseSelector.expectingType(expression.expectedType)
+        return when (val result = sel.resolve(tree)) {
+            is Selector.Result.Present -> result.node
+            is Selector.Result.Missing -> missingFieldValue(expression)
+            is Selector.Result.TypeMismatch -> throw PolicyEvalException(
+                PolicyViolation(
+                    code = ViolationCode.TYPE_MISMATCH,
+                    location = expression.path,
+                    message = "expected ${expression.expectedType} at ${expression.path}, got ${result.actual}",
+                    expected = expression.expectedType.name,
+                    actual = result.actual.name,
+                ),
+            )
+        }
+    }
+
+    private fun missingFieldValue(expression: FieldRef): Nothing =
+        if (expression.optional) {
+            throw OptionalMissingValueException(expression.path)
+        } else {
+            throw MissingValueException(expression.path)
+        }
 
     private fun compare(left: ValueNode, op: Operator, right: ValueNode, src: Comparison): Boolean {
         return when (op) {
@@ -359,19 +389,79 @@ object Evaluator {
                     actual = right.type.name,
                 ),
             )
-        val l = ln.number.toDouble()
-        val r = rn.number.toDouble()
+        requireFinite(ln.number, locationOf(src.left))
+        requireFinite(rn.number, locationOf(src.right))
+        val cmp: Int = exactCompare(ln, rn)
         return when (op) {
-            Operator.EQ -> l == r
-            Operator.NEQ -> l != r
-            Operator.GT -> l > r
-            Operator.GTE -> l >= r
-            Operator.LT -> l < r
-            Operator.LTE -> l <= r
+            Operator.EQ -> cmp == 0
+            Operator.NEQ -> cmp != 0
+            Operator.GT -> cmp > 0
+            Operator.GTE -> cmp >= 0
+            Operator.LT -> cmp < 0
+            Operator.LTE -> cmp <= 0
             Operator.TEXT_EQUALS, Operator.BOOLEAN_EQUALS -> error(
                 "numericCompare called for non-numeric op $op"
             )
         }
+    }
+
+    /**
+     * B1.2 (P1): exact numeric comparison. No `toDouble()` anywhere —
+     * 2^53+1 vs 2^53+2 and long decimal scales compare exactly as written.
+     * Long/Int/Short/Byte/BigInteger share one integer view; Float/Double/
+     * BigDecimal go through `toBigDecimal()` (BigDecimal wraps its exact
+     * decimal literal; Float/Double expose their binary value). No silent
+     * coercion of shape (law 9): only the VALUE comparison is unified.
+     */
+    private fun exactCompare(ln: ValueNode.NumberValue, rn: ValueNode.NumberValue): Int {
+        val l = ln.number
+        val r = rn.number
+        val bothIntegral = (l is Long || l is Int || l is Short || l is Byte || l is BigInteger) &&
+            (r is Long || r is Int || r is Short || r is Byte || r is BigInteger)
+        if (bothIntegral) {
+            return toBigIntegerExact(l).compareTo(toBigIntegerExact(r))
+        }
+        return toBigDecimalExact(l).compareTo(toBigDecimalExact(r))
+    }
+
+    private fun requireFinite(number: Number, location: DocumentPath) {
+        val finite = when (number) {
+            is Double -> number.isFinite()
+            is Float -> number.isFinite()
+            else -> true
+        }
+        if (!finite) {
+            throw PolicyEvalException(
+                PolicyViolation(
+                    code = ViolationCode.TYPE_MISMATCH,
+                    location = location,
+                    message = "non-finite numeric values cannot be compared",
+                    expected = "finite Number",
+                    actual = number.toString(),
+                ),
+            )
+        }
+    }
+
+    private fun toBigIntegerExact(n: Number): BigInteger = when (n) {
+        is BigInteger -> n
+        is Long -> BigInteger.valueOf(n)
+        is Int -> BigInteger.valueOf(n.toLong())
+        is Short -> BigInteger.valueOf(n.toLong())
+        is Byte -> BigInteger.valueOf(n.toLong())
+        else -> error("not an integral carrier: ${n::class.simpleName}")
+    }
+
+    private fun toBigDecimalExact(n: Number): BigDecimal = when (n) {
+        is BigDecimal -> n
+        is BigInteger -> BigDecimal(n)
+        is Double -> BigDecimal(n)
+        is Float -> BigDecimal(n.toDouble())
+        is Long -> BigDecimal.valueOf(n)
+        is Int -> BigDecimal.valueOf(n.toLong())
+        is Short -> BigDecimal.valueOf(n.toLong())
+        is Byte -> BigDecimal.valueOf(n.toLong())
+        else -> error("not a decimal carrier: ${n::class.simpleName}")
     }
 
     /**
@@ -394,6 +484,17 @@ object Evaluator {
      */
     @Suppress("ThrowsCount", "LongMethod")
     private fun evalCollectionPredicate(node: CollectionPredicate, tree: ValueNode): Boolean {
+        if (node.op == CollectionOp.COUNT) {
+            throw PolicyEvalException(
+                PolicyViolation(
+                    code = ViolationCode.TYPE_MISMATCH,
+                    location = locationOf(node),
+                    message = "COUNT produces a Number and must be used in a numeric comparison",
+                    expected = "Boolean-valued collection predicate",
+                    actual = "COUNT:Number",
+                ),
+            )
+        }
         // Source resolution: a `MissingValueException` from the source FieldRef
         // is a REQUIRED-source refusal, NOT an empty-collection cursor. We
         // propagate it so the rule evaluator surfaces MISSING_REQUIRED_VALUE.
@@ -403,21 +504,13 @@ object Evaluator {
         // evaluateRule, which converts it to Violated(MISSING_REQUIRED_VALUE).
         val sourceValue: ValueNode = evalValue(node.source, tree)
 
-        // Special case: COUNT can return 0 if the source resolves to an
-        // empty SequenceValue / MappingValue. The Boolean API can't express
-        // Long — we route it through a signal.
-        if (node.op == CollectionOp.COUNT) {
-            val n = countMatching(sourceValue, node.predicate)
-            throw CountAsLongSignal(n)
-        }
-
         val perEntry: List<Pair<String, ValueNode>> = perEntry(sourceValue, node)
 
         return when (node.op) {
             CollectionOp.ALL -> allMatches(node, perEntry)
             CollectionOp.ANY -> perEntry.any { (_, v) -> matchesAtLocation(node.predicate, v, null) }
             CollectionOp.NONE -> perEntry.none { (_, v) -> matchesAtLocation(node.predicate, v, null) }
-            CollectionOp.COUNT -> error("COUNT routed above")
+            CollectionOp.COUNT -> error("COUNT was rejected before boolean evaluation")
         }
     }
 
@@ -464,9 +557,15 @@ object Evaluator {
     }
 
     /**
-     * Helper used by COUNT and by the test suite to fetch the Long verdict of
-     * a COUNT without going through evalBoolean. Cursor-based, single pass.
+     * B1.4: the Long verdict of a `CollectionPredicate(COUNT, ...)` as a
+     * typed value expression. Resolves the source (REQUIRED-source refusals
+     * still propagate) and counts matching entries in a single cursor pass.
      */
+    private fun countOf(node: CollectionPredicate, tree: ValueNode): Long {
+        val sourceValue: ValueNode = evalValue(node.source, tree)
+        return countMatching(sourceValue, node.predicate)
+    }
+
     private fun countMatching(sourceValue: ValueNode, predicate: Selector): Long {
         return when (sourceValue) {
             is ValueNode.SequenceValue -> {
@@ -523,16 +622,11 @@ object Evaluator {
         }
     }
 
-    /**
-     * Marker exception used to smuggle the Long verdict of `COUNT` back to
-     * `evalBoolean`, which only knows `Boolean`. We catch it at the boundary.
-     */
-    private class CountAsLongSignal(val value: Long) : RuntimeException("count=$value")
-
     private fun locationOf(expression: Expression): DocumentPath = when (expression) {
         is Literal -> DocumentPath.ROOT
         is FieldRef -> expression.path
         is Comparison -> locationOf(expression.left)
+        is Expression.Not -> locationOf(expression.body)
         is CollectionPredicate -> locationOf(expression.source)
         is Expression.DatasetRef -> DocumentPath.ROOT
         is Expression.Reference -> DocumentPath.ROOT
@@ -585,11 +679,34 @@ object Evaluator {
     /** Distinct exception for missing-value: yields Violated (not Error) per spec REQ §Policy/Rule. */
     private class MissingValueException(val location: DocumentPath) :
         RuntimeException("missing required value at $location")
+
+    /** Optional path is absent: skip this rule (or treat its appliesWhen as false). */
+    private class OptionalMissingValueException(val location: DocumentPath) :
+        RuntimeException("missing optional value at $location")
 }
 
-/** Stable identity for a rule inside a report (rules are data classes; map key uses `id`). */
-@JvmInline
-value class RuleId(val value: String)
+/**
+ * B1.1: contextual rule identity. A rule ID is only unique inside its policy,
+ * and a policy is only meaningful inside its policy set. Keep the components
+ * structural so legal punctuation in identifiers cannot create key collisions.
+ */
+data class RuleKey(
+    val policySetId: String,
+    val policyId: String,
+    val ruleId: String,
+) {
+    /** Injective canonical form for digesting and string-based report surfaces. */
+    val value: String
+        get() = listOf(policySetId, policyId, ruleId).joinToString("") { part -> "${part.length}:$part" }
+
+    companion object {
+        fun of(policySetId: String, policyId: String, ruleId: String): RuleKey =
+            RuleKey(policySetId, policyId, ruleId)
+    }
+}
+
+/** Backwards source name retained for Kotlin callers; identity is [RuleKey]. */
+typealias RuleId = RuleKey
 
 /**
  * Spec REQ §"PolicyReport and canonical value hashing" — deterministic report.
@@ -597,18 +714,17 @@ value class RuleId(val value: String)
 data class PolicyReport(
     val policySetId: String,
     val resourceFingerprint: String,
-    val results: Map<RuleId, RuleEvaluation>,
+    val results: Map<RuleKey, RuleEvaluation>,
 ) {
 
-    /** Combined hex-encoded SHA-256 over `policySetId` + `resourceFingerprint` + sorted results. */
+    /** Combined hex-encoded SHA-256 over length-prefixed identity, corpus, and sorted results. */
     val digest: String by lazy {
         val serialized = buildString {
-            append(policySetId).append('|')
-            append(resourceFingerprint).append('|')
-            // Sort by rule id so iteration over results is canonical.
-            results.entries.sortedBy { it.key.value }.forEach { (id, ev) ->
-                append(id.value).append('=')
-                append(canonicalEvaluation(ev)).append(';')
+            append(encodeParts(policySetId, resourceFingerprint))
+            val sorted = results.entries.sortedBy { it.key.value }
+            append(sorted.size).append(':')
+            sorted.forEach { (key, evaluation) ->
+                append(encodeParts(key.value, canonicalEvaluation(evaluation)))
             }
         }
         ValueDigest.sha256Hex(serialized.toByteArray(Charsets.UTF_8))
@@ -617,11 +733,24 @@ data class PolicyReport(
     private fun canonicalEvaluation(ev: RuleEvaluation): String = when (ev) {
         RuleEvaluation.Passed -> "passed"
         RuleEvaluation.NotApplicable -> "not-applicable"
-        is RuleEvaluation.Violated -> "violated[" + ev.violations
-            .sortedWith(compareBy({ it.code.ordinal }, { it.location.toString() }))
-            .joinToString(",") { "${it.code.name}@${it.location}|${it.expected ?: "_"}|${it.actual ?: "_"}" } + "]"
-        is RuleEvaluation.Error -> "error[" + ev.violations
-            .sortedWith(compareBy({ it.code.ordinal }, { it.location.toString() }))
-            .joinToString(",") { "${it.code.name}@${it.location}|${it.expected ?: "_"}|${it.actual ?: "_"}" } + "]"
+        is RuleEvaluation.Violated -> encodeViolations("violated", ev.violations)
+        is RuleEvaluation.Error -> encodeViolations("error", ev.violations)
+    }
+
+    private fun encodeViolations(kind: String, violations: List<PolicyViolation>): String {
+        val sorted = violations.sortedWith(compareBy({ it.code.ordinal }, { it.location.toString() }))
+        return kind + sorted.size + ":" + sorted.joinToString("") { violation ->
+            encodeParts(
+                violation.code.name,
+                violation.location.toString(),
+                violation.message,
+                violation.expected,
+                violation.actual,
+            )
+        }
+    }
+
+    private fun encodeParts(vararg parts: String?): String = parts.joinToString("") { part ->
+        if (part == null) "-1:" else "${part.length}:$part"
     }
 }

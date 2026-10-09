@@ -2,7 +2,7 @@ package com.pipelinek.policy.kernel.dataset
 
 import com.pipelinek.policy.kernel.evaluator.Evaluator
 import com.pipelinek.policy.kernel.evaluator.PolicyReport
-import com.pipelinek.policy.kernel.evaluator.RuleId
+import com.pipelinek.policy.kernel.evaluator.RuleKey
 import com.pipelinek.policy.kernel.expression.Expression
 import com.pipelinek.policy.kernel.policy.Policy
 import com.pipelinek.policy.kernel.policy.PolicySet
@@ -79,7 +79,7 @@ object StreamingEvaluator {
                 refused++
                 throw BudgetExceededException("row budget ${plan.rowBudget} exceeded at row $rowNumber")
             }
-            evaluateLocalRow(localOnlySet, localRules, row, tallies, rowNumber)
+            evaluateLocalRow(localOnlySet, row, tallies, rowNumber)
             refused += foldAggregates(aggregateRules, accumulators, row)
         }
 
@@ -105,22 +105,25 @@ object StreamingEvaluator {
     /** LOCAL parity: same per-row verdicts as whole-document evaluation of one row. */
     private fun evaluateLocalRow(
         localOnlySet: PolicySet,
-        localRules: List<Rule>,
         row: ValueNode,
         tallies: Map<String, LocalTally>,
         rowNumber: Long,
     ) {
         val perRow = Evaluator.evaluate(localOnlySet, row)
-        localRules.forEach { rule ->
-            val outcome = perRow.results[RuleId(rule.id)]
-            val tally = tallies[rule.id] ?: return@forEach
-            when (outcome) {
-                is RuleEvaluation.Violated -> {
-                    tally.violations++
-                    tally.lastViolationRow = rowNumber
+        // B1.1: report keys are (policyId, ruleId); walk policies so each
+        // lookup carries its own policy identity.
+        localOnlySet.policies.forEach { policy ->
+            policy.rules.forEach { rule ->
+                val outcome = perRow.results[RuleKey.of(localOnlySet.id, policy.id, rule.id)]
+                val tally = tallies[rule.id] ?: return@forEach
+                when (outcome) {
+                    is RuleEvaluation.Violated -> {
+                        tally.violations++
+                        tally.lastViolationRow = rowNumber
+                    }
+                    is RuleEvaluation.Error -> if (tally.firstErrorRow < 0) tally.firstErrorRow = rowNumber
+                    else -> Unit
                 }
-                is RuleEvaluation.Error -> if (tally.firstErrorRow < 0) tally.firstErrorRow = rowNumber
-                else -> Unit
             }
         }
     }

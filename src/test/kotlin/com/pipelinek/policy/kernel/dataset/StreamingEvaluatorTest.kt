@@ -96,7 +96,7 @@ class StreamingEvaluatorTest {
         )
         val wholeReport = Evaluator.evaluate(set, wholeTree)
         val wholeVerdict =
-            wholeReport.results[com.pipelinek.policy.kernel.evaluator.RuleId("must-ok")]!!
+            wholeReport.results[com.pipelinek.policy.kernel.evaluator.RuleId.of("s", "p", "must-ok")]!!
 
         val streamed = report.results["must-ok"]!!
         when (wholeVerdict) {

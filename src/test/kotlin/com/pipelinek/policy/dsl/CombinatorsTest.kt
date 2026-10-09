@@ -65,6 +65,7 @@ class CombinatorsTest {
                 is Literal -> {}
                 is FieldRef -> {}
                 is Expression.DatasetRef -> {}
+                is Expression.Not -> walk(e.body)
                 is Comparison -> { walk(e.left); walk(e.right) }
                 is Expression.CollectionPredicate -> walk(e.source)
             }
@@ -135,7 +136,7 @@ class CombinatorsTest {
     // ----- require / forbid ----------------------------------------------
 
     @Test
-    fun `forbid wraps body in canonical EQ(false) at compile-DSL time`() {
+    fun `forbid lowers to canonical operator inversion at compile-DSL time`() {
         val set: PolicySet = policy("forbid-test") {
             policy("p") {
                 rule("r") {
@@ -146,12 +147,13 @@ class CombinatorsTest {
             }
         }
         val rule = set.policies.single().rules.single()
-        // forbid body should be wrapped: outer is Comparison, inner is the
-        // original body, right is Literal(BooleanValue(false)).
+        // B1.3: forbid(body=gte 3) lowers to the De Morgan inversion lt 3 —
+        // a single Comparison with the flipped operator, same operands,
+        // same location. No wrapper node for invertible operators.
         val outer = rule.expression as Comparison
-        assertEquals(Operator.EQ, outer.op)
+        assertEquals(Operator.LT, outer.op)
         val rightLit = outer.right as Literal
-        assertEquals(ValueNode.BooleanValue(false), rightLit.value)
+        assertEquals(ValueNode.NumberValue(3), rightLit.value)
     }
 
     @Test

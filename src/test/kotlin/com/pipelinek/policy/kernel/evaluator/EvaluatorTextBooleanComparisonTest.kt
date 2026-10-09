@@ -45,7 +45,7 @@ class EvaluatorTextBooleanComparisonTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        assertEquals(RuleEvaluation.Passed, report.results[RuleId(rule.id)])
+        assertEquals(RuleEvaluation.Passed, report.results[RuleId.of("s", "p", rule.id)])
     }
 
     @Test
@@ -68,7 +68,7 @@ class EvaluatorTextBooleanComparisonTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)] as RuleEvaluation.Violated
+        val ev = report.results[RuleId.of("s", "p", rule.id)] as RuleEvaluation.Violated
         assertEquals(ViolationCode.COMPARISON_FAILED, ev.violations[0].code)
     }
 
@@ -92,7 +92,7 @@ class EvaluatorTextBooleanComparisonTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)] as RuleEvaluation.Error
+        val ev = report.results[RuleId.of("s", "p", rule.id)] as RuleEvaluation.Error
         assertEquals(ViolationCode.TYPE_MISMATCH, ev.violations[0].code)
     }
 
@@ -116,7 +116,7 @@ class EvaluatorTextBooleanComparisonTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        assertEquals(RuleEvaluation.Passed, report.results[RuleId(rule.id)])
+        assertEquals(RuleEvaluation.Passed, report.results[RuleId.of("s", "p", rule.id)])
     }
 
     @Test
@@ -139,7 +139,7 @@ class EvaluatorTextBooleanComparisonTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)] as RuleEvaluation.Violated
+        val ev = report.results[RuleId.of("s", "p", rule.id)] as RuleEvaluation.Violated
         assertEquals(ViolationCode.COMPARISON_FAILED, ev.violations[0].code)
     }
 
@@ -163,7 +163,7 @@ class EvaluatorTextBooleanComparisonTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)] as RuleEvaluation.Error
+        val ev = report.results[RuleId.of("s", "p", rule.id)] as RuleEvaluation.Error
         assertEquals(ViolationCode.TYPE_MISMATCH, ev.violations[0].code)
     }
 
@@ -189,6 +189,6 @@ class EvaluatorTextBooleanComparisonTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        assertTrue(report.results[RuleId(rule.id)] is RuleEvaluation.Passed)
+        assertTrue(report.results[RuleId.of("s", "p", rule.id)] is RuleEvaluation.Passed)
     }
 }

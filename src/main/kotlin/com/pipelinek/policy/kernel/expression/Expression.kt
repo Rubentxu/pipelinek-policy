@@ -37,8 +37,9 @@ sealed interface Expression {
     data class FieldRef(
         val path: DocumentPath,
         val expectedType: ValueNode.Type,
+        val optional: Boolean = false,
     ) : Expression {
-        override val displayName: String get() = "FieldRef(${path})[$expectedType]"
+        override val displayName: String get() = "FieldRef(${path})[$expectedType, optional=$optional]"
     }
 
     /** Binary comparison. */
@@ -103,7 +104,21 @@ sealed interface Expression {
      * (law 12: only legal with an explicit index plan).
      */
     data class DatasetRef(val name: String) : Expression {
+
         override val displayName: String get() = "DatasetRef($name)"
+    }
+
+    /**
+     * B1.3: explicit declarative negation. `Not(body)` is true iff `body`
+     * evaluates to a Boolean `false`. The body must be a Boolean-valued
+     * expression (Comparison over TEXT_EQUALS/BOOLEAN_EQUALS, a boolean
+     * collection predicate, or a boolean Literal); anything else is a typed
+     * refusal (law 9 — no silent coercion). Authoring sugar (`forbid`)
+     * lowers to operator inversion where possible and to `Not` otherwise.
+     */
+    data class Not(val body: Expression) : Expression {
+
+        override val displayName: String get() = "Not(${body.displayName})"
     }
 
     /** Collection predicate ops. The verdict shape per op is fixed. */

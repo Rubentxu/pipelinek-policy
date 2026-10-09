@@ -79,7 +79,11 @@ data class TypedExpr(
     val optional: Boolean,
     val expectedType: ValueNode.Type,
 ) {
-    private fun fieldRef(): Expression = FieldRef(path = path, expectedType = expectedType)
+    private fun fieldRef(): Expression = FieldRef(
+        path = path,
+        expectedType = expectedType,
+        optional = optional,
+    )
 
     // --- Numeric operators (only valid for Number values) ---
 

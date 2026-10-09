@@ -45,4 +45,5 @@ enum class EnforcementMode { ENFORCED, SHADOW }
 data class RuleSummary(
     val ruleId: String,
     val outcome: String,
+    val policyId: String? = null,
 )

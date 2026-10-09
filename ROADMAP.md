@@ -414,10 +414,12 @@ de B0/B1/B2/B4 sin resolver.
 - B0.3 Regression fortress (8 escenarios del plugin + falsificación CLI de Error/Violation/refusal) DONE
 - Gate B0: PASS; gate global fresco en `docs/history/B0_RECEIPT.md` (337 tests, 0 failures/errors/skips; architecture fitness y detekt verdes)
 
-## B1 — Cierre semántico kernel/DSL (P0/P1) — PENDIENTE
+## B1 — Cierre semántico kernel/DSL (P0/P1) — DONE (2026-10-09)
 RuleKey contextual; numérico exacto (sin Double); forbid/negación declarativa;
 COUNT tipado (fuera CountAsLongSignal); Missing/Null/opcionalidad DSL→IR→evaluador;
 sustitución de params en appliesWhen; determinismo con digest.
+
+Evidencia trazable por requisito y gates: `docs/history/B1_RECEIPT.md`.
 
 ## B2 — PolicyIR canónico y bundles íntegros (P0/P1) — PENDIENTE
 decode(encode(IR)) ≡ IR; campos semánticos completos; selectores estructurales

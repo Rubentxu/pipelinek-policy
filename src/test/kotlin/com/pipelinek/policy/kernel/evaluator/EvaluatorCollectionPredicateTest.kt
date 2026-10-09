@@ -36,30 +36,30 @@ class EvaluatorCollectionPredicateTest {
     private fun seq(n: Int): ValueNode = SequenceValue(List(n) { NumberValue(it) })
 
     @Test
-    fun `count over 10000 elements returns correct Long without materializing`() {
+    fun `count over 10000 elements composes as a typed numeric value`() {
         val big = seq(10_000)
         val tree = MappingValue(linkedMapOf("list" to big))
         val rule = Rule(
             id = "count-non-zero",
             message = "count",
-            expression = CollectionPredicate(
-                op = CollectionOp.COUNT,
-                source = FieldRef(
-                    DocumentPath.ROOT.child("list"),
-                    ValueNode.Type.SEQUENCE,
+            expression = com.pipelinek.policy.kernel.expression.Expression.Comparison(
+                left = CollectionPredicate(
+                    op = CollectionOp.COUNT,
+                    source = FieldRef(
+                        DocumentPath.ROOT.child("list"),
+                        ValueNode.Type.SEQUENCE,
+                    ),
+                    predicate = Selector.optional(DocumentPath.ROOT.child("value"))
+                        .expectingType(ValueNode.Type.NUMBER),
                 ),
-                predicate = Selector.optional(DocumentPath.ROOT.child("value"))
-                    .expectingType(ValueNode.Type.NUMBER),
+                op = com.pipelinek.policy.kernel.expression.Expression.Operator.GTE,
+                right = com.pipelinek.policy.kernel.expression.Expression.Literal(NumberValue(10_000L)),
             ),
         )
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        // The COUNT verdict of a Long-verdict expression as the rule's main
-        // expression surfaces as Violated with `expected=count>=1`, `actual=N`.
-        val ev = report.results[RuleId(rule.id)] as RuleEvaluation.Violated
-        assertEquals(ViolationCode.COMPARISON_FAILED, ev.violations[0].code)
-        assertEquals("10000", ev.violations[0].actual)
+        assertEquals(RuleEvaluation.Passed, report.results[RuleId.of("s", "p", rule.id)])
     }
 
     @Test
@@ -82,7 +82,7 @@ class EvaluatorCollectionPredicateTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        assertEquals(RuleEvaluation.Passed, report.results[RuleId(rule.id)])
+        assertEquals(RuleEvaluation.Passed, report.results[RuleId.of("s", "p", rule.id)])
     }
 
     @Test
@@ -109,7 +109,7 @@ class EvaluatorCollectionPredicateTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)] as RuleEvaluation.Violated
+        val ev = report.results[RuleId.of("s", "p", rule.id)] as RuleEvaluation.Violated
         assertEquals(ViolationCode.COLLECTION_PREDICATE_FAILED, ev.violations[0].code)
     }
 
@@ -133,7 +133,7 @@ class EvaluatorCollectionPredicateTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        assertEquals(RuleEvaluation.Passed, report.results[RuleId(rule.id)])
+        assertEquals(RuleEvaluation.Passed, report.results[RuleId.of("s", "p", rule.id)])
     }
 
     @Test
@@ -160,7 +160,7 @@ class EvaluatorCollectionPredicateTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, MappingValue(linkedMapOf()))
-        val v = report.results[RuleId(rule.id)]
+        val v = report.results[RuleId.of("s", "p", rule.id)]
         // The FieldRef IS required, so it propagates MissingValueException
         // first, before CollectionPredicate sees it. That's correct: a
         // missing source for a CollectionPredicate's outer path is a
@@ -193,7 +193,7 @@ class EvaluatorCollectionPredicateTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        assertEquals(RuleEvaluation.Passed, report.results[RuleId(rule.id)])
+        assertEquals(RuleEvaluation.Passed, report.results[RuleId.of("s", "p", rule.id)])
     }
 
     @Test
@@ -215,7 +215,7 @@ class EvaluatorCollectionPredicateTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)] as RuleEvaluation.Violated
+        val ev = report.results[RuleId.of("s", "p", rule.id)] as RuleEvaluation.Violated
         assertEquals(ViolationCode.COMPARISON_FAILED, ev.violations[0].code)
     }
 
@@ -232,22 +232,24 @@ class EvaluatorCollectionPredicateTest {
         val rule = Rule(
             id = "count-numbers",
             message = "count",
-            expression = CollectionPredicate(
-                op = CollectionOp.COUNT,
-                source = FieldRef(
-                    DocumentPath.ROOT.child("items"),
-                    ValueNode.Type.MAPPING,
+            expression = com.pipelinek.policy.kernel.expression.Expression.Comparison(
+                left = CollectionPredicate(
+                    op = CollectionOp.COUNT,
+                    source = FieldRef(
+                        DocumentPath.ROOT.child("items"),
+                        ValueNode.Type.MAPPING,
+                    ),
+                    predicate = Selector.optional(DocumentPath.ROOT.child("value"))
+                        .expectingType(ValueNode.Type.NUMBER),
                 ),
-                predicate = Selector.optional(DocumentPath.ROOT.child("value"))
-                    .expectingType(ValueNode.Type.NUMBER),
+                op = com.pipelinek.policy.kernel.expression.Expression.Operator.EQ,
+                right = com.pipelinek.policy.kernel.expression.Expression.Literal(NumberValue(2L)),
             ),
         )
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)] as RuleEvaluation.Violated
-        // Only "a" and "b" are Number values; "c" is Text.
-        assertEquals("2", ev.violations[0].actual)
+        assertEquals(RuleEvaluation.Passed, report.results[RuleId.of("s", "p", rule.id)])
     }
 
     @Test
@@ -273,7 +275,7 @@ class EvaluatorCollectionPredicateTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        assertEquals(RuleEvaluation.Passed, report.results[RuleId(rule.id)])
+        assertEquals(RuleEvaluation.Passed, report.results[RuleId.of("s", "p", rule.id)])
     }
 
     @Test
@@ -298,7 +300,7 @@ class EvaluatorCollectionPredicateTest {
         val policy = Policy(id = "p", rules = listOf(rule))
         val set = PolicySet(id = "s", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)] as RuleEvaluation.Violated
+        val ev = report.results[RuleId.of("s", "p", rule.id)] as RuleEvaluation.Violated
         assertEquals(ViolationCode.COMPARISON_FAILED, ev.violations[0].code)
     }
 }

@@ -1,7 +1,7 @@
 package com.pipelinek.policy.kernel.policy
 
 import com.pipelinek.policy.kernel.evaluator.PolicyReport
-import com.pipelinek.policy.kernel.evaluator.RuleId
+import com.pipelinek.policy.kernel.evaluator.RuleKey
 import java.time.Instant
 
 /**
@@ -25,7 +25,8 @@ import java.time.Instant
 data class ViolationFingerprint(val value: String) {
     companion object {
         fun of(policyId: String, ruleId: String, location: String, resourceFingerprint: String): ViolationFingerprint {
-            val raw = "$policyId|$ruleId|$location|$resourceFingerprint"
+            val raw = listOf(policyId, ruleId, location, resourceFingerprint)
+                .joinToString("") { part -> "${part.length}:$part" }
             val digest = java.security.MessageDigest.getInstance("SHA-256")
                 .digest(raw.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
@@ -121,13 +122,14 @@ object WaiverMatcher {
             .flatMap { (ruleId, evaluation) -> evaluation.violations.map { ruleId to it } }
             .map { (ruleId, violation) ->
                 val fingerprint = ViolationFingerprint.of(
-                    policyId = report.policySetId,
+                    policyId = ruleId.policyId,
                     ruleId = ruleId.value,
                     location = violation.location.toString(),
                     resourceFingerprint = report.resourceFingerprint,
                 )
                 val candidate = waivers.firstOrNull { w ->
-                    w.ruleId == ruleId.value &&
+                    w.policyId == ruleId.policyId &&
+                        w.ruleId == ruleId.ruleId &&
                         subjectMatches(w, subjectResolver) &&
                         fingerprintMatches(w, fingerprint)
                 }

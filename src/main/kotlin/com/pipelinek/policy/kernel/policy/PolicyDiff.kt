@@ -1,7 +1,7 @@
 package com.pipelinek.policy.kernel.policy
 
 import com.pipelinek.policy.kernel.evaluator.PolicyReport
-import com.pipelinek.policy.kernel.evaluator.RuleId
+import com.pipelinek.policy.kernel.evaluator.RuleKey
 
 /**
  * M7 §"Semantic diff" — deterministic A/B diff over the SAME corpus.
@@ -39,26 +39,44 @@ enum class DiffCategory {
 
 data class DiffEntry(
     val category: DiffCategory,
-    val ruleId: String,
+    val ruleKey: RuleKey,
     val fingerprint: String,
     /** Spec §8: possible privilege expansion / reduced restriction. */
     val privilegeExpansion: Boolean = false,
-)
+) {
+    val ruleId: String get() = ruleKey.ruleId
+    val policyId: String get() = ruleKey.policyId
+    val policySetId: String get() = ruleKey.policySetId
+}
 
 data class PolicyDiff(
     val entries: List<DiffEntry>,
 ) {
     /** Canonical SHA-256 over sorted categories + sorted fingerprints. */
     val diffDigest: String by lazy {
-        val canonical = entries
-            .sortedWith(compareBy({ it.category.name }, { it.fingerprint }, { it.ruleId }))
-            .joinToString("\n") { "${it.category.name}|${it.fingerprint}|${it.ruleId}|${it.privilegeExpansion}" }
+        val sorted = entries
+            .sortedWith(compareBy({ it.category.name }, { it.fingerprint }, { it.ruleKey.value }))
+        val canonical = buildString {
+            append(sorted.size).append(':')
+            sorted.forEach { entry ->
+                append(encodeDiffParts(
+                    entry.category.name,
+                    entry.fingerprint,
+                    entry.ruleKey.value,
+                    entry.privilegeExpansion.toString(),
+                ))
+            }
+        }
         java.security.MessageDigest.getInstance("SHA-256")
             .digest(canonical.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
     }
 
     companion object {
+
+        private fun encodeDiffParts(vararg parts: String): String = parts.joinToString("") { part ->
+            "${part.length}:$part"
+        }
 
         /** Plain report diff (no waiver application). */
         fun of(a: PolicyReport, b: PolicyReport): PolicyDiff {
@@ -86,7 +104,7 @@ data class PolicyDiff(
                     stateOf(b, ruleId, waivedBByRule[ruleId] ?: false)
             }
             val baseEntries = base.entries
-                .filterNot { ruleIdOf(it.ruleId) in rawIdentical }
+                .filterNot { it.ruleKey in rawIdentical }
             // Waiver-only changes: same raw states, different waiver effect.
             val waiverEntries = a.results.keys.union(b.results.keys).mapNotNull { ruleId ->
                 val wa = waivedAByRule[ruleId] ?: false
@@ -94,15 +112,13 @@ data class PolicyDiff(
                 val rawSame = stateOf(a, ruleId) == stateOf(b, ruleId)
                 if (rawSame && wa != wb) {
                     val fp = fingerprintOf(if (a.results.containsKey(ruleId)) a else b, ruleId)
-                    DiffEntry(DiffCategory.WAIVER_EFFECT_CHANGED, ruleId.value, fp.value)
+                    DiffEntry(DiffCategory.WAIVER_EFFECT_CHANGED, ruleId, fp.value)
                 } else {
                     null
                 }
             }
             return PolicyDiff(baseEntries + waiverEntries)
         }
-
-        private fun ruleIdOf(value: String) = RuleId(value)
 
         private fun requireSameCorpus(a: PolicyReport, b: PolicyReport) {
             if (a.resourceFingerprint != b.resourceFingerprint) {
@@ -114,7 +130,7 @@ data class PolicyDiff(
         private fun diffStates(
             a: PolicyReport,
             b: PolicyReport,
-            states: (RuleId) -> Pair<RuleState, RuleState>,
+            states: (RuleKey) -> Pair<RuleState, RuleState>,
         ): PolicyDiff {
             val ruleIds = a.results.keys.union(b.results.keys)
             val entries = ruleIds.flatMap { ruleId ->
@@ -142,7 +158,7 @@ data class PolicyDiff(
                     }
                 }
                 val expansion = category == DiffCategory.RESOLVED_VIOLATION
-                listOf(DiffEntry(category, ruleId.value, fp.value, expansion))
+                listOf(DiffEntry(category, ruleId, fp.value, expansion))
             }
             return PolicyDiff(entries)
         }
@@ -154,7 +170,7 @@ data class PolicyDiff(
             data object Errored : RuleState
         }
 
-        private fun stateOf(report: PolicyReport, ruleId: RuleId, waived: Boolean = false): RuleState {
+        private fun stateOf(report: PolicyReport, ruleId: RuleKey, waived: Boolean = false): RuleState {
             val evaluation = report.results[ruleId]
                 ?: return RuleState.NotApplicable // rule absent from this bundle
             // A waived violation does not enforce: treat as not-violated.
@@ -169,17 +185,17 @@ data class PolicyDiff(
             }
         }
 
-        private fun fingerprintOf(report: PolicyReport, ruleId: RuleId): ViolationFingerprint {
+        private fun fingerprintOf(report: PolicyReport, ruleId: RuleKey): ViolationFingerprint {
             val location = report.results[ruleId]?.violations?.firstOrNull()?.location?.toString() ?: "root"
             return ViolationFingerprint.of(
-                policyId = report.policySetId,
+                policyId = ruleId.policyId,
                 ruleId = ruleId.value,
                 location = location,
                 resourceFingerprint = report.resourceFingerprint,
             )
         }
 
-        private fun indexWaivedByRule(report: PolicyReport, application: WaiverApplication): Map<RuleId, Boolean> {
+        private fun indexWaivedByRule(report: PolicyReport, application: WaiverApplication): Map<RuleKey, Boolean> {
             val waivedFingerprints = application.outcomes
                 .filterIsInstance<ViolationWaiverOutcome.Waived>()
                 .map { it.fingerprint.value }
@@ -187,7 +203,7 @@ data class PolicyDiff(
             return report.results.mapValues { (ruleId, evaluation) ->
                 evaluation.violations.any { v ->
                     ViolationFingerprint.of(
-                        report.policySetId,
+                        ruleId.policyId,
                         ruleId.value,
                         v.location.toString(),
                         report.resourceFingerprint,

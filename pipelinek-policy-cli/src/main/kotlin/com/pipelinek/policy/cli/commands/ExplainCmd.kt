@@ -6,6 +6,7 @@ import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.decoder.DecodeOptions
 import com.pipelinek.policy.decoder.DecodeResult
+import com.pipelinek.policy.kernel.evaluator.RuleKey
 import com.pipelinek.policy.kernel.expression.Expression
 import java.io.File
 
@@ -41,13 +42,21 @@ object ExplainCmd {
             return ExitCodes.USAGE
         }
         val policy = verified.bundle.document.policySet
-        val rule = policy.policies.flatMap { p -> p.rules.map { p to it } }
-            .firstOrNull { (_, r) -> r.id == ruleId }
-        if (rule == null) {
-            out("explain: unknown rule: $ruleId (known: ${policy.policies.flatMap { it.rules.map { r -> r.id } }.joinToString(", ")})")
+        val matches = policy.policies.flatMap { p -> p.rules.map { p to it } }
+            .filter { (owner, r) ->
+                r.id == ruleId || RuleKey.of(policy.id, owner.id, r.id).value == ruleId
+            }
+        if (matches.isEmpty()) {
+            val known = policy.policies.flatMap { p -> p.rules.map { r -> "${p.id}/${r.id}" } }
+            out("explain: unknown rule: $ruleId (known: ${known.joinToString(", ")})")
             return ExitCodes.USAGE
         }
-        val (owningPolicy, r) = rule
+        if (matches.size > 1) {
+            val qualified = matches.map { (owner, r) -> RuleKey.of(policy.id, owner.id, r.id).value }
+            out("explain: ambiguous rule: $ruleId (use one of: ${qualified.joinToString(", ")})")
+            return ExitCodes.USAGE
+        }
+        val (owningPolicy, r) = matches.single()
 
         val state: String
         val violations: List<String>
@@ -58,16 +67,17 @@ object ExplainCmd {
         } else {
             val doc = decodeOne(resourcePath, out) ?: return ExitCodes.USAGE
             val report = IrRuntimeAdapter.evaluate(verified, doc.root).report
-            val evaluation = report.results.entries.firstOrNull { it.key.value == ruleId }
-            state = evaluation?.value?.let { it::class.simpleName?.uppercase() } ?: "UNKNOWN"
-            violations = evaluation?.value?.violations?.map { it.location.toString() } ?: emptyList()
+            val evaluation = report.results[RuleKey.of(policy.id, owningPolicy.id, r.id)]
+            state = evaluation?.let { it::class.simpleName?.uppercase() } ?: "UNKNOWN"
+            violations = evaluation?.violations?.map { it.location.toString() } ?: emptyList()
         }
 
         out(
             buildString {
                 appendLine("{")
-                appendLine("  \"ruleId\": \"$ruleId\",")
-                appendLine("  \"policyId\": \"${policy.id}\",")
+                appendLine("  \"policySetId\": \"${policy.id}\",")
+                appendLine("  \"ruleId\": \"${r.id}\",")
+                appendLine("  \"policyId\": \"${owningPolicy.id}\",")
                 appendLine("  \"owningPolicy\": \"${owningPolicy.id}\",")
                 appendLine("  \"state\": \"${state.lowercase()}\",")
                 appendLine("  \"expression\": ${renderExpression(r.expression)},")
@@ -86,7 +96,8 @@ object ExplainCmd {
         is Expression.Literal ->
             "{\"kind\": \"literal\", \"value\": \"${e.value}\"}"
         is Expression.FieldRef ->
-            "{\"kind\": \"fieldRef\", \"path\": \"${e.path}\"}"
+            "{\"kind\": \"fieldRef\", \"path\": \"${e.path}\", " +
+                "\"optional\": ${e.optional}}"
         is Expression.Comparison ->
             "{\"kind\": \"comparison\", \"op\": \"${e.op}\", " +
                 "\"left\": ${renderExpression(e.left)}, \"right\": ${renderExpression(e.right)}}"
@@ -94,6 +105,8 @@ object ExplainCmd {
             "{\"kind\": \"reference\", \"name\": \"${e.name}\"}"
         is Expression.DatasetRef ->
             "{\"kind\": \"datasetRef\", \"name\": \"${e.name}\"}"
+        is Expression.Not ->
+            "{\"kind\": \"not\", \"body\": ${renderExpression(e.body)}}"
         is Expression.CollectionPredicate ->
             "{\"kind\": \"collectionPredicate\", \"op\": \"${e.op}\", \"predicate\": \"${e.predicate}\", " +
                 "\"source\": ${renderExpression(e.source)}}"

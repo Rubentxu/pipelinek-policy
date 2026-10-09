@@ -31,7 +31,18 @@ import com.pipelinek.policy.kernel.path.DocumentPath
 data class PolicySet(
     val id: String,
     val policies: List<Policy>,
-)
+) {
+    init {
+        require(policies.map { it.id }.distinct().size == policies.size) {
+            "policySet $id contains duplicate policy ids"
+        }
+        policies.forEach { policy ->
+            require(policy.rules.map { it.id }.distinct().size == policy.rules.size) {
+                "policy ${policy.id} contains duplicate rule ids"
+            }
+        }
+    }
+}
 
 data class Policy(
     val id: String,

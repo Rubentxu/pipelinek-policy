@@ -78,6 +78,7 @@ class FailClosedFortressTest {
         assertTrue(out.outcome is StepOutcome.Failure, "fail-closed: Error must fail the step under ENFORCED")
         val summary = out.ruleSummaries.single()
         assertEquals("replicas-numeric", summary.ruleId)
+        assertEquals("p1", summary.policyId)
         assertEquals("error", summary.outcome, "the evaluator's semantic state must survive")
     }
 
@@ -133,7 +134,7 @@ class FailClosedFortressTest {
             input("""{"team":"x"}""", packedBundle(neverApplies)),
         )
         assertEquals(PolicyCheckVerdict.PASSED, out.verdict)
-        assertEquals(listOf(RuleSummary("never-applies", "not-applicable")), out.ruleSummaries)
+        assertEquals(listOf(RuleSummary("never-applies", "not-applicable", "p1")), out.ruleSummaries)
         assertEquals(StepOutcome.Success, out.outcome)
     }
 

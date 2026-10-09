@@ -97,6 +97,7 @@ class InspectShapeDiffTest {
 
         assertTrue(out.contains("\"digest\": \"$apiDigest\""), "CLI digest must equal API digest: $out")
         assertTrue(out.contains("NEW_VIOLATION"))
+        assertTrue(out.contains("\"policyId\": \"p\""))
         assertTrue(out.contains("\"ruleId\": \"r2\""))
     }
 

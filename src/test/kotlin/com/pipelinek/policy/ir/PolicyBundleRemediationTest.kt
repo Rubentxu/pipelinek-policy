@@ -31,6 +31,26 @@ class PolicyBundleRemediationTest {
         )
     }
 
+    @Test
+    fun `optional FieldRef and explicit Not survive canonical IR round trip`() {
+        val expression = Expression.Not(
+            Expression.Comparison(
+                Expression.FieldRef(
+                    DocumentPath.ROOT.child("metadata").child("team"),
+                    ValueNode.Type.TEXT,
+                    optional = true,
+                ),
+                Expression.Operator.TEXT_EQUALS,
+                Expression.Literal(ValueNode.TextValue("blocked")),
+            ),
+        )
+        val document = PolicyIrDocument(
+            PolicySet("set", listOf(Policy("policy", listOf(Rule("rule", "forbid team", expression))))),
+        )
+
+        assertEquals(document, CanonicalPolicyJson.decode(CanonicalPolicyJson.encode(document)))
+    }
+
     @Test fun `external pack admission accepts valid bytes and refuses corruption`() {
         val bundle = PolicyBundle(document())
         val bytes = bundle.pack()

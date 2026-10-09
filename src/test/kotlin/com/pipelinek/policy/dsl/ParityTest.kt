@@ -38,6 +38,7 @@ class ParityTest {
                 left = FieldRef(
                     DocumentPath.ROOT.child("spec").child("replicas"),
                     ValueNode.Type.NUMBER,
+                    optional = true,
                 ),
                 op = Operator.GTE,
                 right = Literal(ValueNode.NumberValue(3)),
@@ -119,7 +120,7 @@ class ParityTest {
             linkedMapOf("spec" to MappingValue(linkedMapOf("replicas" to NumberValue(2)))),
         )
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId("min-replicas")]
+        val ev = report.results[RuleId.of("s", "p", "min-replicas")]
         assertNotNull(ev)
         assertTrue(ev is com.pipelinek.policy.kernel.policy.RuleEvaluation.Violated)
         assertEquals(
@@ -150,6 +151,10 @@ class ParityTest {
             is Literal -> seen += expr::class.java
             is FieldRef -> seen += expr::class.java
             is Expression.DatasetRef -> seen += expr::class.java
+            is Expression.Not -> {
+                seen += expr::class.java
+                walkExpression(expr.body, seen)
+            }
             is Comparison -> {
                 seen += expr::class.java
                 walkExpression(expr.left, seen)

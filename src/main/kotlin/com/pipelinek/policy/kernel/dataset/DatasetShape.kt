@@ -92,6 +92,7 @@ object DatasetShapeAnalyzer {
         is Expression.Literal -> DatasetShape.LOCAL
         is Expression.FieldRef -> DatasetShape.LOCAL
         is Expression.Reference -> DatasetShape.LOCAL
+        is Expression.Not -> shapeOfSubtree(expression.body)
         is Expression.DatasetRef -> DatasetShape.GLOBAL // free-floating dataset access
         is Expression.Comparison -> worstOf(
             shapeOfSubtree(expression.left),
@@ -108,6 +109,7 @@ object DatasetShapeAnalyzer {
         is Expression.Literal -> false
         is Expression.FieldRef -> false
         is Expression.Reference -> false
+        is Expression.Not -> containsDatasetRef(expression.body)
         is Expression.Comparison ->
             containsDatasetRef(expression.left) || containsDatasetRef(expression.right)
         is Expression.CollectionPredicate ->

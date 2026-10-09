@@ -153,7 +153,9 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
         val report = IrRuntimeAdapter.evaluate(verified, tree).report
         val summaries = report.results.entries
             .sortedBy { it.key.value }
-            .map { (id, ev) -> RuleSummary(ruleId = id.value, outcome = outcomeName(ev)) }
+            .map { (key, ev) ->
+                RuleSummary(ruleId = key.ruleId, outcome = outcomeName(ev), policyId = key.policyId)
+            }
         val violations = report.results.values.count { it is RuleEvaluation.Violated }
         // B0.1 fail-closed: Error is an operational failure, never a pass.
         // Precedence: REFUSED (admission) > ERRORED > VIOLATED > PASSED —

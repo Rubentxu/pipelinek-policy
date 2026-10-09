@@ -48,7 +48,8 @@ class EvaluatorTest {
     fun `Spec UAT (a) rule spec_replicas gte 3 with Number 3 evaluates to Passed`() {
         val set = PolicySet(id = "baseline", policies = listOf(policy))
         val report = Evaluator.evaluate(set, tree)
-        val ruleEval = report.results[com.pipelinek.policy.kernel.evaluator.RuleId(replicasRule.id)]
+        val ruleId = RuleId.of("baseline", "k8s-baseline", replicasRule.id)
+        val ruleEval = report.results[ruleId]
         assertEquals(RuleEvaluation.Passed, ruleEval)
     }
 
@@ -57,8 +58,8 @@ class EvaluatorTest {
         val empty = ValueNode.MappingValue(linkedMapOf())
         val set = PolicySet(id = "baseline", policies = listOf(policy))
         val report = Evaluator.evaluate(set, empty)
-        val ev =
-            report.results[com.pipelinek.policy.kernel.evaluator.RuleId(replicasRule.id)] as RuleEvaluation.Violated
+        val ruleId = RuleId.of("baseline", "k8s-baseline", replicasRule.id)
+        val ev = report.results[ruleId] as RuleEvaluation.Violated
         assertEquals(1, ev.violations.size)
         assertEquals(ViolationCode.MISSING_REQUIRED_VALUE, ev.violations[0].code)
         assertEquals(DocumentPath.ROOT.child("spec").child("replicas"), ev.violations[0].location)
@@ -247,4 +248,3 @@ class EvaluatorTest {
         assertTrue(out is RuleEvaluation.Error || out is RuleEvaluation.Violated)
     }
 }
-

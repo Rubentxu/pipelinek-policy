@@ -90,18 +90,15 @@ class RuleBuilder(
     internal fun toRule(): Rule {
         val resolvedBody = body ?: error("rule $id has no body")
         val substituted = ParamSubstitutor.substitute(resolvedBody, params)
+        // B1.6: appliesWhen goes through the same substitution as the body —
+        // a `ref(name)` in the gate resolves against the rule's params.
+        val substitutedApplies = applies?.let { ParamSubstitutor.substitute(it, params) }
         val finalExpr = if (forbid) {
-            // Negate the body by wrapping in EQ against `boolean(false)`. We
-            // use `Comparison(..., EQ, Literal(BooleanValue(false)))` because
-            // the kernel evaluator already handles boolean operands. The
-            // DSL keeps it data-only — no Closure retained.
-            com.pipelinek.policy.kernel.expression.Expression.Comparison(
-                left = substituted,
-                op = com.pipelinek.policy.kernel.expression.Expression.Operator.EQ,
-                right = com.pipelinek.policy.kernel.expression.Expression.Literal(
-                    com.pipelinek.policy.kernel.value.ValueNode.BooleanValue(false),
-                ),
-            )
+            // B1.3: forbid lowers to canonical De Morgan negation — invert
+            // the comparison operator itself. This stays within the kernel's
+            // explicit semantics (no nested boolean operand, no closure) and
+            // keeps violation diagnostics on the original location.
+            negate(substituted)
         } else {
             substituted
         }
@@ -109,7 +106,7 @@ class RuleBuilder(
             id = id,
             message = message,
             expression = finalExpr,
-            appliesWhen = applies,
+            appliesWhen = substitutedApplies,
             code = code,
             expected = expected,
             actual = actual,
@@ -169,6 +166,28 @@ class PolicySetBuilder(private val id: String) {
  * branch surfaces a deterministic error (instead of silently substituting a
  * default value).
  */
+/** B1.3: canonical De Morgan negation used by `forbid`. Inverts a
+ *  Comparison by flipping its operator (no new IR node needed); any other
+ *  boolean-valued body wraps in the kernel's explicit `Not`. Data-only,
+ *  no closures (law 4). */
+private fun negate(expr: Expression): Expression {
+    if (expr is Expression.Comparison) {
+        val inverted = when (expr.op) {
+            Expression.Operator.EQ -> Expression.Operator.NEQ
+            Expression.Operator.NEQ -> Expression.Operator.EQ
+            Expression.Operator.GT -> Expression.Operator.LTE
+            Expression.Operator.GTE -> Expression.Operator.LT
+            Expression.Operator.LT -> Expression.Operator.GTE
+            Expression.Operator.LTE -> Expression.Operator.GT
+            Expression.Operator.TEXT_EQUALS, Expression.Operator.BOOLEAN_EQUALS -> null
+        }
+        if (inverted != null) {
+            return Expression.Comparison(left = expr.left, op = inverted, right = expr.right)
+        }
+    }
+    return Expression.Not(expr)
+}
+
 object ParamSubstitutor {
 
     /** Substitute every `Reference(name)` in `expr` with the matching
@@ -182,6 +201,7 @@ object ParamSubstitutor {
         is Expression.Literal -> expr
         is Expression.FieldRef -> expr
         is Expression.DatasetRef -> expr
+        is Expression.Not -> Expression.Not(walk(expr.body, params))
         is Expression.Reference -> {
             val p = params[expr.name]
             if (p != null) {

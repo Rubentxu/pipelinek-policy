@@ -45,7 +45,7 @@ class RuleEvaluationTest {
             linkedMapOf("spec" to MappingValue(linkedMapOf("replicas" to NumberValue(2)))),
         )
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)]
+        val ev = report.results[RuleId.of("s", "p", rule.id)]
         assertEquals(RuleEvaluation.NotApplicable, ev)
     }
 
@@ -67,7 +67,7 @@ class RuleEvaluationTest {
             linkedMapOf("spec" to MappingValue(linkedMapOf("replicas" to NumberValue(2)))),
         )
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)]
+        val ev = report.results[RuleId.of("s", "p", rule.id)]
         // replicas=2 with GTE 3 ⇒ Violated (not NotApplicable).
         assertTrue(ev is RuleEvaluation.Violated, "expected Violated, got $ev")
         assertEquals(ViolationCode.COMPARISON_FAILED, (ev as RuleEvaluation.Violated).violations[0].code)
@@ -131,7 +131,7 @@ class RuleEvaluationTest {
         // Empty tree; appliesWhen FieldRef is missing ⇒ NotApplicable, not Error.
         val tree = MappingValue(linkedMapOf())
         val report = Evaluator.evaluate(set, tree)
-        val ev = report.results[RuleId(rule.id)]
+        val ev = report.results[RuleId.of("s", "p", rule.id)]
         assertEquals(RuleEvaluation.NotApplicable, ev)
     }
 
