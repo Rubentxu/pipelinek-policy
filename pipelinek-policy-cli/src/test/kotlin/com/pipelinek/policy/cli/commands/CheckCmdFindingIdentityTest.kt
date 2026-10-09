@@ -62,10 +62,13 @@ class CheckCmdFindingIdentityTest {
         ),
     ).pack()
 
-    private fun run(dir: Path, bundle: Path, resource: Path): Pair<Int, List<String>> {
+    private fun run(dir: Path, bundle: Path, resource: Path): Pair<Int, List<String>> =
+        run("jsonl", bundle, resource)
+
+    private fun run(format: String, bundle: Path, resource: Path): Pair<Int, List<String>> {
         val out = mutableListOf<String>()
         val code = PolicyCli.run(
-            listOf("check", "--policy", bundle.toString(), "--format", "jsonl", resource.toString()),
+            listOf("check", "--policy", bundle.toString(), "--format", format, resource.toString()),
         ) { out.add(it) }
         return code to out.flatMap { it.lines() }.filter { it.isNotBlank() }
     }
@@ -73,6 +76,32 @@ class CheckCmdFindingIdentityTest {
     private fun field(line: String, name: String): String =
         Regex("\"$name\":\"([^\"]*)\"").find(line)?.groupValues?.get(1)
             ?: error("field $name absent from finding: $line")
+
+    @Test
+    fun `json publishes the three identity components as separate fields`() {
+        val dir = createTempDirectory("b36-json")
+        val bundle = dir.resolve("p.bundle").also { it.writeBytes(collidingBundle()) }
+        val resource = dir.resolve("r.json").also {
+            it.writeText("""{"metadata":{"team":"tools"}}""")
+        }
+
+        val (code, out) = run("json", bundle, resource)
+
+        assertEquals(ExitCodes.VIOLATIONS, code)
+        // json and jsonl share one emitter, but the pretty printer is a second
+        // code path: assert the identity survives it rather than assume it.
+        assertTrue(out.any { it.contains("\"policySetId\": \"uat\"") }, "policySetId must be emitted in json: $out")
+        assertEquals(2, Regex("\"ruleId\": \"shared-rule\"").findAll(out.joinToString("\n")).count())
+        assertEquals(
+            setOf("alpha", "beta"),
+            Regex("\"policyId\": \"([^\"]*)\"").findAll(out.joinToString("\n")).map { it.groupValues[1] }.toSet(),
+            "json must name the owning policy, never the policy set",
+        )
+        assertTrue(
+            Regex("\"ruleId\": \"3:uat").find(out.joinToString("\n")) == null,
+            "the length-prefixed RuleKey composite must never be published: $out",
+        )
+    }
 
     @Test
     fun `jsonl publishes the simple rule id and the owning policy id`() {
