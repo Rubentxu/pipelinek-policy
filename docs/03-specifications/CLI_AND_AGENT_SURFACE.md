@@ -102,6 +102,32 @@ que usara `policyId` para dirigir una exención apuntaba a la policy equivocada.
 El campo nuevo no elimina ni renombra ningún campo existente; lo que cambia es
 el VALOR de `ruleId` y `policyId`, que pasa a ser el que su nombre declara.
 
+### 5.1 `fingerprint` incluye `policySetId` (B4-T3) — RUTA INCOMPATIBLE
+
+El `fingerprint` es el SHA-256 de las componentes con prefijo de longitud. Su
+material cambió: **antes** era `(policyId, ruleId, location,
+resourceFingerprint)`; **ahora** es `(policySetId, policyId, ruleId, location,
+resourceFingerprint)`.
+
+Esto **rompe las exenciones existentes**: una `Waiver` que fije un
+`violationFingerprint` calculado con el material anterior ya no casa con
+ninguna violación. No hay migración silenciosa posible, porque el valor antiguo
+y el nuevo son ambos hashes bien formados y nada en el bundle permite
+distinguir uno del otro. Hay que recalcular y republicar cada fingerprint.
+
+El motivo es funcional, no cosmético. Antes de B4-T3 el kernel pasaba
+`RuleKey.value` (la compuesta) como `ruleId` mientras el CLI pasaba el id
+simple, así que **el matcher y el CLI calculaban digests distintos para la
+misma violación** y una exención escrita a partir del finding publicado nunca
+podía casar. B3.6 eliminó la compuesta de la superficie pero no del digest, y
+el desacople quedó escondido detrás de un test que recomputaba el hash igual
+que el CLI y sólo probaba coherencia consigo mismo.
+
+Una `REFUSAL` no tiene policy set (la admisión falló antes de resolverlo) y se
+fingerprintiza con el marcador explícito `$refusal`. Ese fingerprint nunca es
+objetivo de exención: `WaiverMatcher` sólo fingerprinta evaluaciones
+`Violated`, y una rechazo nunca llega ahí.
+
 `enforcement`, `rollout` y `waiverStatus` son metadatos de gobierno, no hechos
 disponibles en la evaluación standalone de B3. Se incorporarán como extensión
 cuando exista el contexto de enforcement/rollout/waivers de B4. El CLI B3 no

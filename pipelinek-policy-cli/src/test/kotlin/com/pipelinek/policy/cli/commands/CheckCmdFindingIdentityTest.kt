@@ -13,9 +13,10 @@ import com.pipelinek.policy.kernel.path.DocumentPath
 import com.pipelinek.policy.kernel.policy.Policy
 import com.pipelinek.policy.kernel.policy.PolicySet
 import com.pipelinek.policy.kernel.policy.Rule
-import com.pipelinek.policy.kernel.policy.ViolationFingerprint
+import com.pipelinek.policy.kernel.policy.WaiverMatcher
 import com.pipelinek.policy.kernel.value.ValueNode
 import java.nio.file.Path
+import java.time.Instant
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.readBytes
 import kotlin.io.path.writeBytes
@@ -158,24 +159,31 @@ class CheckCmdFindingIdentityTest {
         val line = findings.first { field(it, "policyId") == "alpha" }
 
         // A waiver pins a ViolationFingerprint, and the matcher computes it
-        // from the kernel's own (policyId, ruleId, location, resource
-        // fingerprint). Reproducing that digest from the PUBLISHED fields is
-        // what makes a waiver able to address this finding at all.
+        // from the kernel's own (policySetId, policyId, ruleId, location,
+        // resource fingerprint). Reproducing that digest from the PUBLISHED
+        // fields is what makes a waiver able to address this finding at all.
+        //
+        // B4-T3: this must go through the REAL matcher, not a second
+        // hand-rolled computation. Recomputing the digest the same way the
+        // CLI already computes it proves CLI-vs-CLI agreement, which is
+        // self-fulfilling and hid the fact that the kernel was passing the
+        // composite RuleKey while the CLI passed the simple rule id.
         val verified = BundleVerifier.verifyPacked(bundleBytes)
         val decoded = JsonResourceDecoder().decode(resource.readBytes())
         val tree = (decoded as DecodeResult.Ok).documents.single().root
         val report = IrRuntimeAdapter.evaluate(verified, tree).report
-        val kernelFingerprint = ViolationFingerprint.of(
-            policyId = field(line, "policyId"),
-            ruleId = field(line, "ruleId"),
-            location = field(line, "path"),
-            resourceFingerprint = report.resourceFingerprint,
-        )
 
-        assertEquals(
-            kernelFingerprint.value,
-            field(line, "fingerprint"),
-            "the finding fingerprint must equal the fingerprint a waiver would pin",
+        val kernelFingerprints = WaiverMatcher.apply(
+            report = report,
+            waivers = emptyList(),
+            now = Instant.EPOCH,
+            subjectResolver = { null },
+        ).outcomes.map { it.fingerprint.value }.toSet()
+
+        assertTrue(
+            field(line, "fingerprint") in kernelFingerprints,
+            "the published fingerprint must equal one the kernel matcher computes; " +
+                "kernel=${kernelFingerprints} published=${field(line, "fingerprint")}",
         )
     }
 }

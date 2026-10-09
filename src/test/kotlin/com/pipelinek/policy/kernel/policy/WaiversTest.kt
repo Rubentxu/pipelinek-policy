@@ -149,7 +149,7 @@ class WaiversTest {
     @Test
     fun `03f waiver with different fingerprint does not waive and mutation ignoring expiry fails 03b`() {
         val report = reportFor("payments")
-        val otherResourceFp = ViolationFingerprint.of("p1", "team-own", "metadata.team", "different-resource")
+        val otherResourceFp = ViolationFingerprint.of("p1", "p1", "team-own", "metadata.team", "different-resource")
 
         val waiver = waiverFor("payments", fingerprint = otherResourceFp)
         val app = WaiverMatcher.apply(report, listOf(waiver), now, resolver)

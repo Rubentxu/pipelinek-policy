@@ -19,13 +19,27 @@ import java.time.Instant
 
 /**
  * Deterministic identity of a concrete violation instance: derived from
- * (policyId, ruleId, violation location, resource fingerprint). Shared with
- * `PolicyDiff` for cross-bundle violation identity.
+ * (policySetId, policyId, ruleId, violation location, resource fingerprint).
+ * Shared with `PolicyDiff` for cross-bundle violation identity.
+ *
+ * B4-T3: all THREE identity components are parameters and all three are folded
+ * into the digest. The kernel previously passed `RuleKey.value` — the
+ * length-prefixed composite — as the `ruleId` argument, while the CLI passed
+ * the simple rule id after B3.6. That made the two compute different digests
+ * for the same violation, so a waiver fingerprint authored from the published
+ * finding could never match the matcher. Identity components must travel
+ * independently; the composite string is a rendering, not an identity.
  */
 data class ViolationFingerprint(val value: String) {
     companion object {
-        fun of(policyId: String, ruleId: String, location: String, resourceFingerprint: String): ViolationFingerprint {
-            val raw = listOf(policyId, ruleId, location, resourceFingerprint)
+        fun of(
+            policySetId: String,
+            policyId: String,
+            ruleId: String,
+            location: String,
+            resourceFingerprint: String,
+        ): ViolationFingerprint {
+            val raw = listOf(policySetId, policyId, ruleId, location, resourceFingerprint)
                 .joinToString("") { part -> "${part.length}:$part" }
             val digest = java.security.MessageDigest.getInstance("SHA-256")
                 .digest(raw.toByteArray(Charsets.UTF_8))
@@ -159,8 +173,9 @@ object WaiverMatcher {
             }
             .map { (ruleId, violation, waivable) ->
                 val fingerprint = ViolationFingerprint.of(
+                    policySetId = ruleId.policySetId,
                     policyId = ruleId.policyId,
-                    ruleId = ruleId.value,
+                    ruleId = ruleId.ruleId,
                     location = violation.location.toString(),
                     resourceFingerprint = report.resourceFingerprint,
                 )

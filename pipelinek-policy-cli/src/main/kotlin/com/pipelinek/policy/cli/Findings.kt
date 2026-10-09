@@ -21,6 +21,18 @@ data class Location(
 
 enum class FindingState { PASS, VIOLATION, WAIVED, REFUSAL, ERROR }
 
+/**
+ * B4-T3: the policy-set placeholder used when fingerprinting a REFUSAL.
+ *
+ * A refusal happens before a policy set is ever resolved, so there is no
+ * real value to fold into the digest. The marker is a bare token rather than
+ * a plausible-looking id such as `""` or `"unknown"`, because the digest is
+ * length-prefixed: a component is rendered as `length:value`, so this token
+ * can never be confused with a real policy set whose name happens to look
+ * similar.
+ */
+private const val REFUSAL_POLICY_SET = "\$refusal"
+
 data class Finding(
     val policyId: String,
     val ruleId: String,
@@ -129,7 +141,20 @@ data class Finding(
             // B3.6: the fingerprint is computed from the SAME components the
             // finding publishes, so a waiver pinned on this digest addresses
             // exactly this rule in exactly this policy.
+            //
+            // B4-T3: `policySetId` is now part of the digest, so the three
+            // identity components travel independently rather than one of them
+            // being flattened into a composite.
+            //
+            // A REFUSAL carries no policy set: admission failed, so there is
+            // no rule identity to waive. Its fingerprint is not a waiver
+            // target and never will be — `WaiverMatcher` only ever fingerprints
+            // `RuleEvaluation.Violated` entries, which a refusal never
+            // reaches. Rather than invent a placeholder policy-set id, the
+            // refusal is fingerprinted with an explicit marker that cannot
+            // collide with a real length-prefixed component.
             val fp = ViolationFingerprint.of(
+                policySetId = policySetId ?: REFUSAL_POLICY_SET,
                 policyId = policyId,
                 ruleId = ruleId,
                 location = locationPath,

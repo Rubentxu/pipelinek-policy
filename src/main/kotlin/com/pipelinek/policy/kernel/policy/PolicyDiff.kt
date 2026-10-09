@@ -188,8 +188,9 @@ data class PolicyDiff(
         private fun fingerprintOf(report: PolicyReport, ruleId: RuleKey): ViolationFingerprint {
             val location = report.results[ruleId]?.violations?.firstOrNull()?.location?.toString() ?: "root"
             return ViolationFingerprint.of(
+                policySetId = ruleId.policySetId,
                 policyId = ruleId.policyId,
-                ruleId = ruleId.value,
+                ruleId = ruleId.ruleId,
                 location = location,
                 resourceFingerprint = report.resourceFingerprint,
             )
@@ -203,8 +204,9 @@ data class PolicyDiff(
             return report.results.mapValues { (ruleId, evaluation) ->
                 evaluation.violations.any { v ->
                     ViolationFingerprint.of(
+                        ruleId.policySetId,
                         ruleId.policyId,
-                        ruleId.value,
+                        ruleId.ruleId,
                         v.location.toString(),
                         report.resourceFingerprint,
                     ).value in waivedFingerprints
