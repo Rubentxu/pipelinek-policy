@@ -14,6 +14,7 @@ import com.pipelinek.policy.decoder.ResourceDecoder
 import com.pipelinek.policy.decoders.csv.CsvResourceDecoder
 import com.pipelinek.policy.decoders.json.JsonResourceDecoder
 import com.pipelinek.policy.decoders.yaml.YamlResourceDecoder
+import com.pipelinek.policy.kernel.evaluator.RuleKey
 import com.pipelinek.policy.kernel.governance.EnforcementInterpreter
 import com.pipelinek.policy.kernel.governance.GovernanceTally
 import com.pipelinek.policy.kernel.governance.GovernanceVerdict
@@ -109,12 +110,11 @@ object CheckCmd {
                 listOf(Finding.refusal(resourcePath, "decode refused: ${decoded.refusal.code}"))
             is DecodeResult.Ok -> decoded.documents.flatMap { doc ->
                 val runtime = IrRuntimeAdapter.evaluate(verified, doc.root)
-                runtime.report.results.entries.flatMap { (ruleId, evaluation) ->
+                runtime.report.results.entries.flatMap { (key, evaluation) ->
                     when (evaluation) {
                         is RuleEvaluation.Error -> listOf(
                             findingFor(
-                                ruleId = ruleId.value,
-                                policyId = runtime.report.policySetId,
+                                key = key,
                                 resourceId = doc.id.value,
                                 path = resourcePath,
                                 resourceFingerprint = runtime.report.resourceFingerprint,
@@ -126,8 +126,7 @@ object CheckCmd {
                         )
                         is RuleEvaluation.Violated -> evaluation.violations.map { violation ->
                             findingFor(
-                                ruleId = ruleId.value,
-                                policyId = runtime.report.policySetId,
+                                key = key,
                                 resourceId = doc.id.value,
                                 path = resourcePath,
                                 resourceFingerprint = runtime.report.resourceFingerprint,
@@ -145,8 +144,7 @@ object CheckCmd {
     }
 
     private fun findingFor(
-        ruleId: String,
-        policyId: String,
+        key: RuleKey,
         resourceId: String,
         path: String,
         resourceFingerprint: String,
@@ -166,8 +164,9 @@ object CheckCmd {
         val col: Long? = (physical as? com.pipelinek.policy.decoder.SourceAnchor.Cell)?.column
         return if (isEvaluationError) {
             Finding.error(
-                policyId = policyId,
-                ruleId = ruleId,
+                policyId = key.policyId,
+                ruleId = key.ruleId,
+                policySetId = key.policySetId,
                 resourceId = resourceId,
                 path = path,
                 message = violation.message,
@@ -182,8 +181,9 @@ object CheckCmd {
             )
         } else {
             Finding.violation(
-                policyId = policyId,
-                ruleId = ruleId,
+                policyId = key.policyId,
+                ruleId = key.ruleId,
+                policySetId = key.policySetId,
                 resourceId = resourceId,
                 path = path,
                 message = violation.message,

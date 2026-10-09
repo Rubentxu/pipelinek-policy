@@ -59,6 +59,7 @@ El `check` standalone emite el schema base de B3 para cada finding de policy
 ```text
 violationId     fingerprint determinista del finding
 policyId        policy que produjo el resultado
+policySetId     policy set al que pertenece esa policy, o null en un refusal
 ruleId          regla que produjo el resultado
 bundleDigest    artifactDigest del manifest verificado
 subjectRef      ResourceDocument.id del recurso evaluado
@@ -71,6 +72,12 @@ remediation     instrucción accionable
 severity        severidad emitida por el productor del finding
 ```
 
+Los tres campos de identidad son INDEPENDIENTES y corresponden a las tres
+componentes de `RuleKey(policySetId, policyId, ruleId)`. `ruleId` es el id
+simple de la regla, nunca la clave compuesta, y `policyId` es la policy
+propietaria, nunca el id del policy set. Dos policies distintas que declaren el
+mismo `ruleId` producen findings distintos y direccionables.
+
 `sourceAnchor` usa un objeto tipado: `textSpan` lleva `startLine`,
 `startColumn`, `endLine`, `endColumn`; `cell` lleva `row` y `column`; `element`
 lleva `elementId`; `logical` lleva `path`. Los spans de texto son 1-indexados y
@@ -78,9 +85,22 @@ su extremo final es exclusivo. `actual` y `expected` son strings JSON escapados
 o `null`; nunca se serializan objetos de dominio arbitrarios ni fragmentos JSON
 aportados por el recurso.
 
+`fingerprint` se deriva de los MISMOS componentes que el finding publica
+(`policyId`, `ruleId`, `path` y el fingerprint del recurso). Por eso el digest
+que una exención (`Waiver`) necesita para dirigirse a este finding se puede
+recalcular íntegramente desde la superficie publicada, sin acceso al kernel.
+
 Por compatibilidad, el CLI conserva también `resourceId`, `location`, `state` y
 `fingerprint`. `violationId` es el alias estable de `fingerprint`, y
 `subjectRef` referencia el mismo recurso que `resourceId`.
+
+Cambio de contrato B3.6: `policySetId` es un campo AÑADIDO. Antes de B3.6,
+`ruleId` publicaba la `RuleKey` compuesta con prefijo de longitud
+(`3:uat5:alpha11:shared-rule`) y `policyId` publicaba el id del policy set. Un
+consumidor que leyera `ruleId` como id simple leía una cadena compuesta, y uno
+que usara `policyId` para dirigir una exención apuntaba a la policy equivocada.
+El campo nuevo no elimina ni renombra ningún campo existente; lo que cambia es
+el VALOR de `ruleId` y `policyId`, que pasa a ser el que su nombre declara.
 
 `enforcement`, `rollout` y `waiverStatus` son metadatos de gobierno, no hechos
 disponibles en la evaluación standalone de B3. Se incorporarán como extensión

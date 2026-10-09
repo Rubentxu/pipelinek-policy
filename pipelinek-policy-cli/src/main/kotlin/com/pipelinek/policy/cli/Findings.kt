@@ -24,6 +24,8 @@ enum class FindingState { PASS, VIOLATION, WAIVED, REFUSAL, ERROR }
 data class Finding(
     val policyId: String,
     val ruleId: String,
+    /** B3.6: the policy set the owning policy belongs to. Null for refusals. */
+    val policySetId: String? = null,
     val resourceId: String,
     val severity: String,
     val state: FindingState,
@@ -44,6 +46,7 @@ data class Finding(
         fun violation(
             policyId: String,
             ruleId: String,
+            policySetId: String? = null,
             resourceId: String,
             path: String,
             message: String,
@@ -59,6 +62,7 @@ data class Finding(
             state = FindingState.VIOLATION,
             policyId = policyId,
             ruleId = ruleId,
+            policySetId = policySetId,
             resourceId = resourceId,
             path = path,
             message = message,
@@ -75,6 +79,7 @@ data class Finding(
         fun error(
             policyId: String,
             ruleId: String,
+            policySetId: String? = null,
             resourceId: String,
             path: String,
             message: String,
@@ -90,6 +95,7 @@ data class Finding(
             state = FindingState.ERROR,
             policyId = policyId,
             ruleId = ruleId,
+            policySetId = policySetId,
             resourceId = resourceId,
             path = path,
             message = message,
@@ -107,6 +113,7 @@ data class Finding(
             state: FindingState,
             policyId: String,
             ruleId: String,
+            policySetId: String?,
             resourceId: String,
             path: String,
             message: String,
@@ -119,6 +126,9 @@ data class Finding(
             line: Long?,
             column: Long?,
         ): Finding {
+            // B3.6: the fingerprint is computed from the SAME components the
+            // finding publishes, so a waiver pinned on this digest addresses
+            // exactly this rule in exactly this policy.
             val fp = ViolationFingerprint.of(
                 policyId = policyId,
                 ruleId = ruleId,
@@ -128,6 +138,7 @@ data class Finding(
             return Finding(
                 policyId = policyId,
                 ruleId = ruleId,
+                policySetId = policySetId,
                 resourceId = resourceId,
                 severity = "error",
                 state = state,
@@ -147,6 +158,7 @@ data class Finding(
         fun refusal(resourceId: String, reason: String): Finding = Finding(
             policyId = "-",
             ruleId = "-",
+            policySetId = null,
             resourceId = resourceId,
             severity = "error",
             state = FindingState.REFUSAL,
@@ -214,6 +226,7 @@ object FindingsEmitter {
         val fields = mutableListOf(
             "violationId" to nullableJsonString(violationId),
             "policyId" to jsonString(policyId),
+            "policySetId" to nullableJsonString(policySetId),
             "ruleId" to jsonString(ruleId),
             "bundleDigest" to nullableJsonString(bundleDigest),
             "subjectRef" to jsonString(subjectRef),
