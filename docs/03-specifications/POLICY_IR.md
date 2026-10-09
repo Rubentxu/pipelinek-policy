@@ -149,31 +149,63 @@ No usar esta metadata como autoridad si puede derivarse del IR; validar contra I
 - changed opcode semantics -> major IR version;
 - new opcode -> capability negotiation por manifest.
 
-## 11. Algoritmos ejecutables M5 (implementación v1)
+## 11. Algoritmos ejecutables M5/B2 (implementación v1)
 
-Field order canónico del JSON (orden de emisión, verificable en golden tests):
+Field order canónico del JSON:
 
 ```text
-irVersion, languageVersion, policySetId, functions[] (sorted),
-policies[] (sorted by id) -> rules[] (sorted by id) -> {id, message, expression, appliesWhen?},
-sourceRefs{} (sorted keys) -> {file, startLine, startColumn, endLine, endColumn, symbol}
+irVersion, languageVersion, policySetId, functions[] (sorted), parameters? (sorted),
+shapes? (path/authority sorted), policies[] (sorted by id) -> rules[] (sorted by id),
+sourceRefs? (sorted keys)
 ```
+
+El rule preserva `{id, message, expression, appliesWhen?, code?, expected?, actual?, params?, supersession?}`.
+Las expresiones `FieldRef` y los selectores se escriben por segmentos estructurales,
+no mediante `toString()`. Los selectores incluyen `expectedType` y `optional`.
+`DatasetRef` se escribe y se lee como `{op:"datasetRef",name:...}`.
+
+### Números y parámetros
+
+Los números `ValueNode` llevan `numberKind` y su lexema para conservar exactamente
+el carrier (`Byte`, `Short`, `Int`, `Long`, `BigInteger`, `BigDecimal`, `Float` o
+`Double`). Los valores no finitos y carriers desconocidos se rechazan. Los
+parámetros nuevos usan objetos tipados `{kind,value}`. El lector mantiene la
+compatibilidad con los parámetros primitivos por regla del lector v1 anterior.
 
 ### semanticDigest
 
-`sha256( canonicalJsonBytes(PolicyIrDocument) )` — hex lowercase.
-El JSON canónico excluye parameters/shapes/metadata del digest semántico (estabilidad entre checkouts).
+SHA-256, hexadecimal minúsculo, del JSON canónico semántico. Se excluyen los
+parámetros globales del documento, los `shapes` y `sourceRefs`; los parámetros de
+regla y el resto de campos ejecutables permanecen incluidos. El codec ordena mapas,
+policies, reglas y funciones de forma determinista.
 
 ### artifactDigest
 
-`sha256( canonicalJsonBytes(document) + metadataBytes )` donde `metadataBytes` es la
-serialización determinista (claves ordenadas, `k=v\n`) del metadata del bundle.
+`sha256( canonicalJsonBytes(document) + metadataBytes )`, donde `metadataBytes` es
+UTF-8 determinista con claves ordenadas y formato `k=v` separado por LF. Incluye
+los campos completos del documento, entre ellos `sourceRefs`, parámetros y shapes.
 
-### Number encoding (canonical)
+### Compatibilidad v1
 
-Los números se emiten como STRING con su representación léxica original
-(`"3"`, `"3.5"`), preservada en decode vía `numberOfLexical` (Long para enteros,
-Double en caso contrario). Esto garantiza `digest(decode(encode(d))) == digest(d)`.
+El decoder acepta la representación v1 histórica de `FieldRef.path`, predicate de
+selector string y parámetros primitivos por regla. La admisión de bundles PKB1 es
+más estricta: el encoder de compatibilidad debe reproducir exactamente los bytes
+históricos para validar manifest y digests. Una forma decodificable cuyo writer
+histórico dependiera de una representación no reproducible del selector se
+rechaza, no se presume compatible. La fixture versionada
+`legacy-v1-source-ref.json` fija los bytes del IR v1 y su SHA-256.
+`PolicyBundleAdmissionFortressTest` empaqueta esos bytes en runtime y comprueba
+la admisión por `BundleVerifier.verifyPacked`. No hay un blob PKB1 completo como
+fixture dorada.
+Opcodes desconocidos, UTF-8 inválido, claves JSON duplicadas, números inválidos y
+versiones IR no soportadas se rechazan.
 
-Verificado por: `M5UatAcceptanceTest` (UAT1, UAT2), `PolicyBundleRemediationTest`,
-`BundleReproducibilityTest` (byte-identical double pack).
+### Límites de admisión
+
+`IrAdmissionLimits` por defecto limita IR a 16 MiB, profundidad JSON 128, 200.000
+nodos, 10.000 reglas y profundidad de selector 256. Los máximos configurables están
+acotados por hard ceilings. `BundleAdmissionLimits` limita por defecto el pack a
+32 MiB y cada entrada a 16 MiB, con hard ceilings de 128 MiB y 64 MiB.
+
+Verificación: `CanonicalPolicyJsonFortressTest`, `PolicyBundleAdmissionFortressTest`,
+`M5UatAcceptanceTest`, `PolicyBundleRemediationTest` y `BundleReproducibilityTest`.

@@ -28,6 +28,37 @@ data class PolicySourceRef(
     val symbol: String,
 )
 
+/** Bounded parser/evaluator admission limits for untrusted canonical IR bytes. */
+data class IrAdmissionLimits(
+    val maxEncodedBytes: Int = DEFAULT_MAX_ENCODED_BYTES,
+    val maxJsonDepth: Int = DEFAULT_MAX_JSON_DEPTH,
+    val maxJsonNodes: Int = DEFAULT_MAX_JSON_NODES,
+    val maxRules: Int = DEFAULT_MAX_RULES,
+    val maxSelectorDepth: Int = DEFAULT_MAX_SELECTOR_DEPTH,
+) {
+    init {
+        require(maxEncodedBytes in 1..MAX_ENCODED_BYTES) { "maxEncodedBytes out of bounds" }
+        require(maxJsonDepth in 1..MAX_JSON_DEPTH) { "maxJsonDepth out of bounds" }
+        require(maxJsonNodes in 1..MAX_JSON_NODES) { "maxJsonNodes out of bounds" }
+        require(maxRules in 1..MAX_RULES) { "maxRules out of bounds" }
+        require(maxSelectorDepth in 1..MAX_SELECTOR_DEPTH) { "maxSelectorDepth out of bounds" }
+    }
+
+    companion object {
+        private const val DEFAULT_MAX_ENCODED_BYTES = 16 * 1024 * 1024
+        private const val DEFAULT_MAX_JSON_DEPTH = 128
+        private const val DEFAULT_MAX_JSON_NODES = 200_000
+        private const val DEFAULT_MAX_RULES = 10_000
+        private const val DEFAULT_MAX_SELECTOR_DEPTH = 256
+        const val MAX_ENCODED_BYTES = 64 * 1024 * 1024
+        const val MAX_JSON_DEPTH = 512
+        const val MAX_JSON_NODES = 1_000_000
+        const val MAX_RULES = 100_000
+        const val MAX_SELECTOR_DEPTH = 4_096
+        val DEFAULT = IrAdmissionLimits()
+    }
+}
+
 enum class IrOpcode { LITERAL, FIELD_REF, COMPARISON, REFERENCE, COLLECTION_PREDICATE }
 
 sealed class IrRefusal(message: String, cause: Throwable? = null) : IllegalArgumentException(message) {

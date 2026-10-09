@@ -33,6 +33,9 @@ class Selector private constructor(
     private val optional: Boolean,
 ) {
 
+    internal val canonicalPath: DocumentPath get() = path
+    internal val canonicalExpectedType: ValueNode.Type? get() = expected
+
     /** Constrain the selector to require a specific leaf type. */
     fun expectingType(type: ValueNode.Type): Selector =
         Selector(path, type, optional)
@@ -56,6 +59,11 @@ class Selector private constructor(
      * with the `Missing` outcome being preserved as data.
      */
     fun isRequired(): Boolean = !optional
+
+    override fun equals(other: Any?): Boolean =
+        other is Selector && path == other.path && expected == other.expected && optional == other.optional
+
+    override fun hashCode(): Int = 31 * (31 * path.hashCode() + (expected?.hashCode() ?: 0)) + optional.hashCode()
 
     private fun descend(node: ValueNode, segment: String): ValueNode? = when (node) {
         is ValueNode.MappingValue -> node.entries[segment]

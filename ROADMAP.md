@@ -421,11 +421,13 @@ sustitución de params en appliesWhen; determinismo con digest.
 
 Evidencia trazable por requisito y gates: `docs/history/B1_RECEIPT.md`.
 
-## B2 — PolicyIR canónico y bundles íntegros (P0/P1) — PENDIENTE
+## B2 — PolicyIR canónico y bundles íntegros (P0/P1) — DONE (2026-10-09)
 decode(encode(IR)) ≡ IR; campos semánticos completos; selectores estructurales
 (sin toString); DatasetRef simétrico (reader); canonicalización; integridad
 PKB1 (semanticDigest vs artifactDigest); admission budgets; compatibilidad
-versionada (golden fixtures).
+versionada (fixture IR v1 y digest fijo; pack PKB1 verificado por la API pública).
+
+Evidencia trazable por requisito y gates: `docs/history/B2_RECEIPT.md`.
 
 ## B3 — Fidelidad de recursos, source maps y CLI (P1) — PENDIENTE
 Identidad estructural de nodos; JSON/YAML/CSV con spans reales; finding

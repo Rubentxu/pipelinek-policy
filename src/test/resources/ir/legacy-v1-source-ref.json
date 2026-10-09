@@ -1,0 +1,1 @@
+{"irVersion":1,"languageVersion":"m5","policySetId":"legacy-set","functions":[],"policies":[{"id":"policy","rules":[{"id":"rule","message":"replicas must be 3","expression":{"op":"fieldRef","path":"spec.replicas","type":"NUMBER","optional":false}}]}],"sourceRefs":{"rule":{"file":"legacy.kt","startLine":1,"startColumn":1,"endLine":1,"endColumn":10,"symbol":"rule"}}}
