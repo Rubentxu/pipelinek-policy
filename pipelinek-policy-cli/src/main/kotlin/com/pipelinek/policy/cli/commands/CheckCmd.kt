@@ -13,6 +13,8 @@ import com.pipelinek.policy.decoder.ResourceDecoder
 import com.pipelinek.policy.decoders.csv.CsvResourceDecoder
 import com.pipelinek.policy.decoders.json.JsonResourceDecoder
 import com.pipelinek.policy.decoders.yaml.YamlResourceDecoder
+import com.pipelinek.policy.kernel.policy.PolicyViolation
+import com.pipelinek.policy.kernel.policy.RuleEvaluation
 import java.io.File
 
 /**
@@ -67,9 +69,11 @@ object CheckCmd {
         emit(deduped, format, out)
 
         val hasRefusal = deduped.any { it.state == com.pipelinek.policy.cli.FindingState.REFUSAL }
+        val hasEvaluationError = deduped.any { it.state == com.pipelinek.policy.cli.FindingState.ERROR }
         val hasViolation = deduped.any { it.state == com.pipelinek.policy.cli.FindingState.VIOLATION }
         return when {
             hasRefusal -> ExitCodes.USAGE
+            hasEvaluationError -> ExitCodes.EVALUATION_ERROR
             hasViolation -> ExitCodes.VIOLATIONS
             else -> ExitCodes.OK
         }
@@ -94,19 +98,65 @@ object CheckCmd {
             is DecodeResult.Ok -> decoded.documents.flatMap { doc ->
                 val runtime = IrRuntimeAdapter.evaluate(verified, doc.root)
                 runtime.report.results.entries.flatMap { (ruleId, evaluation) ->
-                    evaluation.violations.map { v ->
-                        Finding.violation(
-                            policyId = runtime.report.policySetId,
-                            ruleId = ruleId.value,
-                            resourceId = doc.id.value,
-                            path = resourcePath,
-                            message = v.message,
-                            resourceFingerprint = runtime.report.resourceFingerprint,
-                            locationPath = v.location.toString(),
+                    when (evaluation) {
+                        is RuleEvaluation.Error -> listOf(
+                            findingFor(
+                                ruleId = ruleId.value,
+                                policyId = runtime.report.policySetId,
+                                resourceId = doc.id.value,
+                                path = resourcePath,
+                                resourceFingerprint = runtime.report.resourceFingerprint,
+                                violation = evaluation.primary,
+                                isEvaluationError = true,
+                            ),
                         )
+                        is RuleEvaluation.Violated -> evaluation.violations.map { violation ->
+                            findingFor(
+                                ruleId = ruleId.value,
+                                policyId = runtime.report.policySetId,
+                                resourceId = doc.id.value,
+                                path = resourcePath,
+                                resourceFingerprint = runtime.report.resourceFingerprint,
+                                violation = violation,
+                                isEvaluationError = false,
+                            )
+                        }
+                        RuleEvaluation.Passed, RuleEvaluation.NotApplicable -> emptyList()
                     }
                 }
             }
+        }
+    }
+
+    private fun findingFor(
+        ruleId: String,
+        policyId: String,
+        resourceId: String,
+        path: String,
+        resourceFingerprint: String,
+        violation: PolicyViolation,
+        isEvaluationError: Boolean,
+    ): Finding {
+        return if (isEvaluationError) {
+            Finding.error(
+                policyId = policyId,
+                ruleId = ruleId,
+                resourceId = resourceId,
+                path = path,
+                message = violation.message,
+                resourceFingerprint = resourceFingerprint,
+                locationPath = violation.location.toString(),
+            )
+        } else {
+            Finding.violation(
+                policyId = policyId,
+                ruleId = ruleId,
+                resourceId = resourceId,
+                path = path,
+                message = violation.message,
+                resourceFingerprint = resourceFingerprint,
+                locationPath = violation.location.toString(),
+            )
         }
     }
 

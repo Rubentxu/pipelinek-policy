@@ -51,6 +51,30 @@ class CheckCmdTest {
         return PolicyBundle(lower(set)).pack()
     }
 
+    private fun errorAndViolationBundleBytes(): ByteArray {
+        val teamPath = DocumentPath.ROOT.child("metadata").child("team")
+        val errorRule = Rule(
+            "team-text",
+            "metadata.team must be text",
+            Expression.Comparison(
+                Expression.FieldRef(teamPath, ValueNode.Type.TEXT),
+                Expression.Operator.TEXT_EQUALS,
+                Expression.Literal(ValueNode.TextValue("platform")),
+            ),
+        )
+        val violationRule = Rule(
+            "team-minimum",
+            "metadata.team must be at least 10",
+            Expression.Comparison(
+                Expression.FieldRef(teamPath, ValueNode.Type.NUMBER),
+                Expression.Operator.GTE,
+                Expression.Literal(ValueNode.NumberValue(10)),
+            ),
+        )
+        val set = PolicySet("uat", listOf(Policy("p", listOf(errorRule, violationRule))))
+        return PolicyBundle(lower(set)).pack()
+    }
+
     private fun runCheck(vararg args: String): Pair<Int, String> {
         val sb = StringBuilder()
         val code = PolicyCli.run(listOf("check") + args.toList()) { sb.appendLine(it) }
@@ -84,6 +108,54 @@ class CheckCmdTest {
         val (code, out) = runCheck("--policy", bundle.toString(), bad.toString())
         assertEquals(ExitCodes.VIOLATIONS, code)
         assertTrue(out.contains("must-have-team"))
+    }
+
+    @Test
+    fun `typed evaluator error is distinct from violation and takes precedence`() {
+        val dir = kotlin.io.path.createTempDirectory("m9check-error")
+        val bundle = dir.resolve("p.bundle").also { it.writeBytes(errorAndViolationBundleBytes()) }
+        val resource = dir.resolve("wrong-type.json")
+            .also { it.writeText("""{"metadata":{"team":7}}""") }
+
+        for (format in listOf("text", "json", "jsonl")) {
+            val (code, out) = runCheck(
+                "--policy", bundle.toString(), "--format", format, resource.toString(),
+            )
+
+            assertEquals(ExitCodes.EVALUATION_ERROR, code, "typed engine error must outrank a violation: $out")
+            when (format) {
+                "text" -> {
+                    assertTrue(out.contains("[ERROR]") && out.contains("team-text"), out)
+                    assertTrue(out.contains("[VIOLATION]") && out.contains("team-minimum"), out)
+                }
+                "json" -> {
+                    assertTrue(out.contains("\"state\": \"error\"") && out.contains("team-text"), out)
+                    assertTrue(out.contains("\"state\": \"violation\"") && out.contains("team-minimum"), out)
+                }
+                else -> {
+                    assertTrue(out.contains("\"state\":\"error\"") && out.contains("team-text"), out)
+                    assertTrue(out.contains("\"state\":\"violation\"") && out.contains("team-minimum"), out)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `decode refusal still outranks typed evaluator error`() {
+        val dir = kotlin.io.path.createTempDirectory("m9check-refusal-error")
+        val bundle = dir.resolve("p.bundle").also { it.writeBytes(errorAndViolationBundleBytes()) }
+        val resource = dir.resolve("wrong-type.json")
+            .also { it.writeText("""{"metadata":{"team":7}}""") }
+        val refused = dir.resolve("broken.csv").also { it.writeText("\"unterminated") }
+
+        val (code, out) = runCheck(
+            "--policy", bundle.toString(), "--format", "jsonl", resource.toString(), refused.toString(),
+        )
+
+        assertEquals(ExitCodes.USAGE, code, "refusal must remain the highest-priority outcome: $out")
+        assertTrue(out.contains("\"state\":\"error\""), out)
+        assertTrue(out.contains("\"state\":\"violation\""), out)
+        assertTrue(out.contains("\"state\":\"refusal\""), out)
     }
 
     @Test

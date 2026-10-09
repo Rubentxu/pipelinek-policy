@@ -19,7 +19,7 @@ data class Location(
     }
 }
 
-enum class FindingState { PASS, VIOLATION, WAIVED, REFUSAL }
+enum class FindingState { PASS, VIOLATION, WAIVED, REFUSAL, ERROR }
 
 data class Finding(
     val policyId: String,
@@ -40,6 +40,45 @@ data class Finding(
             message: String,
             resourceFingerprint: String,
             locationPath: String,
+        ): Finding = actionableFailure(
+            state = FindingState.VIOLATION,
+            policyId = policyId,
+            ruleId = ruleId,
+            resourceId = resourceId,
+            path = path,
+            message = message,
+            resourceFingerprint = resourceFingerprint,
+            locationPath = locationPath,
+        )
+
+        fun error(
+            policyId: String,
+            ruleId: String,
+            resourceId: String,
+            path: String,
+            message: String,
+            resourceFingerprint: String,
+            locationPath: String,
+        ): Finding = actionableFailure(
+            state = FindingState.ERROR,
+            policyId = policyId,
+            ruleId = ruleId,
+            resourceId = resourceId,
+            path = path,
+            message = message,
+            resourceFingerprint = resourceFingerprint,
+            locationPath = locationPath,
+        )
+
+        private fun actionableFailure(
+            state: FindingState,
+            policyId: String,
+            ruleId: String,
+            resourceId: String,
+            path: String,
+            message: String,
+            resourceFingerprint: String,
+            locationPath: String,
         ): Finding {
             val fp = ViolationFingerprint.of(
                 policyId = policyId,
@@ -52,7 +91,7 @@ data class Finding(
                 ruleId = ruleId,
                 resourceId = resourceId,
                 severity = "error",
-                state = FindingState.VIOLATION,
+                state = state,
                 location = Location(path),
                 remediation = if (message.isBlank()) "fix resource to satisfy rule $ruleId" else message,
                 fingerprint = fp.value,

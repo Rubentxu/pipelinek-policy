@@ -64,6 +64,7 @@ class HelpAndExitCodesTest {
             assertTrue(out.contains("\"$cmd\""), "help must list $cmd")
         }
         assertTrue(out.contains("\"exit_codes\""))
+        assertTrue(out.contains("typed evaluator/engine error"), out)
     }
 
     @Test
@@ -110,6 +111,9 @@ class HelpAndExitCodesTest {
             val (code, out) = run(cmd, "--json-help")
             assertEquals(ExitCodes.OK, code, "$cmd --json-help must exit 0")
             assertTrue(out.contains("\"command\": \"$cmd\""), out)
+            if (cmd == "check") {
+                assertTrue(out.contains("typed evaluator/engine error"), out)
+            }
         }
     }
 }

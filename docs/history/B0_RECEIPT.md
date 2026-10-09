@@ -29,17 +29,25 @@ Tabla B0.1 requerida (estado resultante):
 | Error | Failure(PLUGIN) ERRORED | Failure(PLUGIN) ERRORED (no silencioso) |
 | Refusal admisión | Failure REFUSED | Failure REFUSED (domina) |
 
-## B0.2 — Propagación tipada · **PARCIAL (lo que posee B0)**
+## B0.2 — Propagación tipada · **DONE en el boundary de seguridad B0**
 
 - Catch de admisión de bundle ampliado a `Exception` genérica (un crash del
   verificador ya no puede fugarse como PASSED ni como excepción sin clasificar):
   REFUSED con `Clase: mensaje`.
-- Separación vigente: decode refusal / bundle refusal / error semántico
-  (ERRORED) / violación (VIOLATED) — cuatro clases distinguibles en el output.
-- La taxonomía completa de seis clases (error adaptador vs engine, etc.) y el
-  wrapper `Result<PolicyCheckOutput, PolicyCheckError>` viven en B4.3
-  (enforcement como responsabilidad diferenciada). Registrado como deuda de
-  bloque, no DEFERRED encubierto.
+- El plugin distingue decode/bundle refusal (`REFUSED`), error semántico
+  (`ERRORED`), violación (`VIOLATED`) y `NotApplicable`; los tests confirman
+  que los estados sobreviven a `ruleSummaries` y `StepOutcome`.
+- Antes del fix B0.2, `CheckCmd` consumía `RuleEvaluation.violations`, que
+  también proyecta `RuleEvaluation.Error.primary`, y serializaba un error de
+  evaluación como `state=violation`, exit 1. `CheckCmd` ahora hace match sobre
+  el ADT sellado: error -> `FindingState.ERROR`, violación -> `VIOLATION`,
+  `Passed`/`NotApplicable` no producen findings y refusal sigue siendo
+  dominante. El error tipado usa el código estable 3; refusal/decode, 2.
+- `IrRuntimeAdapter` conserva `PolicyReport.results: Map<RuleKey,
+  RuleEvaluation>` sin aplanar los resultados. El wrapper de error genérico
+  del adapter/engine (`Result<PolicyCheckOutput, PolicyCheckError>`) sigue
+  asignado a B4.3 como D-B0-1 P2. No se reclasificó ni se ocultó como
+  `DEFERRED` un defecto P0/P1.
 
 ## B0.3 — Regression fortress · **8/8 VERDE**
 
@@ -67,8 +75,11 @@ Failure(PLUGIN) con mensaje.
   violated/not-applicable).
 - SHADOW no oculta errores operativos ni rechazos de admisión (B0-1b, B0-3b).
 - Tests negativos demostraron el fallo previo (rojo pre-fix, OBSERVED).
-- `gradle check --rerun-tasks` global: **BUILD SUCCESSFUL, 317 tests / 0
-  failures / 0 errors** (188+61+29+11+16+5+7). Detekt incluido.
+- `./gradle-jdk21.sh check --rerun-tasks --no-daemon --console=plain` global,
+  verificado el 2026-10-09 tras el fix B0.2: **BUILD SUCCESSFUL**, 36 tareas,
+  60 suites XML frescas, **337 tests / 0 failures / 0 errors / 0 skips**.
+  `architectureFitnessGuard` y `detekt` ejecutados dentro del gate. El total
+  incluye el trabajo B1 validado en el mismo árbol.
 
 ## Deuda nueva / pendiente
 
@@ -77,3 +88,13 @@ Failure(PLUGIN) con mensaje.
   de error de adaptador → B4.
 - Wire: consumidores del enum serializado deben tolerar `ERRORED` (aditivo);
   registrado para B2.8 compatibilidad.
+
+## Evidencia B0.2 CLI (2026-10-09)
+
+- Falsificación antes del fix: `CheckCmdTest` por `PolicyCli.run` falló con
+  exit esperado 3 vs observado 1; JSONL clasificó tanto el `RuleEvaluation.Error`
+  como la violación ordinaria en `state=violation`.
+- Tras el fix: los formatos text/json/jsonl distinguen `ERROR` de `VIOLATION`;
+  error domina sobre violation (exit 3), refusal domina sobre ambos (exit 2).
+- `CheckCmdTest` y `HelpAndExitCodesTest`: 12 tests focalizados verdes con
+  `--rerun-tasks`; `detekt --rerun-tasks` verde.

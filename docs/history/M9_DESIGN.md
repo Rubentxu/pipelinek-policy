@@ -39,7 +39,7 @@ por construcción, pero el test de falsificación igual se escribe).
 | 0 | éxito sin violations |
 | 1 | violations presentes (check/test/diff findings) |
 | 2 | usage error, refusal, decode error, formato desconocido |
-| 3 | error interno inesperado (excepción no clasificada) |
+| 3 | error tipado del evaluador/engine o error interno inesperado |
 
 Agregación check: error(refusal/decode) > violation > ok. Precedencia
 explícita y testeada (02a corregido).
@@ -50,7 +50,7 @@ explícita y testeada (02a corregido).
 data class Finding(
   policyId, ruleId, resourceId, severity,
   location: Location?,           // path + line/cell si el decoder lo da
-  state: Pass|Violation|Waived|Refusal,
+  state: Pass|Violation|Waived|Refusal|Error,
   remediation: String,           // obligatorio, nunca vacío
   fingerprint: String            // ViolationFingerprint M7 reutilizado
 )

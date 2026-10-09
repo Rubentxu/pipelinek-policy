@@ -21,7 +21,7 @@ object JsonHelp {
             "\"0\": \"success, no violations\", " +
             "\"1\": \"violations present\", " +
             "\"2\": \"usage error, refusal, or decode error\", " +
-            "\"3\": \"unexpected internal error\"},\n" +
+            "\"3\": \"typed evaluator/engine error or unexpected internal error\"},\n" +
             "  \"commands\": [\n$cmds\n  ]\n" +
             "}"
     }
@@ -32,6 +32,7 @@ object JsonHelp {
             "  \"description\": \"${spec.description.jsonEscape()}\",\n" +
             "  \"flags\": [${spec.flags.joinToString(",") { "\"$it\"" }}],\n" +
             "  \"exit_codes\": {\"0\": \"success\", \"1\": \"violations\", " +
-            "\"2\": \"usage/refusal/decode error\", \"3\": \"internal error\"}\n" +
+            "\"2\": \"usage/refusal/decode error\", " +
+            "\"3\": \"typed evaluator/engine error or internal error\"}\n" +
             "}"
 }

@@ -46,6 +46,9 @@ exit 1; refusals/decode errors ⇒ exit 2; ok ⇒ exit 0.
 - 02c: FALSIFICACIÓN: findings duplicados por recurso (mismo ruleId +
   resource dos veces en la salida) deben ser imposibles (dedup por
   policyId|ruleId|resourceId).
+- 02d (B0.2): `RuleEvaluation.Error` conserva `state=error`, no se aplana
+  a `violation`, y sale con código 3. Si coexiste con una violación, ambos
+  findings sobreviven y el error domina; una refusal sigue dominando con 2.
 
 ### REQ-M9-03 — formatos text/json/jsonl
 
@@ -86,7 +89,8 @@ lista todos los subcomandos.
 ### REQ-M9-06 — exit codes estables
 
 0 éxito sin violations; 1 violations presentes; 2 usage/refusal/decode
-error; 3 error interno inesperado. Estables y documentados en --json-help.
+error; 3 error tipado del evaluador/engine o error interno inesperado.
+Estables y documentados en --json-help.
 
 **Escenarios**
 - 06a: matriz (ok, violation, refusal, unknown-cmd) ⇒ (0,1,2,2).
