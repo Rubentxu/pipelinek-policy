@@ -1,5 +1,6 @@
 package com.pipelinek.policy.plugin
 
+import com.pipelinek.policy.kernel.governance.EnforcementMode
 import dev.rubentxu.pipeline.v2.events.registry.EventDefinition
 import dev.rubentxu.pipeline.v2.events.registry.EventDefinitionContributor
 import dev.rubentxu.pipeline.v2.events.registry.EventDefinitionCreation

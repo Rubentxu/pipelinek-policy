@@ -6,6 +6,7 @@ import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.cli.FindingsEmitter
 import com.pipelinek.policy.cli.Finding
+import com.pipelinek.policy.cli.FindingState
 import com.pipelinek.policy.cli.dedup
 import com.pipelinek.policy.decoder.DecodeOptions
 import com.pipelinek.policy.decoder.DecodeResult
@@ -13,6 +14,9 @@ import com.pipelinek.policy.decoder.ResourceDecoder
 import com.pipelinek.policy.decoders.csv.CsvResourceDecoder
 import com.pipelinek.policy.decoders.json.JsonResourceDecoder
 import com.pipelinek.policy.decoders.yaml.YamlResourceDecoder
+import com.pipelinek.policy.kernel.governance.EnforcementInterpreter
+import com.pipelinek.policy.kernel.governance.GovernanceTally
+import com.pipelinek.policy.kernel.governance.GovernanceVerdict
 import com.pipelinek.policy.kernel.policy.PolicyViolation
 import com.pipelinek.policy.kernel.policy.RuleEvaluation
 import java.io.File
@@ -68,14 +72,22 @@ object CheckCmd {
         val deduped = findings.dedup()
         emit(deduped, format, out)
 
-        val hasRefusal = deduped.any { it.state == com.pipelinek.policy.cli.FindingState.REFUSAL }
-        val hasEvaluationError = deduped.any { it.state == com.pipelinek.policy.cli.FindingState.ERROR }
-        val hasViolation = deduped.any { it.state == com.pipelinek.policy.cli.FindingState.VIOLATION }
-        return when {
-            hasRefusal -> ExitCodes.ADMISSION_ERROR
-            hasEvaluationError -> ExitCodes.EVALUATION_ERROR
-            hasViolation -> ExitCodes.VIOLATIONS
-            else -> ExitCodes.OK
+        // B0.5: the exit-code precedence lives in the core
+        // EnforcementInterpreter. This adapter only COUNTS finding states and
+        // maps the core verdict to a frozen exit code; it implements no rule,
+        // so it cannot disagree with the plugin adapter.
+        val verdict = EnforcementInterpreter.verdict(
+            GovernanceTally(
+                refusals = deduped.count { it.state == FindingState.REFUSAL },
+                errors = deduped.count { it.state == FindingState.ERROR },
+                violations = deduped.count { it.state == FindingState.VIOLATION },
+            ),
+        )
+        return when (verdict) {
+            GovernanceVerdict.REFUSED -> ExitCodes.ADMISSION_ERROR
+            GovernanceVerdict.ERRORED -> ExitCodes.EVALUATION_ERROR
+            GovernanceVerdict.VIOLATED -> ExitCodes.VIOLATIONS
+            GovernanceVerdict.PASSED -> ExitCodes.OK
         }
     }
 

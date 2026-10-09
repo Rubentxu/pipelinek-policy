@@ -2,6 +2,7 @@ package com.pipelinek.policy.plugin
 
 import com.pipelinek.policy.bundle.PolicyBundle
 import com.pipelinek.policy.ir.PolicyIrDocument
+import com.pipelinek.policy.kernel.governance.EnforcementMode
 import com.pipelinek.policy.kernel.expression.Expression
 import com.pipelinek.policy.kernel.expression.Expression.Comparison
 import com.pipelinek.policy.kernel.expression.Expression.FieldRef
@@ -112,12 +113,16 @@ class FailClosedFortressTest {
                 ),
             ),
         )
-        assertEquals(PolicyCheckVerdict.VIOLATED, out.verdict, "violations still dominate the verdict")
-        assertEquals(1, out.violationsCount)
+        // B0.5 corrected this expectation. The fortress used to assert
+        // VIOLATED here, which was the defect itself: an incomplete report was
+        // reported as a clean policy verdict, and under SHADOW that VIOLATED
+        // became StepOutcome.Success. An evaluation Error is an OPERATIONAL
+        // failure and outranks any violation found alongside it.
+        assertEquals(PolicyCheckVerdict.ERRORED, out.verdict, "an evaluation error outranks a violation")
         assertEquals(3, out.ruleSummaries.size)
         assertTrue(out.ruleSummaries.any { it.outcome == "passed" })
         assertTrue(out.ruleSummaries.any { it.outcome == "error" })
-        assertTrue(out.ruleSummaries.any { it.outcome == "violated" })
+        assertTrue(out.ruleSummaries.any { it.outcome == "violated" }, "violations stay visible as evidence")
     }
 
     // --- B0.3: the seven fortress scenarios ---

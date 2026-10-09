@@ -9,6 +9,8 @@ import com.pipelinek.policy.decoders.csv.CsvResourceDecoder
 import com.pipelinek.policy.decoders.json.JsonResourceDecoder
 import com.pipelinek.policy.decoders.map.MapAdapterDecoder
 import com.pipelinek.policy.decoders.yaml.YamlResourceDecoder
+import com.pipelinek.policy.kernel.governance.EnforcementInterpreter
+import com.pipelinek.policy.kernel.governance.GovernanceTally
 import com.pipelinek.policy.kernel.policy.RuleEvaluation
 import dev.rubentxu.pipeline.v2.domain.ExecutionLocation
 import dev.rubentxu.pipeline.v2.domain.PluginStepId
@@ -156,20 +158,24 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
             .map { (key, ev) ->
                 RuleSummary(ruleId = key.ruleId, outcome = outcomeName(ev), policyId = key.policyId)
             }
-        val violations = report.results.values.count { it is RuleEvaluation.Violated }
-        // B0.1 fail-closed: Error is an operational failure, never a pass.
-        // Precedence: REFUSED (admission) > ERRORED > VIOLATED > PASSED —
-        // but violations remain visible in summaries either way.
-        val errors = report.results.values.count { it is RuleEvaluation.Error }
-
-        return when {
-            violations > 0 ->
-                PolicyCheckOutput.violated(violations, report.digest, report.policySetId, summaries, input.enforcement)
-            errors > 0 ->
-                PolicyCheckOutput.errored(errors, report.digest, report.policySetId, summaries)
-            else ->
-                PolicyCheckOutput.passed(report.digest, report.policySetId, summaries)
-        }
+        // B0.5: the precedence REFUSED > ERRORED > VIOLATED > PASSED lives in the
+        // core EnforcementInterpreter, not here. This adapter only COUNTS; it
+        // implements no rule, so it cannot disagree with the CLI adapter.
+        // Violations stay in `summaries` as evidence whatever the verdict is.
+        val verdict = EnforcementInterpreter.verdict(
+            GovernanceTally(
+                errors = report.results.values.count { it is RuleEvaluation.Error },
+                violations = report.results.values.count { it is RuleEvaluation.Violated },
+            ),
+        )
+        return PolicyCheckOutput.of(
+            verdict = verdict,
+            violationsCount = report.results.values.count { it is RuleEvaluation.Violated },
+            reportDigest = report.digest,
+            policySetId = report.policySetId,
+            ruleSummaries = summaries,
+            enforcement = input.enforcement,
+        )
     }
 
     private fun outcomeName(ev: RuleEvaluation): String = when (ev) {

@@ -19,9 +19,15 @@ internal object BundleIrCanonicality {
      * inadmissible whenever no historical encoding could be produced.
      */
     fun identify(bytes: ByteArray, document: PolicyIrDocument): BundleIrEncoding? {
-        if (bytes.contentEquals(CanonicalPolicyJson.encode(document))) return BundleIrEncoding.CURRENT
-        val legacyBytes = LegacyPolicyIrJsonV1.encode(document) ?: return null
-        return if (bytes.contentEquals(legacyBytes)) BundleIrEncoding.LEGACY_V1 else null
+        if (bytes.contentEquals(CanonicalPolicyJson.encode(document))) {
+            return BundleIrEncoding.CURRENT
+        }
+        val legacyBytes: ByteArray? = LegacyPolicyIrJsonV1.encode(document)
+        return when {
+            legacyBytes == null -> null
+            bytes.contentEquals(legacyBytes) -> BundleIrEncoding.LEGACY_V1
+            else -> null
+        }
     }
 
     fun manifestMatches(

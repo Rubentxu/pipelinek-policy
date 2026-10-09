@@ -1,5 +1,6 @@
 package com.pipelinek.policy.plugin
 
+import com.pipelinek.policy.kernel.governance.EnforcementMode
 import dev.rubentxu.pipeline.v2.events.registry.PayloadDecode
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test

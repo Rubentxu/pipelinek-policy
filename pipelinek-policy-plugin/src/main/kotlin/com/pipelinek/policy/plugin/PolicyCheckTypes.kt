@@ -1,9 +1,14 @@
 package com.pipelinek.policy.plugin
 
+import com.pipelinek.policy.kernel.governance.EnforcementMode
 import kotlinx.serialization.Serializable
 
 /**
  * M6 REQ-02 · typed request carried by the `policy.check` registry step.
+ *
+ * `EnforcementMode` is owned by the core since B4-T8 and imported here, NOT
+ * typealiased: a typealias would not preserve the fully-qualified type
+ * identity kotlinx.serialization resolves the enum descriptor by.
  *
  * Everything the pure handler needs travels ENCODED in the input: the resource
  * bytes, its format, and the packed policy bundle. The handler performs zero
@@ -32,13 +37,6 @@ enum class PolicyCheckVerdict {
     VIOLATED,
     REFUSED,
 }
-
-/**
- * M7 REQ-M7-04 · enforcement mode. SHADOW: the policy computes would-block
- * findings without changing the pipeline outcome (spec §6).
- */
-@Serializable
-enum class EnforcementMode { ENFORCED, SHADOW }
 
 /** One rule's outcome summary, ordered by rule id for canonical display. */
 @Serializable

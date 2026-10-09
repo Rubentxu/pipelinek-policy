@@ -47,7 +47,8 @@ class CurrentEncodingAdmissionTest {
             BundleIrCanonicality.identify(CanonicalPolicyJson.encode(document), verified.bundle.document),
         )
         val evaluation = IrRuntimeAdapter.evaluate(verified, items)
-        assertEquals<RuleEvaluation>(RuleEvaluation.Passed, checkNotNull(evaluation.report.results[key("any-positive")]))
+        val anyPositive = checkNotNull(evaluation.report.results[key("any-positive")])
+        assertEquals<RuleEvaluation>(RuleEvaluation.Passed, anyPositive)
         val violated = checkNotNull(evaluation.report.results[key("none-positive")])
         assertTrue(violated is RuleEvaluation.Violated, "expected a violation, got $violated")
         assertEquals(ViolationCode.COMPARISON_FAILED, violated.violations.single().code)
