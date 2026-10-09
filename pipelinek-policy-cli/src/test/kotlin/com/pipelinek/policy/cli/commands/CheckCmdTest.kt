@@ -15,6 +15,7 @@ import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -101,7 +102,7 @@ class CheckCmdTest {
     }
 
     @Test
-    fun `02a only violations exits 1`() {
+    fun `02a only violations exits 2`() {
         val dir = kotlin.io.path.createTempDirectory("m9check2")
         val bundle = dir.resolve("p.bundle").also { it.writeBytes(bundleBytes()) }
         val bad = dir.resolve("bad.json").also { it.writeText("""{"metadata":{}}""") }
@@ -227,6 +228,79 @@ class CheckCmdTest {
             Regex("\"line\":\\s*3").containsMatchIn(line).also { if (!it) println(msg) }
         })
         assertTrue(Regex("\"column\":\\s*[0-9]+").containsMatchIn(line), "physical column expected: $line")
+
+        val fingerprint = Regex("\"fingerprint\":\"([^\"]+)\"").find(line)!!.groupValues[1]
+        val resourceId = Regex("\"resourceId\":\"([^\"]+)\"").find(line)!!.groupValues[1]
+        val bundleDigest = com.pipelinek.policy.bundle.BundleVerifier.verifyPacked(bundleBytes())
+            .bundle.manifest.artifactDigest
+        assertTrue(line.contains("\"violationId\":\"$fingerprint\""), line)
+        assertTrue(line.contains("\"bundleDigest\":\"$bundleDigest\""), line)
+        assertTrue(line.contains("\"subjectRef\":\"$resourceId\""), line)
+        assertTrue(line.contains("\"sourceAnchor\":{\"kind\":\"textSpan\",\"startLine\":3,"), line)
+        assertTrue(line.contains("\"path\":\"metadata.team\""), line)
+        assertTrue(line.contains("\"actual\":\"tools\""), line)
+        assertTrue(line.contains("\"expected\":"), line)
+        assertTrue(line.contains("\"message\":\"metadata.team must be platform\""), line)
+        assertFalse(line.contains("\"enforcement\""), line)
+        assertFalse(line.contains("\"rollout\""), line)
+        assertFalse(line.contains("\"waiverStatus\""), line)
+    }
+
+    @Test
+    fun `YAML finding carries its physical text span`() {
+        val dir = kotlin.io.path.createTempDirectory("m9check-yaml-phys")
+        val bundle = dir.resolve("p.bundle").also { it.writeBytes(bundleBytes()) }
+        val resource = dir.resolve("res.yaml")
+            .also { it.writeText("kind: deployment\nmetadata:\n  team: tools\n") }
+
+        val (code, out) = runCheck("--policy", bundle.toString(), "--format", "jsonl", resource.toString())
+
+        assertEquals(ExitCodes.VIOLATIONS, code, out)
+        val finding = out.lines().first { it.contains("\"state\":\"violation\"") }
+        assertTrue(
+            finding.contains("\"sourceAnchor\":{\"kind\":\"textSpan\",\"startLine\":3,\"startColumn\":9,"),
+            "YAML source anchor expected: $finding",
+        )
+        assertTrue(finding.contains("\"path\":\"metadata.team\""), finding)
+        assertTrue(finding.contains("\"actual\":\"tools\""), finding)
+    }
+
+    @Test
+    fun `CSV finding reports the exact physical row and column`() {
+        val dir = kotlin.io.path.createTempDirectory("m9check-csv-phys")
+        val teamPath = DocumentPath.ROOT.child("0").child("team")
+        val set = PolicySet(
+            "uat",
+            listOf(
+                Policy(
+                    "p",
+                    listOf(
+                        Rule(
+                            "team-platform",
+                            "row team must be platform",
+                            Expression.Comparison(
+                                Expression.FieldRef(teamPath, ValueNode.Type.TEXT),
+                                Expression.Operator.TEXT_EQUALS,
+                                Expression.Literal(ValueNode.TextValue("platform")),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val bundle = dir.resolve("p.bundle").also { it.writeBytes(PolicyBundle(lower(set)).pack()) }
+        val csv = dir.resolve("res.csv").also { it.writeText("team,region\ntools,west\n") }
+
+        val (code, out) = runCheck("--policy", bundle.toString(), "--format", "jsonl", csv.toString())
+
+        assertEquals(ExitCodes.VIOLATIONS, code, out)
+        val finding = out.lines().first { it.contains("\"state\":\"violation\"") }
+        assertTrue(Regex("\"line\":2").containsMatchIn(finding), "CSV physical row expected: $finding")
+        assertTrue(Regex("\"column\":1").containsMatchIn(finding), "CSV physical column expected: $finding")
+        assertTrue(
+            finding.contains("\"sourceAnchor\":{\"kind\":\"cell\",\"row\":2,\"column\":1}"),
+            "CSV source anchor expected: $finding",
+        )
     }
 
     @Test
@@ -240,7 +314,7 @@ class CheckCmdTest {
     }
 
     @Test
-    fun `unknown format exits 2`() {
+    fun `unknown format exits 1`() {
         val (code, out) = runCheck("--policy", "whatever", "--format", "xml", "r.json")
         assertEquals(ExitCodes.USAGE, code)
         assertTrue(out.contains("unknown --format xml"))

@@ -14,7 +14,7 @@ import java.io.File
  *
  * Fixture dir layout: `<name>.allow.<ext>` (must have NO violations) and
  * `<name>.deny.<ext>` (must have at least one violation). A fixture whose
- * expectation mismatches produces a per-fixture result line and exit 1.
+ * expectation mismatches produces a per-fixture result line and exit 2.
  */
 object TestCmd {
 
@@ -35,13 +35,13 @@ object TestCmd {
         val bundleFile = File(policyPath)
         if (!bundleFile.isFile) {
             out("test: bundle not found: $policyPath")
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
             BundleVerifier.verifyPacked(bundleFile.readBytes())
         } catch (e: Exception) {
             out("test: bundle refused: ${e.message}")
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
 
         val fixtures = dir.listFiles()?.filter { it.isFile }?.sortedBy { it.name } ?: emptyList()

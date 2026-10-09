@@ -53,25 +53,40 @@ pipelinek-policy check \
 
 ## 5. Agent output
 
-Una violation debe incluir:
+El `check` standalone emite el schema base de B3 para cada finding de policy
+(violation o error de evaluación). Los campos de identidad y diagnóstico son:
 
 ```text
-violationId
-policyId
-ruleId
-bundleDigest
-subjectRef
-sourceAnchor
-path
-actual (safe rendered)
-expected
-message
-remediation
-severity
-enforcement
-rollout
-waiverStatus
+violationId     fingerprint determinista del finding
+policyId        policy que produjo el resultado
+ruleId          regla que produjo el resultado
+bundleDigest    artifactDigest del manifest verificado
+subjectRef      ResourceDocument.id del recurso evaluado
+sourceAnchor    SourceAnchor estructurado del nodo, o null si no se resuelve
+path            DocumentPath lógico de la evaluación
+actual          render textual seguro, nullable
+expected        render textual de la expectativa, nullable
+message         diagnóstico original del evaluator
+remediation     instrucción accionable
+severity        severidad emitida por el productor del finding
 ```
+
+`sourceAnchor` usa un objeto tipado: `textSpan` lleva `startLine`,
+`startColumn`, `endLine`, `endColumn`; `cell` lleva `row` y `column`; `element`
+lleva `elementId`; `logical` lleva `path`. Los spans de texto son 1-indexados y
+su extremo final es exclusivo. `actual` y `expected` son strings JSON escapados
+o `null`; nunca se serializan objetos de dominio arbitrarios ni fragmentos JSON
+aportados por el recurso.
+
+Por compatibilidad, el CLI conserva también `resourceId`, `location`, `state` y
+`fingerprint`. `violationId` es el alias estable de `fingerprint`, y
+`subjectRef` referencia el mismo recurso que `resourceId`.
+
+`enforcement`, `rollout` y `waiverStatus` son metadatos de gobierno, no hechos
+disponibles en la evaluación standalone de B3. Se incorporarán como extensión
+cuando exista el contexto de enforcement/rollout/waivers de B4. El CLI B3 no
+los inventa, no los infiere del exit code y no los emite como estados por defecto.
+Esta separación está registrada en ADR-0013.
 
 ## 6. Explain
 

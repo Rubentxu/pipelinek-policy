@@ -76,7 +76,7 @@ class ExplainCmdTest {
     }
 
     @Test
-    fun `unknown rule exits 2 with known list`() {
+    fun `unknown rule exits 1 with known list`() {
         val b = bundle()
         val (code, out) = run("--policy", b.toString(), "--rule", "nope")
         assertEquals(ExitCodes.USAGE, code)

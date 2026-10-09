@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
 /**
  * REQ-M9-01a/08 · compile / bundle verify / test.
  * 01a: compile produces a deterministic bundle (same IR in ⇒ same bytes).
- * 08c: test with pass+fail fixtures ⇒ exit 1 with per-fixture results.
+ * 08c: test with pass+fail fixtures ⇒ exit 2 with per-fixture results.
  */
 class CompileBundleTestTest {
 
@@ -106,7 +106,34 @@ class CompileBundleTestTest {
     }
 
     @Test
-    fun `08c test fixtures one pass one fail exits 1 per-fixture`() {
+    fun `test classifies a missing bundle as admission error`() {
+        val fixtures = dir.resolve("missing-bundle-fixtures").toFile().apply { mkdirs() }
+
+        val (code, out) = run(
+            "test",
+            "--policy", dir.resolve("missing.bundle").toString(),
+            "--fixtures", fixtures.absolutePath,
+        )
+
+        assertEquals(ExitCodes.ADMISSION_ERROR, code, out)
+    }
+
+    @Test
+    fun `test classifies a refused bundle as admission error`() {
+        val bundle = dir.resolve("refused.bundle").also { it.writeBytes(byteArrayOf(1, 2, 3)) }
+        val fixtures = dir.resolve("refused-bundle-fixtures").toFile().apply { mkdirs() }
+
+        val (code, out) = run(
+            "test",
+            "--policy", bundle.toString(),
+            "--fixtures", fixtures.absolutePath,
+        )
+
+        assertEquals(ExitCodes.ADMISSION_ERROR, code, out)
+    }
+
+    @Test
+    fun `08c test fixtures one pass one fail exits 2 per-fixture`() {
         val src = dir.resolve("policy.ir.json").also { it.writeText(irJson()) }
         val bundle = dir.resolve("t.bundle")
         run("compile", "--policy", src.toString(), "--out", bundle.toString())

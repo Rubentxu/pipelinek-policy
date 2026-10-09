@@ -109,6 +109,7 @@ object CheckCmd {
                                 violation = evaluation.primary,
                                 isEvaluationError = true,
                                 document = doc,
+                                bundleDigest = verified.bundle.manifest.artifactDigest,
                             ),
                         )
                         is RuleEvaluation.Violated -> evaluation.violations.map { violation ->
@@ -121,6 +122,7 @@ object CheckCmd {
                                 violation = violation,
                                 isEvaluationError = false,
                                 document = doc,
+                                bundleDigest = verified.bundle.manifest.artifactDigest,
                             )
                         }
                         RuleEvaluation.Passed, RuleEvaluation.NotApplicable -> emptyList()
@@ -139,6 +141,7 @@ object CheckCmd {
         violation: PolicyViolation,
         isEvaluationError: Boolean,
         document: com.pipelinek.policy.decoder.ResourceDocument?,
+        bundleDigest: String,
     ): Finding {
         // B3: resolve the violation's logical path to the document's physical
         // anchor so findings carry line/column, not just the logical path.
@@ -158,6 +161,10 @@ object CheckCmd {
                 message = violation.message,
                 resourceFingerprint = resourceFingerprint,
                 locationPath = violation.location.toString(),
+                bundleDigest = bundleDigest,
+                sourceAnchor = physical,
+                actual = violation.actual,
+                expected = violation.expected,
                 line = line ?: row,
                 column = column ?: col,
             )
@@ -170,6 +177,10 @@ object CheckCmd {
                 message = violation.message,
                 resourceFingerprint = resourceFingerprint,
                 locationPath = violation.location.toString(),
+                bundleDigest = bundleDigest,
+                sourceAnchor = physical,
+                actual = violation.actual,
+                expected = violation.expected,
                 line = line ?: row,
                 column = column ?: col,
             )

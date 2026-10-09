@@ -1,11 +1,11 @@
 package com.pipelinek.policy.cli
 
+import com.pipelinek.policy.decoder.SourceAnchor
 import com.pipelinek.policy.kernel.policy.ViolationFingerprint
 
 /**
- * M9 · the actionable result contract (REQ-M9-04). Every finding carries
- * policyId/ruleId/resourceId/severity/location/remediation/fingerprint —
- * an agent never parses human text.
+ * M9 compatibility fields plus the B3 structured CLI finding contract. The
+ * agent-facing schema is emitted from this typed model, never human text.
  */
 data class Location(
     val path: String,
@@ -30,7 +30,16 @@ data class Finding(
     val location: Location?,
     val remediation: String,
     val fingerprint: String,
+    val bundleDigest: String? = null,
+    val subjectRef: String = resourceId,
+    val sourceAnchor: SourceAnchor? = null,
+    val path: String? = null,
+    val actual: String? = null,
+    val expected: String? = null,
+    val message: String = remediation,
 ) {
+    val violationId: String? get() = fingerprint.takeUnless { it == "-" }
+
     companion object {
         fun violation(
             policyId: String,
@@ -40,6 +49,10 @@ data class Finding(
             message: String,
             resourceFingerprint: String,
             locationPath: String,
+            bundleDigest: String,
+            sourceAnchor: SourceAnchor? = null,
+            actual: String? = null,
+            expected: String? = null,
             line: Long? = null,
             column: Long? = null,
         ): Finding = actionableFailure(
@@ -51,6 +64,10 @@ data class Finding(
             message = message,
             resourceFingerprint = resourceFingerprint,
             locationPath = locationPath,
+            bundleDigest = bundleDigest,
+            sourceAnchor = sourceAnchor,
+            actual = actual,
+            expected = expected,
             line = line,
             column = column,
         )
@@ -63,6 +80,10 @@ data class Finding(
             message: String,
             resourceFingerprint: String,
             locationPath: String,
+            bundleDigest: String,
+            sourceAnchor: SourceAnchor? = null,
+            actual: String? = null,
+            expected: String? = null,
             line: Long? = null,
             column: Long? = null,
         ): Finding = actionableFailure(
@@ -74,6 +95,10 @@ data class Finding(
             message = message,
             resourceFingerprint = resourceFingerprint,
             locationPath = locationPath,
+            bundleDigest = bundleDigest,
+            sourceAnchor = sourceAnchor,
+            actual = actual,
+            expected = expected,
             line = line,
             column = column,
         )
@@ -87,6 +112,10 @@ data class Finding(
             message: String,
             resourceFingerprint: String,
             locationPath: String,
+            bundleDigest: String,
+            sourceAnchor: SourceAnchor?,
+            actual: String?,
+            expected: String?,
             line: Long?,
             column: Long?,
         ): Finding {
@@ -105,6 +134,13 @@ data class Finding(
                 location = Location(path, line, column),
                 remediation = if (message.isBlank()) "fix resource to satisfy rule $ruleId" else message,
                 fingerprint = fp.value,
+                bundleDigest = bundleDigest,
+                subjectRef = resourceId,
+                sourceAnchor = sourceAnchor,
+                path = locationPath,
+                actual = actual,
+                expected = expected,
+                message = message,
             )
         }
 
@@ -117,6 +153,7 @@ data class Finding(
             location = Location(resourceId),
             remediation = reason,
             fingerprint = "-",
+            message = reason,
         )
     }
 }
@@ -135,8 +172,24 @@ fun List<Finding>.dedup(): List<Finding> =
  */
 object FindingsEmitter {
 
-    private fun String.esc(): String =
-        replace("\\", "\\\\").replace("\"", "\\\"")
+    private fun String.esc(): String = buildString(length) {
+        for (char in this@esc) {
+            when (char) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> if (char.code < 0x20) {
+                    append("\\u").append(char.code.toString(16).padStart(4, '0'))
+                } else {
+                    append(char)
+                }
+            }
+        }
+    }
 
     fun text(findings: List<Finding>): String = buildString {
         if (findings.isEmpty()) appendLine("no findings")
@@ -150,32 +203,56 @@ object FindingsEmitter {
     }
 
     fun json(findings: List<Finding>): String {
-        val items = findings.joinToString(",\n") { f ->
-            val loc = f.location?.let { l ->
-                ", \"location\": {\"path\": \"${l.path.esc()}\"" +
-                    (l.line?.let { ", \"line\": $it" } ?: "") +
-                    (l.column?.let { ", \"column\": $it" } ?: "") +
-                    "}"
-            } ?: ""
-            "  {\"policyId\": \"${f.policyId.esc()}\", \"ruleId\": \"${f.ruleId.esc()}\", " +
-                "\"resourceId\": \"${f.resourceId.esc()}\", \"severity\": \"${f.severity}\", " +
-                "\"state\": \"${f.state.name.lowercase()}\", \"remediation\": \"${f.remediation.esc()}\", " +
-                "\"fingerprint\": \"${f.fingerprint.esc()}\"$loc}"
-        }
+        val items = findings.joinToString(",\n") { "  ${it.jsonObject(pretty = true)}" }
         return "{\n  \"summary\": {\"total\": ${findings.size}},\n  \"findings\": [\n$items\n  ]\n}"
     }
 
     fun jsonl(findings: List<Finding>): String =
-        findings.joinToString("\n") { f ->
-            val loc = f.location?.let { l ->
-                ",\"location\":{\"path\":\"${l.path.esc()}\"" +
-                    (l.line?.let { ",\"line\":$it" } ?: "") +
-                    (l.column?.let { ",\"column\":$it" } ?: "") +
-                    "}"
-            } ?: ""
-            "{\"policyId\":\"${f.policyId.esc()}\",\"ruleId\":\"${f.ruleId.esc()}\"," +
-                "\"resourceId\":\"${f.resourceId.esc()}\",\"severity\":\"${f.severity}\"," +
-                "\"state\":\"${f.state.name.lowercase()}\",\"remediation\":\"${f.remediation.esc()}\"," +
-                "\"fingerprint\":\"${f.fingerprint.esc()}\"$loc}"
+        findings.joinToString("\n") { it.jsonObject(pretty = false) }
+
+    private fun Finding.jsonObject(pretty: Boolean): String {
+        val fields = mutableListOf(
+            "violationId" to nullableJsonString(violationId),
+            "policyId" to jsonString(policyId),
+            "ruleId" to jsonString(ruleId),
+            "bundleDigest" to nullableJsonString(bundleDigest),
+            "subjectRef" to jsonString(subjectRef),
+            "sourceAnchor" to (sourceAnchor?.toJson() ?: "null"),
+            "path" to nullableJsonString(path),
+            "actual" to nullableJsonString(actual),
+            "expected" to nullableJsonString(expected),
+            "message" to jsonString(message),
+            "remediation" to jsonString(remediation),
+            "severity" to jsonString(severity),
+            "state" to jsonString(state.name.lowercase()),
+            "resourceId" to jsonString(resourceId),
+            "fingerprint" to jsonString(fingerprint),
+        )
+        location?.let { fields.add("location" to it.toJson()) }
+        val fieldSeparator = if (pretty) ", " else ","
+        val keyValueSeparator = if (pretty) ": " else ":"
+        return fields.joinToString(fieldSeparator, prefix = "{", postfix = "}") { (key, value) ->
+            "${jsonString(key)}$keyValueSeparator$value"
         }
     }
+
+    private fun Location.toJson(): String = buildString {
+        append("{\"path\":").append(jsonString(path))
+        line?.let { append(",\"line\":").append(it) }
+        column?.let { append(",\"column\":").append(it) }
+        append('}')
+    }
+
+    private fun SourceAnchor.toJson(): String = when (this) {
+        is SourceAnchor.TextSpan ->
+            "{\"kind\":\"textSpan\",\"startLine\":$startLine,\"startColumn\":$startColumn," +
+                "\"endLine\":$endLine,\"endColumn\":$endColumn}"
+        is SourceAnchor.Cell -> "{\"kind\":\"cell\",\"row\":$row,\"column\":$column}"
+        is SourceAnchor.Element -> "{\"kind\":\"element\",\"elementId\":${jsonString(elementId)}}"
+        is SourceAnchor.Logical -> "{\"kind\":\"logical\",\"path\":${jsonString(path)}}"
+    }
+
+    private fun jsonString(value: String): String = "\"${value.esc()}\""
+
+    private fun nullableJsonString(value: String?): String = value?.let(::jsonString) ?: "null"
+}

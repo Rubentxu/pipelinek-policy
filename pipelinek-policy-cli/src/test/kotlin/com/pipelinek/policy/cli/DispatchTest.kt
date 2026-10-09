@@ -20,7 +20,7 @@ class DispatchTest {
     }
 
     @Test
-    fun `01b unknown command exits 2 with usage`() {
+    fun `01b unknown command exits 1 with usage`() {
         val (code, lines) = run("frobnicate")
         assertEquals(ExitCodes.USAGE, code)
         assertTrue(lines.any { it.contains("unknown command: frobnicate") })
@@ -37,7 +37,7 @@ class DispatchTest {
     }
 
     @Test
-    fun `empty argv prints usage and exits 2`() {
+    fun `empty argv prints usage and exits 1`() {
         val (code, lines) = run()
         assertEquals(ExitCodes.USAGE, code)
         assertTrue(lines.any { it.contains("usage:") })

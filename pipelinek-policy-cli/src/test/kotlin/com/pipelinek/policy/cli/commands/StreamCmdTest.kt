@@ -65,7 +65,7 @@ class StreamCmdTest {
     }
 
     @Test
-    fun `07a violations exit 1 with row count`() {
+    fun `07a violations exit 2 with row count`() {
         val dir = createTempDirectory("m8stream")
         val bundle = dir.resolve("p.bundle").also { it.writeBytes(localBundle()) }
         val csv = dir.resolve("data.csv").also { it.writeText("temp\nok\nbad\nok\nworse\n") }

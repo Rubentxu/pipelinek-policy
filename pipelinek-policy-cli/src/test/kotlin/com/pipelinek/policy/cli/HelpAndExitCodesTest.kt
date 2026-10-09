@@ -19,10 +19,10 @@ import kotlin.test.assertTrue
 
 /**
  * REQ-M9-05/06 · --json-help autodescubrible + exit-code matrix.
- * 05a: root --json-help parses and lists all 8 subcommands.
+ * 05a: root --json-help parses and lists all 9 subcommands.
  * 05b FALSIFICATION: help that diverges from dispatch is caught by
  * cross-checking every listed command against the real dispatch.
- * 06a/06b: matrix ok/violation/refusal/unknown ⇒ 0/1/2/2.
+ * 06a/06b: matrix ok/violation/refusal/unknown ⇒ 0/2/4/1.
  */
 class HelpAndExitCodesTest {
 
@@ -55,12 +55,12 @@ class HelpAndExitCodesTest {
     }
 
     @Test
-    fun `05a root json-help lists all eight commands`() {
+    fun `05a root json-help lists all nine commands`() {
         val (code, out) = run("--json-help")
         assertEquals(ExitCodes.OK, code)
         // balanced JSON (poor-man's parse guard)
         assertEquals(out.count { it == '{' }, out.count { it == '}' })
-        for (cmd in listOf("compile", "check", "test", "diff", "explain", "inspect", "shape", "bundle")) {
+        for (cmd in listOf("compile", "check", "test", "diff", "explain", "inspect", "shape", "bundle", "stream")) {
             assertTrue(out.contains("\"$cmd\""), "help must list $cmd")
         }
         assertTrue(out.contains("\"exit_codes\""))
@@ -129,7 +129,7 @@ class HelpAndExitCodesTest {
 
     @Test
     fun `every command accepts json-help`() {
-        for (cmd in listOf("compile", "check", "test", "diff", "explain", "inspect", "shape", "bundle")) {
+        for (cmd in listOf("compile", "check", "test", "diff", "explain", "inspect", "shape", "bundle", "stream")) {
             val (code, out) = run(cmd, "--json-help")
             assertEquals(ExitCodes.OK, code, "$cmd --json-help must exit 0")
             assertTrue(out.contains("\"command\": \"$cmd\""), out)
