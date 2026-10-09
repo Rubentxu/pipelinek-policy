@@ -8,13 +8,20 @@ import java.security.MessageDigest
 internal enum class BundleIrEncoding { CURRENT, LEGACY_V1 }
 
 internal object BundleIrCanonicality {
+    /**
+     * Admission order is part of the contract, not an implementation detail.
+     *
+     * CURRENT is the canonical encoding and MUST be recognised on its own
+     * bytes. LEGACY_V1 is consulted only when CURRENT does not match, because
+     * `LegacyPolicyIrJsonV1.encode` legitimately refuses documents it cannot
+     * reproduce byte-for-byte (collection predicates, structurally unstable
+     * selectors). Evaluating it first made a perfectly valid CURRENT bundle
+     * inadmissible whenever no historical encoding could be produced.
+     */
     fun identify(bytes: ByteArray, document: PolicyIrDocument): BundleIrEncoding? {
+        if (bytes.contentEquals(CanonicalPolicyJson.encode(document))) return BundleIrEncoding.CURRENT
         val legacyBytes = LegacyPolicyIrJsonV1.encode(document) ?: return null
-        return when {
-            bytes.contentEquals(CanonicalPolicyJson.encode(document)) -> BundleIrEncoding.CURRENT
-            bytes.contentEquals(legacyBytes) -> BundleIrEncoding.LEGACY_V1
-            else -> null
-        }
+        return if (bytes.contentEquals(legacyBytes)) BundleIrEncoding.LEGACY_V1 else null
     }
 
     fun manifestMatches(
