@@ -1,0 +1,13 @@
+agents:
+  sddk-release:
+    phases:
+      - release
+    capabilities:
+      - git.push
+      - git.tag
+      - git.release
+      - git.inspect
+      - git.history
+      - git.commit
+      - git.create
+      - local-git-release
