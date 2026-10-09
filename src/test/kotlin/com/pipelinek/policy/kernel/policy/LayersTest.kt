@@ -335,7 +335,72 @@ class LayersTest {
     }
 
     /**
-     * The default parameter is the fail-closed path, and it is the path every
+     * B4-T2 follow-up: `grantDigest` is load-bearing.
+ *
+ * The digest previously appeared in the model, on the wire and in the KDoc,
+ * but nothing compared it: a claim with the right issuer and layers was
+ * accepted under ANY digest. A bundle could therefore borrow a real issuer
+ * name and attach a fabricated authorization to it. The same issuer with a
+ * different digest is a different grant.
+ */
+@Test
+    fun `02j a correct issuer and layers with the wrong digest is refused`() {
+        val hostGrant = SupersessionAuthority(
+            issuer = "acme-platform",
+            grantedLayers = setOf(PolicyLayer.PROJECT),
+            grantDigest = "sha256:the-real-one",
+        )
+        val forged = hostGrant.copy(grantDigest = "sha256:whatever-i-like")
+        val superseding = rule("min-replicas", 5).copy(
+            supersession = Supersession(
+                supersedes = RuleRef("shared", "min-replicas"),
+                reason = "project requires higher floor",
+                authority = forged,
+                scope = "project:demo",
+                validity = "2026-01-01/2027-01-01",
+            ),
+        )
+        val org = LayeredPolicy(PolicyLayer.ORGANIZATION, set("shared", rule("min-replicas", 3)))
+        val project = LayeredPolicy(PolicyLayer.PROJECT, set("shared", superseding))
+
+        val result = LayerComposer.compose(listOf(org, project), AuthorityRegistry.of(hostGrant))
+
+        val refused = assertIs<ComposeResult.Refused>(result, "a forged digest must not be accepted")
+        val refusal = assertIs<LayerCompositionRefusal.AuthorityLacksCapability>(refused.refusal)
+        assertEquals("sha256:the-real-one", refusal.expectedDigest)
+        assertEquals("sha256:whatever-i-like", refusal.claimedDigest)
+    }
+
+    /**
+     * The matching digest still composes. Without this, binding the digest
+     * could be satisfied by refusing everything, which is not a fix.
+     */
+    @Test
+    fun `02k the matching digest still composes`() {
+        val grant = SupersessionAuthority(
+            issuer = "acme-platform",
+            grantedLayers = setOf(PolicyLayer.PROJECT),
+            grantDigest = "sha256:the-real-one",
+        )
+        val superseding = rule("min-replicas", 5).copy(
+            supersession = Supersession(
+                supersedes = RuleRef("shared", "min-replicas"),
+                reason = "project requires higher floor",
+                authority = grant,
+                scope = "project:demo",
+                validity = "2026-01-01/2027-01-01",
+            ),
+        )
+        val org = LayeredPolicy(PolicyLayer.ORGANIZATION, set("shared", rule("min-replicas", 3)))
+        val project = LayeredPolicy(PolicyLayer.PROJECT, set("shared", superseding))
+
+        val result = LayerComposer.compose(listOf(org, project), AuthorityRegistry.of(grant))
+
+        assertIs<ComposeResult.Composed>(result)
+    }
+
+    /**
+     * The registry default is the fail-closed path, and it is the path every
      * existing caller takes until a host explicitly opts in. Pinned so that
      * changing the default to a permissive registry fails here.
      */

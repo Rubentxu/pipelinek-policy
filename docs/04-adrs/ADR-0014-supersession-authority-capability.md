@@ -45,9 +45,25 @@ named `authority`.** The field's name asserted a check that did not exist.
    clamped. Otherwise a bundle could widen its own authority by describing
    itself accurately.
 
-5. Failure is a typed refusal, `LayerCompositionRefusal.AuthorityLacksCapability`,
-   carrying the issuer, the layer, what the host granted and what the bundle
-   claimed. Never a silent drop, never a throw at the call site.
+5. `grantDigest` is load-bearing, not decorative. `AuthorityRegistry` stores
+   the full `SupersessionAuthority` per issuer, and `covers()` requires the
+   claim's digest to MATCH the host's. The same issuer with a different digest
+   is a different grant.
+
+   This was corrected in a follow-up commit after review. The field shipped
+   first with a KDoc promising a cryptographic binding to the real grant while
+   no code compared it — the exact "field that appears to guarantee what it
+   does not guarantee" pattern the roadmap forbids. It was worse than absence:
+   a maintainer reading the KDoc would reasonably assume it was verified.
+   The alternative (deleting the field) was considered and rejected; binding it
+   is available without adding any dependency, because the kernel never
+   COMPUTES a digest. The host computes it and the kernel compares two strings,
+   so core stays `kotlin-stdlib`-only per ADR-0011 D11.1.
+
+6. Failure is a typed refusal, `LayerCompositionRefusal.AuthorityLacksCapability`,
+   carrying the issuer, the layer, what the host granted, what the bundle
+   claimed, and both digests so a mismatch is diagnosable rather than opaque.
+   Never a silent drop, never a throw at the call site.
 
 ## Consequences
 

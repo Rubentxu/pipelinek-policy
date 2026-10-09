@@ -37,8 +37,11 @@ data class RuleRef(
  *
  * @property issuer who the bundle claims issued the grant.
  * @property grantedLayers the layers the claim says the grant covers.
- * @property grantDigest stable digest of the real grant, so the same
- *   authorization can be recognized across bundle versions.
+ * @property grantDigest identity of the grant, compared for EQUALITY against
+ *   the digest the host holds. The kernel never computes a digest — it only
+ *   compares two strings — so this stays stdlib-only per ADR-0011. The host
+ *   computes it; the kernel requires the claim to match. A different digest
+ *   under the same issuer is a different grant and is REFUSED.
  */
 data class SupersessionAuthority(
     val issuer: String,
@@ -61,21 +64,35 @@ data class SupersessionAuthority(
  * the default and it grants nothing, which is the fail-closed reading of
  * "no registry was supplied".
  */
-data class AuthorityRegistry(val grants: Map<String, Set<PolicyLayer>> = emptyMap()) {
+data class AuthorityRegistry(val grants: Map<String, SupersessionAuthority> = emptyMap()) {
+
+    /**
+     * The grant this issuer actually holds, or `null` when the issuer is
+     * unknown. An unknown issuer is absent rather than permissive.
+     */
+    fun grantFor(issuer: String): SupersessionAuthority? = grants[issuer]
 
     /**
      * The layers this issuer is actually authorized to supersede. An unknown
-     * issuer grants nothing, and the lookup is absent rather than permissive.
+     * issuer grants nothing.
      */
-    fun grantsFor(issuer: String): Set<PolicyLayer> = grants[issuer] ?: emptySet()
+    fun grantsFor(issuer: String): Set<PolicyLayer> = grants[issuer]?.grantedLayers ?: emptySet()
 
     /**
-     * Whether [claim] is covered by a grant held under the same issuer. The
-     * claim must not exceed the grant: naming additional layers the host never
-     * granted is a REFUSAL, not a widening of the grant.
+     * Whether [claim] is covered by the grant held for its issuer.
+     *
+     * Three conditions, all required:
+     *  - the issuer must be one the host granted;
+     *  - the grant must cover every layer the claim names, so a claim cannot
+     *    widen itself by describing itself accurately;
+     *  - the [SupersessionAuthority.grantDigest] must MATCH. The same issuer
+     *    with a different digest is a different grant, so a bundle cannot
+     *    attach a real issuer name to a fabricated authorization.
      */
-    fun covers(claim: SupersessionAuthority): Boolean =
-        grants[claim.issuer]?.containsAll(claim.grantedLayers) == true
+    fun covers(claim: SupersessionAuthority): Boolean {
+        val grant = grants[claim.issuer] ?: return false
+        return grant.grantDigest == claim.grantDigest && grant.grantedLayers.containsAll(claim.grantedLayers)
+    }
 
     /** Whether [claim] is honored for a supersession arriving in [layer]. */
     fun authorizes(claim: SupersessionAuthority, layer: PolicyLayer): Boolean =
@@ -88,7 +105,7 @@ data class AuthorityRegistry(val grants: Map<String, Set<PolicyLayer>> = emptyMa
         /** A registry holding exactly the given authorities, keyed by issuer. */
         fun of(vararg authorities: SupersessionAuthority): AuthorityRegistry =
             AuthorityRegistry(
-                authorities.associate { it.issuer to it.grantedLayers },
+                authorities.associate { it.issuer to it },
             )
     }
 }
@@ -152,10 +169,13 @@ sealed class LayerCompositionRefusal(message: String) : IllegalArgumentException
         val supersedingLayer: PolicyLayer,
         val grantedLayers: Set<PolicyLayer>,
         val claimedLayers: Set<PolicyLayer>,
+        val expectedDigest: String?,
+        val claimedDigest: String,
     ) : LayerCompositionRefusal(
             "supersession claims authority from issuer=$issuer over " +
                 "${claimedLayers.joinToString("+")} for layer $supersedingLayer, but no host grant " +
-                "covers it (host grants: ${grantedLayers.joinToString("+").ifEmpty { "none" }}); " +
+                "covers it (host grants: ${grantedLayers.joinToString("+").ifEmpty { "none" }}; " +
+                "expected digest: ${expectedDigest ?: "none"}, claimed digest: $claimedDigest); " +
                 "a bundle may claim a grant, never grant one (B4-T2)",
         )
 }
@@ -259,6 +279,8 @@ object LayerComposer {
                             supersedingLayer = layer,
                             grantedLayers = authorities.grantsFor(supersession.authority.issuer),
                             claimedLayers = supersession.authority.grantedLayers,
+                            expectedDigest = authorities.grantFor(supersession.authority.issuer)?.grantDigest,
+                            claimedDigest = supersession.authority.grantDigest,
                         ),
                     )
                 }
