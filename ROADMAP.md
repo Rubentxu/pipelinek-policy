@@ -413,6 +413,12 @@ de B0/B1/B2/B4 sin resolver.
 - B0.2 Resultados tipados de evaluación/refusal en plugin y CLI (DONE); el wrapper genérico de error adapter/engine queda como D-B0-1 P2 en B4.3, sin rebajar un defecto P0/P1
 - B0.3 Regression fortress (8 escenarios del plugin + falsificación CLI de Error/Violation/refusal) DONE
 - Gate B0: PASS; gate global fresco en `docs/history/B0_RECEIPT.md` (337 tests, 0 failures/errors/skips; architecture fitness y detekt verdes)
+- **B0.5 REABIERTO (auditoría 2026-10-10):** Error + Violated en SHADOW termina en
+  `StepOutcome.Success` porque `PolicyCheckStepDefinition` comprueba `violations`
+  antes que `errors`, y `PolicyCheckOutput` mapea `VIOLATED + SHADOW` a `Success`.
+  El comentario del código declara la precedencia correcta; la implementación no la
+  sigue. Estado de B0: **PASS con reserva** hasta que el caso mixto ENFORCED/SHADOW
+  esté en la fortress y falle antes / pase después.
 
 ## B1 — Cierre semántico kernel/DSL (P0/P1) — DONE (2026-10-09)
 RuleKey contextual; numérico exacto (sin Double); forbid/negación declarativa;
@@ -428,6 +434,15 @@ PKB1 (semanticDigest vs artifactDigest); admission budgets; compatibilidad
 versionada (fixture IR v1 y digest fijo; pack PKB1 verificado por la API pública).
 
 Evidencia trazable por requisito y gates: `docs/history/B2_RECEIPT.md`.
+
+- **B2.9 REABIERTO (auditoría 2026-10-10):** `BundleIrCanonicality.identify` calcula
+  la codificación legacy **antes** de probar CURRENT, y `LegacyPolicyIrJsonV1.encode`
+  devuelve `null` ante `Expression.CollectionPredicate`. Resultado: un bundle del
+  formato vigente con predicado de colección se rechaza en `verifyPacked()`.
+  35 referencias a `CollectionPredicate` en tests y **ningún fixture de bundle** que
+  lo cubra. El codec y el round-trip no están en cuestión: el fallo es de orden en
+  un punto de admisión. Estado de B2: **PASS con reserva** hasta que
+  `pack → verifyPacked → evaluate` con predicado de colección pase por la API pública.
 
 ## B3 — Fidelidad de recursos, source maps y CLI (P1) — DONE (2026-10-09)
 Identidad estructural de nodos; JSON/YAML/CSV con spans reales; finding
@@ -570,6 +585,90 @@ Descomposición:
   provenance, resultados de gates, compatibilidad declarada, deuda aceptada,
   limitaciones conocidas e instrucciones de reproducción. No promover release
   production-ready con defectos críticos abiertos.
+
+## Auditoría externa 2026-10-10 — hallazgos verificados en código
+
+Triaje de la auditoría publicada sobre HEAD `25d440f`. **Cada punto fue reproducido
+en código antes de aceptarlo.** Un hallazgo externo no es autoridad: si no se
+reproduce, no se corrige.
+
+### P0-04 · Bundle vigente con `CollectionPredicate` rechazado — CONFIRMADO
+
+`LegacyPolicyIrJsonV1.encode` devuelve `null` si el documento contiene un
+`Expression.CollectionPredicate` (`LegacyPolicyIrJsonV1.kt:12`), y `identify`
+hace `val legacyBytes = ... ?: return null` **antes** de probar el formato
+CURRENT (`BundleIrCanonicality.kt:12`). Consecuencia: un bundle correctamente
+serializado en el formato vigente es rechazado por `verifyPacked()` porque no se
+pudo construir una codificación histórica.
+
+Es un **defecto de orden**: admitir el formato actual no puede depender de que el
+antiguo sea reproducible. Corrección: comparar CURRENT primero y usar el legacy
+solo como alternativa. Test: `pack → verifyPacked → evaluate` con un predicado de
+colección por la API pública, más el golden legacy intacto.
+
+**No reabre B2 entero.** El codec canónico, el round-trip y los presupuestos están
+correctos; el fallo es de orden en un solo punto de admisión. Se registra como
+**B2.9**, corrección puntual y atómica.
+
+### P0-01 · Error + Violated en SHADOW termina en Success — CONFIRMADO
+
+`PolicyCheckStepDefinition` evalúa `violations > 0` **antes** que `errors > 0`
+(`:161-167`), y `PolicyCheckOutput` mapea `VIOLATED + SHADOW` a
+`StepOutcome.Success` (`:55`). Una regla con `Error` y otra con `Violated` en el
+mismo informe producen `VIOLATED`, luego `Success`, pese a no haberse evaluado todo
+correctamente.
+
+El comentario del propio código declara la precedencia correcta
+(`REFUSED > ERRORED > VIOLATED > PASSED`); la **implementación no la sigue**. Es una
+divergencia entre intención documentada y comportamiento.
+
+**Reabre B0** de forma puntual como **B0.5**: el error debe ser observable como
+fallo operativo también en SHADOW, y el caso mixto ENFORCED/SHADOW entra en la
+fortress como test negativo obligatorio.
+
+### P1-03 · Identidad del finding en CLI — CONFIRMADO
+
+`RuleKey.of(set.id, policyId, rule.id)` es una clave compuesta, y `CheckCmd`
+publica `ruleId = ruleId.value` junto con `policyId = runtime.report.policySetId`,
+es decir la clave entera como si fuera el id simple y el id del policy set como si
+fuera el de la policy propietaria. El digest interno conserva la identidad; la
+superficie JSONL dirigida a agentes no. Registrado como **B3.6**, porque el
+contrato de finding es de B3.
+
+### CERT-01 · El anclaje M10 no certifica el SHA ejecutado — CONFIRMADO
+
+`cert/SHA.txt` declara `certified-sha: 5a9162b…` mientras el HEAD es `25d440fa`.
+`CertificationAnchorTest.01a` solo comprueba que el marcador no esté vacío y
+contenga una línea `baseline-suites:`; **nunca compara el SHA con el HEAD**. `01b`
+cuenta ficheros `*Test.kt` con `Files.walk`, o sea cuenta ficheros en disco, no
+tests ejecutados. El anchor pasa verde certificando código que ya no existe. Es
+justo el caso que la propia regla transversal de este roadmap prohíbe. Registrado
+como **B6.1**, ya contemplado.
+
+### Hallazgos confirmados que el roadmap ya cubría
+
+- **P0-02** (supersesión sin autoridad) = **B4.1**, ya implementado en curso. Sin
+  novelty: la auditoría llega tarde a un hallazgo ya identificado.
+- **P1-09** (waivers sin scopes) = **B4.2**. Verificado además: `datasetScope` y
+  `projectScope` aparecen **solo** en su propia declaración.
+- **P1-10** (`PolicyDiff` con `else` residual) = **B4.5**.
+- **P1-11** (ingress sin límites) = **B4.7**.
+- **P2 arquitectura** (`DomainIoPurityTest` por sufijo) = guardarraíl ya escrito en
+  la sección B4.
+
+### Deuda M8 pendiente, sin novelty
+
+P1-05 (identidad simple en datasets), P1-06 (agregados sin aserción completa),
+P1-07 (plan `Any` e índices declarados no construidos), P1-08 (`readBytes()` y
+`toInt().toChar()` que corrompe UTF-8 multibyte) = **B5.2–B5.6**. El defecto
+Unicode de P1-08 es el más grave del grupo y se eleva a condición de cierre de B5.3.
+
+### Clasificación final de la auditoría
+
+Reabre **B0** (B0.5) y **B2** (B2.9). No añade deuda nueva a B4, B5 ni B6:
+confirma lo que ya estaba planificado. **La certificación de producción sigue
+BLOQUEADA** y ahora por un motivo adicional y demonstrated: un bundle del
+formato vigente con predicado de colección no se admite.
 
 ## Reglas transversales (vinculantes)
 Arquitectura emergente (extraer módulos solo con necesidad demostrada);
