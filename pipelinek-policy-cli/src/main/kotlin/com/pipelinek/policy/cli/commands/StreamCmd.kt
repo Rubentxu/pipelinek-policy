@@ -22,11 +22,11 @@ import java.io.File
  *
  * Decoder by extension (csv → CsvRowSource, jsonl → JsonlSource); no
  * sniffing. Exit-code matrix (REQ-M8-07 scenarios 07a..07d):
- *   0 OK            — stream evaluated, no violations
- *   1 VIOLATIONS    — at least one LOCAL rule violated
- *   2 USAGE         — usage error, plan refusal (GLOBAL rejected), decode
- *                     refusal, or budget exceeded
- *   3 INTERNAL      — unexpected crash
+ *   0 OK                — stream evaluated, no violations
+ *   1 USAGE             — invocation error (missing/invalid flags)
+ *   2 VIOLATIONS        — at least one LOCAL rule violated
+ *   3 EVALUATION_ERROR  — plan refusal, budget exceeded, type mismatch
+ *   4 ADMISSION_ERROR   — bundle/dataset admission or decode refusal
  */
 object StreamCmd {
 
@@ -41,20 +41,29 @@ object StreamCmd {
             out("stream: no dataset files given")
             return ExitCodes.USAGE
         }
-        val rowBudget = args.flag("row-budget")?.toLongOrNull()?.takeIf { it > 0 }
-            ?: DatasetPlanner.DEFAULT_ROW_BUDGET
-        val jsonOut = args.flag("format-out") == "json"
+        val rowBudget = args.flag("row-budget")?.let { raw ->
+            raw.toLongOrNull()?.takeIf { it > 0 } ?: run {
+                out("stream: invalid --row-budget $raw (must be a positive integer)")
+                return ExitCodes.USAGE
+            }
+        } ?: DatasetPlanner.DEFAULT_ROW_BUDGET
+        val formatOut = args.flag("format-out") ?: "text"
+        if (formatOut !in setOf("text", "json")) {
+            out("stream: unknown --format-out $formatOut (text|json)")
+            return ExitCodes.USAGE
+        }
+        val jsonOut = formatOut == "json"
 
         val bundleFile = File(policyPath)
         if (!bundleFile.isFile) {
             out(msg(jsonOut, "refusal", "bundle not found: $policyPath"))
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
             BundleVerifier.verifyPacked(bundleFile.readBytes())
         } catch (e: Exception) {
             out(msg(jsonOut, "refusal", "bundle refused: ${e.message}"))
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
 
         val policySet = verified.bundle.document.policySet
@@ -72,7 +81,7 @@ object StreamCmd {
                     "plan refused (${plan.offendingRules.joinToString(",")}): ${plan.reason}",
                 ),
             )
-            return ExitCodes.USAGE
+            return ExitCodes.EVALUATION_ERROR
         }
         plan as com.pipelinek.policy.kernel.dataset.DatasetPlan
 
@@ -85,14 +94,14 @@ object StreamCmd {
                 val file = File(resource)
                 if (!file.isFile) {
                     out(msg(jsonOut, "refusal", "dataset not found: $resource"))
-                    return ExitCodes.USAGE
+                    return ExitCodes.ADMISSION_ERROR
                 }
                 val rows = rowSupplierFor(file)
                     ?: run {
                         out(msg(jsonOut, "refusal", "no streaming source for .${
                             file.extension.lowercase()
                         } (csv|jsonl)"))
-                        return ExitCodes.USAGE
+                        return ExitCodes.ADMISSION_ERROR
                     }
                 val report = StreamingEvaluator.evaluate(policySet, plan, rows)
                 report.results.forEach { (ruleId, outcome) ->
@@ -103,7 +112,7 @@ object StreamCmd {
                         }
                         is StreamingEvaluator.RuleOutcome.Error -> {
                             out(msg(jsonOut, "refusal", "rule $ruleId: ${outcome.message}"))
-                            return ExitCodes.USAGE
+                            return ExitCodes.EVALUATION_ERROR
                         }
                         is StreamingEvaluator.RuleOutcome.Aggregate ->
                             sb.append("aggregate $ruleId = ${outcome.value}\n")
@@ -113,16 +122,16 @@ object StreamCmd {
             }
         } catch (budget: BudgetExceededException) {
             out(msg(jsonOut, "budget-exceeded", budget.message ?: "budget exceeded"))
-            return ExitCodes.USAGE
+            return ExitCodes.EVALUATION_ERROR
         } catch (mismatch: SumTypeMismatchException) {
             out(msg(jsonOut, "type-mismatch", mismatch.message ?: "type mismatch"))
-            return ExitCodes.USAGE
+            return ExitCodes.EVALUATION_ERROR
         } catch (csv: CsvRowRefusal) {
             out(msg(jsonOut, "decode-refusal", "csv refused: ${csv.anchor}"))
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         } catch (jsonl: JsonlRefusal) {
             out(msg(jsonOut, "decode-refusal", "jsonl refused: ${jsonl.anchor}"))
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
 
         if (!jsonOut && sb.isNotEmpty()) out(sb.toString().trimEnd())

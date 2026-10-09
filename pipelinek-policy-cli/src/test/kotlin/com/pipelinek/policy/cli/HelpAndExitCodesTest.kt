@@ -64,7 +64,7 @@ class HelpAndExitCodesTest {
             assertTrue(out.contains("\"$cmd\""), "help must list $cmd")
         }
         assertTrue(out.contains("\"exit_codes\""))
-        assertTrue(out.contains("typed evaluator/engine error"), out)
+        assertTrue(out.contains("evaluation or configuration error"), out)
     }
 
     @Test
@@ -97,12 +97,34 @@ class HelpAndExitCodesTest {
 
         // ok ⇒ 0
         assertEquals(ExitCodes.OK, run("check", "--policy", bundle.toString(), ok.toString()).first)
-        // violation ⇒ 1 (NOT collapsed to 0: falsifies silent-pass)
+        // violation ⇒ 2 (NOT collapsed to 0: falsifies silent-pass)
         assertEquals(ExitCodes.VIOLATIONS, run("check", "--policy", bundle.toString(), bad.toString()).first)
-        // refusal ⇒ 2
-        assertEquals(ExitCodes.USAGE, run("check", "--policy", bundle.toString(), refuse.toString()).first)
-        // unknown command ⇒ 2
+        // decode refusal ⇒ 4
+        assertEquals(4, run("check", "--policy", bundle.toString(), refuse.toString()).first)
+        // unknown command ⇒ 1
         assertEquals(ExitCodes.USAGE, run("warpipe").first)
+    }
+
+    @Test
+    fun `exit codes and machine help match the CLI specification`() {
+        assertEquals(0, ExitCodes.OK)
+        assertEquals(1, ExitCodes.USAGE)
+        assertEquals(2, ExitCodes.VIOLATIONS)
+        assertEquals(3, ExitCodes.EVALUATION_ERROR)
+
+        val help = run("--json-help").second
+        assertTrue(help.contains("\"1\": \"usage or invocation error\""), help)
+        assertTrue(help.contains("\"2\": \"policy violation\""), help)
+        assertTrue(help.contains("\"3\": \"evaluation or configuration error\""), help)
+        assertTrue(help.contains("\"4\": \"bundle or resource admission error\""), help)
+        assertTrue(help.contains("\"5\": \"compiler error\""), help)
+
+        val commandHelp = run("check", "--json-help").second
+        assertTrue(commandHelp.contains("\"1\": \"usage or invocation error\""), commandHelp)
+        assertTrue(commandHelp.contains("\"2\": \"policy violation"), commandHelp)
+        assertTrue(commandHelp.contains("\"3\": \"evaluation or configuration error\""), commandHelp)
+        assertTrue(commandHelp.contains("\"4\": \"bundle or resource admission error\""), commandHelp)
+        assertTrue(commandHelp.contains("\"5\": \"compiler error\""), commandHelp)
     }
 
     @Test
@@ -111,9 +133,8 @@ class HelpAndExitCodesTest {
             val (code, out) = run(cmd, "--json-help")
             assertEquals(ExitCodes.OK, code, "$cmd --json-help must exit 0")
             assertTrue(out.contains("\"command\": \"$cmd\""), out)
-            if (cmd == "check") {
-                assertTrue(out.contains("typed evaluator/engine error"), out)
-            }
+            assertTrue(out.contains("\"exit_codes\": {\"0\""), out)
+            assertTrue(out.contains("\"5\": \"compiler error\""), out)
         }
     }
 }

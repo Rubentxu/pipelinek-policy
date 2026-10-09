@@ -52,13 +52,13 @@ object CheckCmd {
         val bundleFile = File(policyPath)
         if (!bundleFile.isFile) {
             out(FindingsEmitter.text(listOf(Finding.refusal(policyPath, "bundle not found: $policyPath"))))
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
             BundleVerifier.verifyPacked(bundleFile.readBytes())
         } catch (e: Exception) {
             out(FindingsEmitter.text(listOf(Finding.refusal(policyPath, "bundle refused: ${e.message}"))))
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
 
         val findings = mutableListOf<Finding>()
@@ -72,7 +72,7 @@ object CheckCmd {
         val hasEvaluationError = deduped.any { it.state == com.pipelinek.policy.cli.FindingState.ERROR }
         val hasViolation = deduped.any { it.state == com.pipelinek.policy.cli.FindingState.VIOLATION }
         return when {
-            hasRefusal -> ExitCodes.USAGE
+            hasRefusal -> ExitCodes.ADMISSION_ERROR
             hasEvaluationError -> ExitCodes.EVALUATION_ERROR
             hasViolation -> ExitCodes.VIOLATIONS
             else -> ExitCodes.OK

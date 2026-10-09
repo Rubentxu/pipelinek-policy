@@ -8,6 +8,7 @@ import com.pipelinek.policy.decoder.DecodeOptions
 import com.pipelinek.policy.decoder.DecodeResult
 import com.pipelinek.policy.kernel.evaluator.RuleKey
 import com.pipelinek.policy.kernel.expression.Expression
+import com.pipelinek.policy.kernel.policy.RuleEvaluation
 import java.io.File
 
 /**
@@ -33,13 +34,13 @@ object ExplainCmd {
         val file = File(policyPath)
         if (!file.isFile) {
             out("explain: bundle not found: $policyPath")
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
             BundleVerifier.verifyPacked(file.readBytes())
         } catch (e: Exception) {
             out("explain: bundle refused: ${e.message}")
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
         val policy = verified.bundle.document.policySet
         val matches = policy.policies.flatMap { p -> p.rules.map { p to it } }
@@ -60,16 +61,22 @@ object ExplainCmd {
 
         val state: String
         val violations: List<String>
+        var exitCode = ExitCodes.OK
         val resourcePath = args.flag("resource")
         if (resourcePath == null) {
             state = "unevaluated (no --resource)"
             violations = emptyList()
         } else {
-            val doc = decodeOne(resourcePath, out) ?: return ExitCodes.USAGE
+            val doc = decodeOne(resourcePath, out) ?: return ExitCodes.ADMISSION_ERROR
             val report = IrRuntimeAdapter.evaluate(verified, doc.root).report
             val evaluation = report.results[RuleKey.of(policy.id, owningPolicy.id, r.id)]
             state = evaluation?.let { it::class.simpleName?.uppercase() } ?: "UNKNOWN"
             violations = evaluation?.violations?.map { it.location.toString() } ?: emptyList()
+            when (evaluation) {
+                is RuleEvaluation.Violated -> exitCode = ExitCodes.VIOLATIONS
+                is RuleEvaluation.Error -> exitCode = ExitCodes.EVALUATION_ERROR
+                else -> Unit
+            }
         }
 
         out(
@@ -88,7 +95,7 @@ object ExplainCmd {
                 append("}")
             },
         )
-        return ExitCodes.OK
+        return exitCode
     }
 
     /** Structural rendering of the expression tree (hand JSON, no deps). */

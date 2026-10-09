@@ -26,8 +26,8 @@ object DiffCmd {
         val pathA = args.flag("a") ?: return usage(out)
         val pathB = args.flag("b") ?: return usage(out)
 
-        val a = loadVerified(pathA, out) ?: return ExitCodes.USAGE
-        val b = loadVerified(pathB, out) ?: return ExitCodes.USAGE
+        val a = loadVerified(pathA, out) ?: return ExitCodes.ADMISSION_ERROR
+        val b = loadVerified(pathB, out) ?: return ExitCodes.ADMISSION_ERROR
 
         val corpus = args.flag("corpus")?.let { listOf(it) } ?: args.positionals
         if (corpus.isEmpty()) {
@@ -35,7 +35,7 @@ object DiffCmd {
             return ExitCodes.USAGE
         }
         val resource = corpus.first()
-        val doc = decodeOne(resource, out) ?: return ExitCodes.USAGE
+        val doc = decodeOne(resource, out) ?: return ExitCodes.ADMISSION_ERROR
 
         val reportA = IrRuntimeAdapter.evaluate(a, doc.root).report
         val reportB = IrRuntimeAdapter.evaluate(b, doc.root).report
@@ -43,7 +43,7 @@ object DiffCmd {
             PolicyDiff.of(reportA, reportB)
         } catch (e: PolicyDiffRefusal.CorpusMismatch) {
             out("diff: corpus mismatch: ${e.message}")
-            return ExitCodes.USAGE
+            return ExitCodes.EVALUATION_ERROR
         }
         out(diffJson(diff))
         return if (diff.entries.isEmpty()) ExitCodes.OK else ExitCodes.VIOLATIONS

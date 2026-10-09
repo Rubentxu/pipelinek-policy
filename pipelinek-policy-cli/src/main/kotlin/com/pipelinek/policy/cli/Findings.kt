@@ -111,9 +111,13 @@ data class Finding(
     }
 }
 
-/** Dedup identity: one finding per policyId|ruleId|resourceId (REQ-M9-02c). */
+/**
+ * Dedup identity: one finding per policyId|ruleId|resourceId|occurrence
+ * (REQ-M9-02c + B3 "dedup sin pérdida"). Distinct violation locations inside
+ * one resource stay separate; true duplicates of the same occurrence collapse.
+ */
 fun List<Finding>.dedup(): List<Finding> =
-    distinctBy { "${it.policyId}|${it.ruleId}|${it.resourceId}" }
+    distinctBy { "${it.policyId}|${it.ruleId}|${it.resourceId}|${it.fingerprint}|${it.state}" }
 
 /**
  * Emitters for the three output formats (REQ-M9-03). Hand-rolled JSON in the

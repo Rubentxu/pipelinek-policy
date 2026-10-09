@@ -59,7 +59,7 @@ class ExplainCmdTest {
         val b = bundle()
         val res = dir.resolve("res.json").also { it.writeText("""{"spec":{"team":"tools"}}""") }
         val (code, out) = run("--policy", b.toString(), "--rule", "team-platform", "--resource", res.toString())
-        assertEquals(ExitCodes.OK, code)
+        assertEquals(ExitCodes.VIOLATIONS, code, "a denied decision must not exit successfully: $out")
         assertTrue(out.contains("\"ruleId\": \"team-platform\""), out)
         assertTrue(out.contains("\"state\": \"violated\""), out)
         assertTrue(out.contains("\"kind\": \"comparison\""), "culprit subtree expected: $out")
@@ -91,5 +91,36 @@ class ExplainCmdTest {
         val (code, out) = run("--policy", b.toString(), "--rule", "team-platform", "--resource", res.toString())
         assertEquals(ExitCodes.OK, code)
         assertTrue(out.contains("\"state\": \"passed\""))
+    }
+
+    @Test
+    fun `evaluation error exits with evaluation error code`() {
+        val path = DocumentPath.ROOT.child("spec").child("team")
+        val set = PolicySet(
+            "uat",
+            listOf(
+                Policy(
+                    "p",
+                    listOf(
+                        Rule(
+                            "team-type",
+                            "spec.team must be text",
+                            Expression.Comparison(
+                                Expression.FieldRef(path, ValueNode.Type.TEXT),
+                                Expression.Operator.TEXT_EQUALS,
+                                Expression.Literal(ValueNode.TextValue("platform")),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val b = dir.resolve("error.bundle").also { it.writeBytes(PolicyBundle(lower(set)).pack()) }
+        val resource = dir.resolve("wrong-type.json").also { it.writeText("""{"spec":{"team":7}}""") }
+
+        val (code, out) = run("--policy", b.toString(), "--rule", "team-type", "--resource", resource.toString())
+
+        assertEquals(ExitCodes.EVALUATION_ERROR, code, "engine errors must not be reported as success: $out")
+        assertTrue(out.contains("\"state\": \"error\""), out)
     }
 }

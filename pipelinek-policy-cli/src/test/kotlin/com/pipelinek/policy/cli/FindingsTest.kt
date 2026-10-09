@@ -62,6 +62,21 @@ class FindingsTest {
     }
 
     @Test
+    fun `dedup preserves distinct violation locations in one resource`() {
+        val anotherOccurrence = Finding.violation(
+            policyId = "uat",
+            ruleId = "r",
+            resourceId = "doc1",
+            path = "res.json",
+            message = "replicas must be >= 3",
+            resourceFingerprint = "fp1",
+            locationPath = "spec.replicas[1]",
+        )
+
+        assertEquals(2, listOf(findings.first(), anotherOccurrence).dedup().size)
+    }
+
+    @Test
     fun `json output is balanced`() {
         val j = FindingsEmitter.json(findings)
         assertEquals(j.count { it == '{' }, j.count { it == '}' })

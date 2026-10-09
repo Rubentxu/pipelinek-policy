@@ -6,6 +6,7 @@ import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.decoder.DecodeOptions
 import com.pipelinek.policy.decoder.DecodeResult
+import com.pipelinek.policy.kernel.policy.RuleEvaluation
 import java.io.File
 
 /**
@@ -43,54 +44,82 @@ object TestCmd {
             return ExitCodes.USAGE
         }
 
-        val fixtures = dir.listFiles()?.sortedBy { it.name } ?: emptyList()
-        if (fixtures.isEmpty()) {
-            out("test: no fixtures in $fixturesDir")
+        val fixtures = dir.listFiles()?.filter { it.isFile }?.sortedBy { it.name } ?: emptyList()
+        val recognized = fixtures.filter { ".allow." in it.name || ".deny." in it.name }
+        if (recognized.isEmpty()) {
+            out("test: no recognized allow/deny fixtures in $fixturesDir")
             return ExitCodes.USAGE
         }
 
-        var mismatches = 0
-        for (fixture in fixtures) {
-            val expectation = when {
-                ".allow." in fixture.name -> "allow"
-                ".deny." in fixture.name -> "deny"
-                else -> continue // not a fixture file
+        var exitCode = ExitCodes.OK
+        for (fixture in recognized) {
+            val expectation = if (".allow." in fixture.name) "allow" else "deny"
+            when (val result = evaluate(verified, fixture)) {
+                is FixtureEvaluation.Refused -> {
+                    out("{\"fixture\": \"${fixture.name}\", \"status\": \"refused\", " +
+                        "\"message\": \"${result.message}\"}")
+                    exitCode = maxOf(exitCode, ExitCodes.ADMISSION_ERROR)
+                }
+                is FixtureEvaluation.Error -> {
+                    out("{\"fixture\": \"${fixture.name}\", \"status\": \"error\", " +
+                        "\"message\": \"${result.message}\"}")
+                    exitCode = maxOf(exitCode, ExitCodes.EVALUATION_ERROR)
+                }
+                is FixtureEvaluation.Evaluated -> {
+                    val ok = if (expectation == "allow") result.violations == 0 else result.violations > 0
+                    if (!ok) exitCode = maxOf(exitCode, ExitCodes.VIOLATIONS)
+                    out(
+                        "{\"fixture\": \"${fixture.name}\", \"expectation\": \"$expectation\", " +
+                            "\"violations\": ${result.violations}, \"status\": \"${if (ok) "pass" else "FAIL"}\"}",
+                    )
+                }
             }
-            val result = evaluate(verified, fixture)
-            if (result == null) {
-                out("{\"fixture\": \"${fixture.name}\", \"status\": \"refused\"}")
-                mismatches++
-                continue
-            }
-            val violations = result
-            val ok = when (expectation) {
-                "allow" -> violations == 0
-                else -> violations > 0
-            }
-            if (!ok) mismatches++
-            out(
-                "{\"fixture\": \"${fixture.name}\", \"expectation\": \"$expectation\", " +
-                    "\"violations\": $violations, \"status\": \"${if (ok) "pass" else "FAIL"}\"}",
-            )
         }
-        return if (mismatches > 0) ExitCodes.VIOLATIONS else ExitCodes.OK
+        return exitCode
+    }
+
+    private sealed interface FixtureEvaluation {
+        data class Evaluated(val violations: Int) : FixtureEvaluation
+        data class Refused(val message: String) : FixtureEvaluation
+        data class Error(val message: String) : FixtureEvaluation
     }
 
     private fun evaluate(
         verified: com.pipelinek.policy.bundle.VerifiedBundle,
         fixture: File,
-    ): Int? {
+    ): FixtureEvaluation {
         val decoder = when (fixture.extension.lowercase()) {
             "json" -> com.pipelinek.policy.decoders.json.JsonResourceDecoder()
             "yaml", "yml" -> com.pipelinek.policy.decoders.yaml.YamlResourceDecoder()
             "csv" -> com.pipelinek.policy.decoders.csv.CsvResourceDecoder()
-            else -> return null
+            else -> return FixtureEvaluation.Refused("unsupported fixture format .${fixture.extension}")
         }
-        return when (val decoded = decoder.decode(fixture.readBytes(), DecodeOptions())) {
-            is DecodeResult.Refused -> null
-            is DecodeResult.Ok -> decoded.documents.count { doc ->
-                IrRuntimeAdapter.evaluate(verified, doc.root).report.results.values
-                    .any { it.violations.isNotEmpty() }
+        val decoded = try {
+            decoder.decode(fixture.readBytes(), DecodeOptions())
+        } catch (e: Exception) {
+            return FixtureEvaluation.Refused(e.message ?: "fixture could not be decoded")
+        }
+        return when (decoded) {
+            is DecodeResult.Refused -> FixtureEvaluation.Refused(decoded.refusal.code.name)
+            is DecodeResult.Ok -> {
+                if (decoded.documents.isEmpty()) {
+                    return FixtureEvaluation.Refused("fixture produced no resource documents")
+                }
+                val outcomes = try {
+                    decoded.documents.map { doc ->
+                        IrRuntimeAdapter.evaluate(verified, doc.root).report.results.values.toList()
+                    }
+                } catch (e: Exception) {
+                    return FixtureEvaluation.Error(e.message ?: "policy evaluation failed")
+                }
+                val error = outcomes.flatten().filterIsInstance<RuleEvaluation.Error>().firstOrNull()
+                if (error != null) {
+                    FixtureEvaluation.Error(error.primary.message)
+                } else {
+                    FixtureEvaluation.Evaluated(
+                        outcomes.count { result -> result.any { it is RuleEvaluation.Violated } },
+                    )
+                }
             }
         }
     }

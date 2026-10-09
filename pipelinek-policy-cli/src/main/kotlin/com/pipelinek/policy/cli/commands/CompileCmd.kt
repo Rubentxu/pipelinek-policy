@@ -29,13 +29,13 @@ object CompileCmd {
         val file = File(src)
         if (!file.isFile) {
             out("compile: policy source not found: $src")
-            return ExitCodes.USAGE
+            return ExitCodes.COMPILER_ERROR
         }
         val document = try {
             CanonicalPolicyJson.decode(file.readBytes())
         } catch (e: Exception) {
             out("compile: canonical IR refused: ${e.message}")
-            return ExitCodes.USAGE
+            return ExitCodes.COMPILER_ERROR
         }
         val bytes = PolicyBundle(document).pack()
         File(dst).writeBytes(bytes)

@@ -19,9 +19,11 @@ object JsonHelp {
             "  \"binary\": \"pipelinek-policy\",\n" +
             "  \"exit_codes\": {" +
             "\"0\": \"success, no violations\", " +
-            "\"1\": \"violations present\", " +
-            "\"2\": \"usage error, refusal, or decode error\", " +
-            "\"3\": \"typed evaluator/engine error or unexpected internal error\"},\n" +
+            "\"1\": \"usage or invocation error\", " +
+            "\"2\": \"policy violation\", " +
+            "\"3\": \"evaluation or configuration error\", " +
+            "\"4\": \"bundle or resource admission error\", " +
+            "\"5\": \"compiler error\"},\n" +
             "  \"commands\": [\n$cmds\n  ]\n" +
             "}"
     }
@@ -31,8 +33,11 @@ object JsonHelp {
             "  \"command\": \"${spec.name}\",\n" +
             "  \"description\": \"${spec.description.jsonEscape()}\",\n" +
             "  \"flags\": [${spec.flags.joinToString(",") { "\"$it\"" }}],\n" +
-            "  \"exit_codes\": {\"0\": \"success\", \"1\": \"violations\", " +
-            "\"2\": \"usage/refusal/decode error\", " +
-            "\"3\": \"typed evaluator/engine error or internal error\"}\n" +
+            "  \"exit_codes\": {\"0\": \"success or permit\", " +
+            "\"1\": \"usage or invocation error\", " +
+            "\"2\": \"policy violation\", " +
+            "\"3\": \"evaluation or configuration error\", " +
+            "\"4\": \"bundle or resource admission error\", " +
+            "\"5\": \"compiler error\"}\n" +
             "}"
 }

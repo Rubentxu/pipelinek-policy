@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 
 /**
  * REQ-M9-01 · dispatch + usage contract.
- * 01b: unknown command => exit 2 with usage on stdout.
+ * 01b: unknown command => exit 1 (usage/invocation error) with usage on stdout.
  * 01c FALSIFICATION: a dispatch that ignores argv[0] and falls back to a
  * default command would NOT produce "unknown command" for a bogus name;
  * this test pins the refusal so that mutation breaks it.

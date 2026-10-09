@@ -88,36 +88,36 @@ class StreamCmdTest {
     }
 
     @Test
-    fun `07c malformed csv refuses with exit 2`() {
+    fun `07c malformed csv uses admission exit code`() {
         val dir = createTempDirectory("m8stream")
         val bundle = dir.resolve("p.bundle").also { it.writeBytes(localBundle()) }
         val bad = dir.resolve("ragged.csv").also { it.writeText("temp\nok\n1,2\n") }
 
         val (code, out) = runStream("--policy", bundle.toString(), bad.toString())
-        assertEquals(ExitCodes.USAGE, code, out)
+        assertEquals(4, code, out)
         assertTrue(out.contains("decode-refusal"), out)
     }
 
     @Test
-    fun `07c unsupported extension refuses with exit 2`() {
+    fun `07c unsupported extension uses admission exit code`() {
         val dir = createTempDirectory("m8stream")
         val bundle = dir.resolve("p.bundle").also { it.writeBytes(localBundle()) }
         val xml = dir.resolve("data.xml").also { it.writeText("<a/>") }
 
         val (code, out) = runStream("--policy", bundle.toString(), xml.toString())
-        assertEquals(ExitCodes.USAGE, code, out)
+        assertEquals(4, code, out)
         assertTrue(out.contains("no streaming source"), out)
     }
 
     @Test
-    fun `07d missing policy flag exits 2`() {
+    fun `07d missing policy flag exits 1`() {
         val (code, out) = runStream("whatever.csv")
-        assertEquals(ExitCodes.USAGE, code)
+        assertEquals(1, code)
         assertTrue(out.contains("missing --policy"))
     }
 
     @Test
-    fun `07d budget exceeded exits 2`() {
+    fun `07d budget exceeded exits 3`() {
         val dir = createTempDirectory("m8stream")
         val bundle = dir.resolve("p.bundle").also { it.writeBytes(localBundle()) }
         val csv = dir.resolve("data.csv").also {
@@ -126,8 +126,34 @@ class StreamCmdTest {
         val (code, out) = runStream(
             "--policy", bundle.toString(), "--row-budget", "10", csv.toString(),
         )
-        assertEquals(ExitCodes.USAGE, code, out)
+        assertEquals(ExitCodes.EVALUATION_ERROR, code, out)
         assertTrue(out.contains("budget-exceeded"), out)
+    }
+
+    @Test
+    fun `invalid row budget is a usage error instead of silently defaulting`() {
+        val dir = createTempDirectory("m8stream-invalid-budget")
+        val bundle = dir.resolve("p.bundle").also { it.writeBytes(localBundle()) }
+        val csv = dir.resolve("data.csv").also { it.writeText("temp\nok\n") }
+
+        val (code, out) = runStream("--policy", bundle.toString(), "--row-budget", "0", csv.toString())
+
+        assertEquals(1, code, out)
+        assertTrue(out.contains("row-budget"), out)
+    }
+
+    @Test
+    fun `unsupported output format is a usage error`() {
+        val dir = createTempDirectory("m8stream-invalid-output-format")
+        val bundle = dir.resolve("p.bundle").also { it.writeBytes(localBundle()) }
+        val csv = dir.resolve("data.csv").also { it.writeText("temp\nok\n") }
+
+        val (code, out) = runStream(
+            "--policy", bundle.toString(), "--format-out", "xml", csv.toString(),
+        )
+
+        assertEquals(1, code, out)
+        assertTrue(out.contains("format-out"), out)
     }
 
     /**

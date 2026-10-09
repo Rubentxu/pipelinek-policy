@@ -7,7 +7,7 @@ import java.io.File
 
 /**
  * M9 · `bundle verify <bundle...>` (REQ-M9-08). Delegates to BundleVerifier
- * (M5): digest + capability checks. Any refusal ⇒ exit 2.
+ * (M5): digest + capability checks. Any admission failure ⇒ exit 4 (ADR-0012).
  */
 object BundleCmd {
 
@@ -42,6 +42,6 @@ object BundleCmd {
                 failed = true
             }
         }
-        return if (failed) ExitCodes.USAGE else ExitCodes.OK
+        return if (failed) ExitCodes.ADMISSION_ERROR else ExitCodes.OK
     }
 }

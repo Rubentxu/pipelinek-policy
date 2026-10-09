@@ -93,7 +93,7 @@ class CheckCmdTest {
             "--policy", bundle.toString(), "--format", "jsonl",
             ok.toString(), bad.toString(), refuse.toString(),
         )
-        assertEquals(ExitCodes.USAGE, code, "refusal must dominate: $out")
+        assertEquals(4, code, "admission refusal must dominate: $out")
         val lines = out.lines().filter { it.isNotBlank() }
         assertEquals(2, lines.size, "one violation finding + one refusal: $out")
         assertTrue(lines.any { it.contains("\"state\":\"violation\"") && it.contains("bad.json") })
@@ -152,7 +152,7 @@ class CheckCmdTest {
             "--policy", bundle.toString(), "--format", "jsonl", resource.toString(), refused.toString(),
         )
 
-        assertEquals(ExitCodes.USAGE, code, "refusal must remain the highest-priority outcome: $out")
+        assertEquals(4, code, "admission refusal must remain the highest-priority outcome: $out")
         assertTrue(out.contains("\"state\":\"error\""), out)
         assertTrue(out.contains("\"state\":\"violation\""), out)
         assertTrue(out.contains("\"state\":\"refusal\""), out)
@@ -165,12 +165,12 @@ class CheckCmdTest {
         // JSON content with an unknown extension: must REFUSE, not sniff-parse.
         val sneaky = dir.resolve("sneaky.conf").also { it.writeText("""{"metadata":{"team":"x"}}""") }
         val (code, out) = runCheck("--policy", bundle.toString(), sneaky.toString())
-        assertEquals(ExitCodes.USAGE, code)
+        assertEquals(4, code)
         assertTrue(out.contains("no decoder for extension .conf"))
         // And valid json content under .csv refuses too (csv parser rejects it).
         val fakeCsv = dir.resolve("fake.csv").also { it.writeText("""{"metadata":{"team":"x"}}""") }
         val (code2, out2) = runCheck("--policy", bundle.toString(), fakeCsv.toString())
-        assertTrue(code2 == ExitCodes.USAGE || code2 == ExitCodes.VIOLATIONS, out2)
+        assertTrue(code2 == 4 || code2 == ExitCodes.VIOLATIONS, out2)
     }
 
     @Test
@@ -184,6 +184,30 @@ class CheckCmdTest {
         )
         val findings = out.lines().filter { it.contains("\"state\":\"violation\"") }
         assertEquals(1, findings.size, "duplicate findings must be deduped: $out")
+    }
+
+    @Test
+    fun `02c falsification dedup keeps distinct occurrences of the same rule`() {
+        val dir = kotlin.io.path.createTempDirectory("m9check-dedup-occ")
+        val bundle = dir.resolve("p.bundle").also { it.writeBytes(bundleBytes()) }
+        // Two DIFFERENT files with the same shape: the JSON decoder derives
+        // resourceId from a node counter, so both documents get the SAME
+        // resourceId. Old dedup (policyId|ruleId|resourceId) collapsed the
+        // second file's violation into the first, hiding a real violation.
+        val bad1 = dir.resolve("bad1.json").also { it.writeText("""{"metadata":{"team":"tools"}}""") }
+        val bad2 = dir.resolve("bad2.json").also { it.writeText("""{"metadata":{"team":"other"}}""") }
+
+        val (code, out) = runCheck(
+            "--policy", bundle.toString(), "--format", "jsonl",
+            bad1.toString(), bad2.toString(),
+        )
+
+        assertEquals(ExitCodes.VIOLATIONS, code, out)
+        val findings = out.lines().filter { it.contains("\"state\":\"violation\"") }
+        assertEquals(
+            2, findings.size,
+            "distinct resources (same resourceId, different fingerprint) must survive dedup: $out",
+        )
     }
 
     @Test

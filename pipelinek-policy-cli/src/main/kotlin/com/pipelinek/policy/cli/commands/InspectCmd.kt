@@ -21,13 +21,13 @@ object InspectCmd {
         val file = File(path)
         if (!file.isFile) {
             out("inspect: bundle not found: $path")
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
             BundleVerifier.verifyPacked(file.readBytes())
         } catch (e: Exception) {
             out("inspect: bundle refused: ${e.message}")
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
         out(CanonicalPolicyJson.encode(verified.bundle.document).toString(Charsets.UTF_8))
         return ExitCodes.OK

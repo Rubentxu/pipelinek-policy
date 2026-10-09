@@ -50,6 +50,22 @@ class CompileBundleTestTest {
         return CanonicalPolicyJson.encode(lower(set)).toString(Charsets.UTF_8)
     }
 
+    private fun typeErrorIrJson(): String {
+        val teamPath = DocumentPath.ROOT.child("spec").child("team")
+        val rule = Rule(
+            "team-type",
+            "spec.team must be text",
+            Expression.Comparison(
+                Expression.FieldRef(teamPath, ValueNode.Type.TEXT),
+                Expression.Operator.TEXT_EQUALS,
+                Expression.Literal(ValueNode.TextValue("platform")),
+            ),
+        )
+        return CanonicalPolicyJson.encode(
+            lower(PolicySet("uat", listOf(Policy("p", listOf(rule))))),
+        ).toString(Charsets.UTF_8)
+    }
+
     private fun run(cmd: String, vararg args: String): Pair<Int, String> {
         val sb = StringBuilder()
         val code = PolicyCli.run(listOf(cmd) + args.toList()) { sb.appendLine(it) }
@@ -73,11 +89,20 @@ class CompileBundleTestTest {
     }
 
     @Test
-    fun `bundle verify refuses garbage with exit 2`() {
+    fun `bundle verify refuses garbage with admission exit code`() {
         val junk = dir.resolve("junk.bundle").also { it.writeBytes(byteArrayOf(1, 2, 3)) }
         val (code, out) = run("bundle", "--verify", junk.toString())
-        assertEquals(ExitCodes.USAGE, code)
+        assertEquals(4, code)
         assertTrue(out.contains("\"verified\": false"))
+    }
+
+    @Test
+    fun `compile rejects invalid canonical IR with compiler exit code`() {
+        val src = dir.resolve("invalid.ir.json").also { it.writeText("{") }
+        val (code, out) = run("compile", "--policy", src.toString(), "--out", dir.resolve("invalid.bundle").toString())
+
+        assertEquals(5, code, out)
+        assertTrue(out.contains("canonical IR refused"), out)
     }
 
     @Test
@@ -107,5 +132,33 @@ class CompileBundleTestTest {
         File(fixtures, "wrong.deny.json").writeText("""{"spec":{"team":"tools"}}""")
         val (code, _) = run("test", "--policy", bundle.toString(), "--fixtures", fixtures.absolutePath)
         assertEquals(ExitCodes.OK, code)
+    }
+
+    @Test
+    fun `test refuses directory with files but no recognized fixtures`() {
+        val src = dir.resolve("policy.ir.json").also { it.writeText(irJson()) }
+        val bundle = dir.resolve("unclassified.bundle")
+        run("compile", "--policy", src.toString(), "--out", bundle.toString())
+        val fixtures = dir.resolve("unclassified").toFile().apply { mkdirs() }
+        File(fixtures, "README.md").writeText("No allow or deny fixture is present.")
+
+        val (code, out) = run("test", "--policy", bundle.toString(), "--fixtures", fixtures.absolutePath)
+
+        assertEquals(ExitCodes.USAGE, code, "a directory with no executable fixtures must not pass vacuously: $out")
+        assertTrue(out.contains("fixture"), out)
+    }
+
+    @Test
+    fun `test never accepts evaluator Error as an expected deny`() {
+        val src = dir.resolve("error-policy.ir.json").also { it.writeText(typeErrorIrJson()) }
+        val bundle = dir.resolve("error-policy.bundle")
+        run("compile", "--policy", src.toString(), "--out", bundle.toString())
+        val fixtures = dir.resolve("error-fixtures").toFile().apply { mkdirs() }
+        File(fixtures, "wrong.deny.json").writeText("""{"spec":{"team":7}}""")
+
+        val (code, out) = run("test", "--policy", bundle.toString(), "--fixtures", fixtures.absolutePath)
+
+        assertEquals(ExitCodes.EVALUATION_ERROR, code, "typed evaluator Error is not a policy deny: $out")
+        assertTrue(out.contains("\"status\": \"error\""), out)
     }
 }

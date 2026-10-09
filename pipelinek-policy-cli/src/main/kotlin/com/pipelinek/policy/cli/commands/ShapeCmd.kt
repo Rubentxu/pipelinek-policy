@@ -20,13 +20,13 @@ object ShapeCmd {
         val file = File(path)
         if (!file.isFile) {
             out("shape: bundle not found: $path")
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
             BundleVerifier.verifyPacked(file.readBytes())
         } catch (e: Exception) {
             out("shape: bundle refused: ${e.message}")
-            return ExitCodes.USAGE
+            return ExitCodes.ADMISSION_ERROR
         }
         val doc = verified.bundle.document
         val policies = doc.policySet.policies
