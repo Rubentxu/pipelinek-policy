@@ -4,11 +4,13 @@ import com.pipelinek.policy.bundle.PolicyBundle
 import com.pipelinek.policy.kernel.expression.Expression
 import com.pipelinek.policy.kernel.path.DocumentPath
 import com.pipelinek.policy.kernel.policy.ParamValue
+import com.pipelinek.policy.kernel.policy.PolicyLayer
 import com.pipelinek.policy.kernel.policy.Policy
 import com.pipelinek.policy.kernel.policy.PolicySet
 import com.pipelinek.policy.kernel.policy.Rule
 import com.pipelinek.policy.kernel.policy.RuleRef
 import com.pipelinek.policy.kernel.policy.Supersession
+import com.pipelinek.policy.kernel.policy.SupersessionAuthority
 import com.pipelinek.policy.kernel.selector.Selector
 import com.pipelinek.policy.kernel.value.ValueNode
 import java.math.BigDecimal
@@ -41,7 +43,11 @@ class CanonicalPolicyJsonFortressTest {
             supersession = Supersession(
                 supersedes = RuleRef("policy", "old-rule"),
                 reason = "replacement",
-                authority = "platform",
+                authority = SupersessionAuthority(
+                    issuer = "platform",
+                    grantedLayers = setOf(PolicyLayer.ORGANIZATION),
+                    grantDigest = "sha256:fortress",
+                ),
                 scope = "repository",
                 validity = "current release",
             ),

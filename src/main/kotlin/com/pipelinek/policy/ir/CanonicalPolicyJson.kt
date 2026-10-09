@@ -6,8 +6,10 @@ import com.pipelinek.policy.kernel.policy.Policy
 import com.pipelinek.policy.kernel.policy.PolicySet
 import com.pipelinek.policy.kernel.policy.Rule
 import com.pipelinek.policy.kernel.policy.ParamValue
+import com.pipelinek.policy.kernel.policy.PolicyLayer
 import com.pipelinek.policy.kernel.policy.RuleRef
 import com.pipelinek.policy.kernel.policy.Supersession
+import com.pipelinek.policy.kernel.policy.SupersessionAuthority
 import com.pipelinek.policy.kernel.selector.Selector
 import com.pipelinek.policy.kernel.value.ValueNode
 import java.nio.ByteBuffer
@@ -202,9 +204,38 @@ private object PolicyIrParameterDecoder {
         return Supersession(
             RuleRef(target.req("policyId").asString(), target.req("ruleId").asString()),
             value.req("reason").asString(),
-            value.req("authority").asString(),
+            decodeSupersessionAuthority(value.req("authority")),
             value.req("scope").asString(),
             value.req("validity").asString(),
+        )
+    }
+
+    /**
+     * B4-T2: the authority claim is a typed object on the wire.
+     *
+     * A pre-T2 bundle encoded `authority` as a bare string. That encoding is
+     * REFUSED rather than coerced: a bare string names no issuer, no layers
+     * and no digest, and inventing them would fabricate a grant out of the
+     * exact field that used to be trusted unconditionally. Accepting it is
+     * the defect this task removes, so the decoder does not.
+     */
+    fun decodeSupersessionAuthority(value: J): SupersessionAuthority {
+        if (value is J.Str) {
+            throw IrRefusal.CorruptEncoding(
+                "supersession.authority must be an object {issuer, grantedLayers, grantDigest}; " +
+                    "the legacy bare-string form grants nothing and is refused (B4-T2)",
+            )
+        }
+        val claim = value.asObject()
+        val layers = claim.req("grantedLayers").asArray().map { element ->
+            runCatching { PolicyLayer.valueOf(element.asString()) }.getOrElse {
+                throw IrRefusal.CorruptEncoding("unknown policy layer in supersession authority: ${element.asString()}")
+            }
+        }.toSet()
+        return SupersessionAuthority(
+            issuer = claim.req("issuer").asString(),
+            grantedLayers = layers,
+            grantDigest = claim.req("grantDigest").asString(),
         )
     }
 }

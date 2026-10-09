@@ -5,6 +5,7 @@ import com.pipelinek.policy.kernel.path.DocumentPath
 import com.pipelinek.policy.kernel.policy.ParamValue
 import com.pipelinek.policy.kernel.policy.Rule
 import com.pipelinek.policy.kernel.policy.Supersession
+import com.pipelinek.policy.kernel.policy.SupersessionAuthority
 import com.pipelinek.policy.kernel.selector.Selector
 import com.pipelinek.policy.kernel.value.ValueNode
 import java.math.BigDecimal
@@ -132,8 +133,19 @@ private object CanonicalPolicyJsonNodeWriter {
 
     fun supersession(value: Supersession): String = "{\"supersedes\":{" +
         "\"policyId\":${quote(value.supersedes.policyId)},\"ruleId\":${quote(value.supersedes.ruleId)}}" +
-        ",\"reason\":${quote(value.reason)},\"authority\":${quote(value.authority)}" +
+        ",\"reason\":${quote(value.reason)},\"authority\":${supersessionAuthority(value.authority)}" +
         ",\"scope\":${quote(value.scope)},\"validity\":${quote(value.validity)}}"
+
+    /**
+     * B4-T2: the authority claim on the wire. The claim is DATA: it names who
+     * the bundle says authorized it. Writing it grants nothing — the host
+     * registry decides at composition time. A claim never admitted before T2
+     * decoded, because the field was a bare string.
+     */
+    fun supersessionAuthority(value: SupersessionAuthority): String = "{" +
+        "\"issuer\":${quote(value.issuer)}" +
+        ",\"grantedLayers\":[${value.grantedLayers.sortedBy { it.ordinal }.joinToString(",") { quote(it.name) }}]" +
+        ",\"grantDigest\":${quote(value.grantDigest)}}"
 
     fun quote(value: String): String = buildString {
         append('"')

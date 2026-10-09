@@ -92,7 +92,11 @@ class LayersTest {
             supersession = Supersession(
                 supersedes = RuleRef("shared", "min-replicas"),
                 reason = "project requires higher floor",
-                authority = "project-admin",
+                authority = SupersessionAuthority(
+                    issuer = "project-admin",
+                    grantedLayers = setOf(PolicyLayer.PROJECT),
+                    grantDigest = "sha256:m7",
+                ),
                 scope = "project:demo",
                 validity = "2026-01-01/2027-01-01",
             ),
@@ -100,7 +104,12 @@ class LayersTest {
         val org = LayeredPolicy(PolicyLayer.ORGANIZATION, set("shared", rule("min-replicas", 3), rule("other", 7)))
         val project = LayeredPolicy(PolicyLayer.PROJECT, set("shared", superseding))
 
-        val result = LayerComposer.compose(listOf(org, project))
+        // B4-T2: the replacement now needs a host grant naming the PROJECT
+        // layer. Without it the same composition refuses.
+        val result = LayerComposer.compose(
+            listOf(org, project),
+            AuthorityRegistry.of(superseding.supersession!!.authority),
+        )
 
         val composed = assertIs<ComposeResult.Composed>(result)
         val shared = composed.policySet.policies.single { it.id == "shared" }
@@ -122,7 +131,11 @@ class LayersTest {
             supersession = Supersession(
                 supersedes = RuleRef("shared", "does-not-exist"),
                 reason = "broken reference",
-                authority = "project-admin",
+                authority = SupersessionAuthority(
+                    issuer = "project-admin",
+                    grantedLayers = setOf(PolicyLayer.PROJECT),
+                    grantDigest = "sha256:m7",
+                ),
                 scope = "project:demo",
                 validity = "2026-01-01/2027-01-01",
             ),
@@ -148,12 +161,186 @@ class LayersTest {
             supersession = Supersession(
                 supersedes = RuleRef("shared", "does-not-exist"),
                 reason = "broken reference",
-                authority = "project-admin",
+                authority = SupersessionAuthority(
+                    issuer = "project-admin",
+                    grantedLayers = setOf(PolicyLayer.PROJECT),
+                    grantDigest = "sha256:m7",
+                ),
                 scope = "project:demo",
                 validity = "2026-01-01/2027-01-01",
             ),
         )
         val result = LayerComposer.compose(listOf(LayeredPolicy(PolicyLayer.PROJECT, set("shared", orphan))))
         assertTrue(result is ComposeResult.Refused, "orphan supersession must refuse, got: $result")
+    }
+
+    // --- B4-T2: supersession authority is a host-granted capability ---
+
+    /**
+     * A supersession may only weaken an upper-layer rule if some authority has
+     * actually granted that capability. `Supersession.authority` is what the
+     * bundle ASSERTS about itself; only the host-injected [AuthorityRegistry]
+     * is a grant. With no registry (the default `EMPTY`), a bundle that
+     * claims any authority at all must be REFUSED.
+     */
+    @Test
+    fun `02d a claimed authority with no grant refuses`() {
+        val superseding = rule("min-replicas", 5).copy(
+            supersession = Supersession(
+                supersedes = RuleRef("shared", "min-replicas"),
+                reason = "project requires higher floor",
+                authority = SupersessionAuthority(
+                    issuer = "acme-platform",
+                    grantedLayers = setOf(PolicyLayer.PROJECT),
+                    grantDigest = "sha256:0f1e2d",
+                ),
+                scope = "project:demo",
+                validity = "2026-01-01/2027-01-01",
+            ),
+        )
+        val org = LayeredPolicy(PolicyLayer.ORGANIZATION, set("shared", rule("min-replicas", 3)))
+        val project = LayeredPolicy(PolicyLayer.PROJECT, set("shared", superseding))
+
+        val result = LayerComposer.compose(listOf(org, project))
+
+        val refused = assertIs<ComposeResult.Refused>(result, "textual authority is not authority")
+        assertIs<LayerCompositionRefusal.AuthorityLacksCapability>(refused.refusal)
+    }
+
+    @Test
+    fun `02e a matching host grant composes`() {
+        val authority = SupersessionAuthority(
+            issuer = "acme-platform",
+            grantedLayers = setOf(PolicyLayer.PROJECT),
+            grantDigest = "sha256:0f1e2d",
+        )
+        val superseding = rule("min-replicas", 5).copy(
+            supersession = Supersession(
+                supersedes = RuleRef("shared", "min-replicas"),
+                reason = "project requires higher floor",
+                authority = authority,
+                scope = "project:demo",
+                validity = "2026-01-01/2027-01-01",
+            ),
+        )
+        val org = LayeredPolicy(PolicyLayer.ORGANIZATION, set("shared", rule("min-replicas", 3)))
+        val project = LayeredPolicy(PolicyLayer.PROJECT, set("shared", superseding))
+        val registry = AuthorityRegistry.of(authority)
+
+        val result = LayerComposer.compose(listOf(org, project), registry)
+
+        val composed = assertIs<ComposeResult.Composed>(result)
+        val kept = composed.policySet.policies.single { it.id == "shared" }.rules.single { it.id == "min-replicas" }
+        val threshold = ((kept.expression as Comparison).right as Literal).value
+        assertEquals(5L, (threshold as ValueNode.NumberValue).number.toLong())
+    }
+
+    /**
+     * The grant is scoped to the layer it names. A PROJECT grant must not
+     * authorize a PIPELINE_LOCAL supersession, or a local rule could rewrite
+     * the platform floor merely by naming a real issuer.
+     */
+    @Test
+    fun `02f a grant does not extend past the layers it names`() {
+        val authority = SupersessionAuthority(
+            issuer = "acme-platform",
+            grantedLayers = setOf(PolicyLayer.PROJECT),
+            grantDigest = "sha256:0f1e2d",
+        )
+        val superseding = rule("min-replicas", 5).copy(
+            supersession = Supersession(
+                supersedes = RuleRef("shared", "min-replicas"),
+                reason = "local override",
+                authority = authority,
+                scope = "project:demo",
+                validity = "2026-01-01/2027-01-01",
+            ),
+        )
+        val org = LayeredPolicy(PolicyLayer.ORGANIZATION, set("shared", rule("min-replicas", 3)))
+        val local = LayeredPolicy(PolicyLayer.PIPELINE_LOCAL, set("shared", superseding))
+
+        val result = LayerComposer.compose(listOf(org, local), AuthorityRegistry.of(authority))
+
+        val refused = assertIs<ComposeResult.Refused>(result, "a PROJECT grant must not authorize PIPELINE_LOCAL")
+        assertIs<LayerCompositionRefusal.AuthorityLacksCapability>(refused.refusal)
+    }
+
+    /**
+     * Order irrelevance is a property of the composer, not an artifact of a
+     * registry-free path. It must still hold when a registry is supplied.
+     */
+    @Test
+    fun `02g order irrelevance holds with a registry present`() {
+        val authority = SupersessionAuthority(
+            issuer = "acme-platform",
+            grantedLayers = setOf(PolicyLayer.PROJECT),
+            grantDigest = "sha256:0f1e2d",
+        )
+        val superseding = rule("min-replicas", 5).copy(
+            supersession = Supersession(
+                supersedes = RuleRef("shared", "min-replicas"),
+                reason = "project requires higher floor",
+                authority = authority,
+                scope = "project:demo",
+                validity = "2026-01-01/2027-01-01",
+            ),
+        )
+        val org = LayeredPolicy(PolicyLayer.ORGANIZATION, set("shared", rule("min-replicas", 3)))
+        val project = LayeredPolicy(PolicyLayer.PROJECT, set("shared", superseding))
+        val registry = AuthorityRegistry.of(authority)
+
+        val forward = LayerComposer.compose(listOf(org, project), registry)
+        val reversed = LayerComposer.compose(listOf(project, org), registry)
+
+        assertEquals(forward, reversed, "input order must not change the composed outcome")
+    }
+
+    /**
+     * B4-T2 second mutation: a bundle may CLAIM a grant, never GRANT one.
+     *
+     * The claim on the supersession names an issuer and even names the layers
+     * it wants. The host granted something NARROWER. The registry is the only
+     * thing that decides, so the wider claim must be refused rather than
+     * honoured — otherwise the bundle is granting itself authority simply by
+     * describing itself accurately.
+     */
+    @Test
+    fun `02h a claim wider than the host grant is refused`() {
+        val granted = SupersessionAuthority(
+            issuer = "acme-platform",
+            grantedLayers = setOf(PolicyLayer.PROJECT),
+            grantDigest = "sha256:0f1e2d",
+        )
+        // Same issuer, same digest: the claim asks for both layers.
+        val claimed = granted.copy(grantedLayers = setOf(PolicyLayer.PROJECT, PolicyLayer.PIPELINE_LOCAL))
+        val superseding = rule("min-replicas", 5).copy(
+            supersession = Supersession(
+                supersedes = RuleRef("shared", "min-replicas"),
+                reason = "local override",
+                authority = claimed,
+                scope = "project:demo",
+                validity = "2026-01-01/2027-01-01",
+            ),
+        )
+        val org = LayeredPolicy(PolicyLayer.ORGANIZATION, set("shared", rule("min-replicas", 3)))
+        val local = LayeredPolicy(PolicyLayer.PIPELINE_LOCAL, set("shared", superseding))
+
+        val result = LayerComposer.compose(listOf(org, local), AuthorityRegistry.of(granted))
+
+        val refused = assertIs<ComposeResult.Refused>(
+            result,
+            "the claim must not exceed the host grant, however well it matches",
+        )
+        assertIs<LayerCompositionRefusal.AuthorityLacksCapability>(refused.refusal)
+    }
+
+    /**
+     * The default parameter is the fail-closed path, and it is the path every
+     * existing caller takes until a host explicitly opts in. Pinned so that
+     * changing the default to a permissive registry fails here.
+     */
+    @Test
+    fun `02i the registry default is the empty fail-closed registry`() {
+        assertEquals(AuthorityRegistry.EMPTY, AuthorityRegistry.of())
     }
 }
