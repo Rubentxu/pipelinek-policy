@@ -144,6 +144,10 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
             BundleVerifier.verifyPacked(packedBundle)
         } catch (e: IllegalArgumentException) {
             return PolicyCheckOutput.refused("bundle refused: ${e.message}")
+        } catch (e: Exception) {
+            // B0.2: ANY bundle admission failure refuses; a generic
+            // engine/adapter crash must not leak as PASSED.
+            return PolicyCheckOutput.refused("bundle refused: ${e::class.simpleName}: ${e.message}")
         }
 
         val report = IrRuntimeAdapter.evaluate(verified, tree).report
@@ -151,11 +155,18 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
             .sortedBy { it.key.value }
             .map { (id, ev) -> RuleSummary(ruleId = id.value, outcome = outcomeName(ev)) }
         val violations = report.results.values.count { it is RuleEvaluation.Violated }
+        // B0.1 fail-closed: Error is an operational failure, never a pass.
+        // Precedence: REFUSED (admission) > ERRORED > VIOLATED > PASSED —
+        // but violations remain visible in summaries either way.
+        val errors = report.results.values.count { it is RuleEvaluation.Error }
 
-        return if (violations > 0) {
-            PolicyCheckOutput.violated(violations, report.digest, report.policySetId, summaries, input.enforcement)
-        } else {
-            PolicyCheckOutput.passed(report.digest, report.policySetId, summaries)
+        return when {
+            violations > 0 ->
+                PolicyCheckOutput.violated(violations, report.digest, report.policySetId, summaries, input.enforcement)
+            errors > 0 ->
+                PolicyCheckOutput.errored(errors, report.digest, report.policySetId, summaries)
+            else ->
+                PolicyCheckOutput.passed(report.digest, report.policySetId, summaries)
         }
     }
 

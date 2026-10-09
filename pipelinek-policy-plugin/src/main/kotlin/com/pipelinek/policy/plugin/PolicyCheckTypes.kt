@@ -25,7 +25,13 @@ data class PolicyCheckInput(
 
 /** Closed verdict vocabulary. REFUSED is operational failure, never a policy result. */
 @Serializable
-enum class PolicyCheckVerdict { PASSED, VIOLATED, REFUSED }
+enum class PolicyCheckVerdict {
+    /** Evaluation ran but at least one rule errored (typed refusal). Fail-closed. */
+    ERRORED,
+    PASSED,
+    VIOLATED,
+    REFUSED,
+}
 
 /**
  * M7 REQ-M7-04 · enforcement mode. SHADOW: the policy computes would-block

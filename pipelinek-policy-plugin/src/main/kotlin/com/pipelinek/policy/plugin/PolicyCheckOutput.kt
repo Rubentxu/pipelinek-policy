@@ -41,6 +41,17 @@ data class PolicyCheckOutput(
     @kotlinx.serialization.Transient
     override val outcome: StepOutcome = when (verdict) {
         PolicyCheckVerdict.PASSED -> StepOutcome.Success
+        PolicyCheckVerdict.ERRORED ->
+            // B0.1 fail-closed: an evaluation Error is an operational failure,
+            // NOT a policy verdict — it fails in ENFORCED and in SHADOW alike
+            // (shadow preserves would-deny evidence, but "could not evaluate"
+            // must never read as silent success).
+            StepOutcome.Failure(
+                PipelineFailure(
+                    kind = FailureKind.PLUGIN,
+                    message = "policy check ERRORED: evaluation error(s), report digest $reportDigest",
+                ),
+            )
         PolicyCheckVerdict.VIOLATED -> if (enforcement == EnforcementMode.SHADOW) {
             // Shadow: would-deny is evidence, not an execution decision (spec §6).
             StepOutcome.Success
@@ -90,5 +101,19 @@ data class PolicyCheckOutput(
 
         fun refused(reason: String): PolicyCheckOutput =
             PolicyCheckOutput(verdict = PolicyCheckVerdict.REFUSED, refusalReason = reason)
+
+        /** B0.1: evaluation errors are a distinct fail-closed verdict. */
+        fun errored(
+            errorCount: Int,
+            reportDigest: String,
+            policySetId: String,
+            ruleSummaries: List<RuleSummary>,
+        ): PolicyCheckOutput = PolicyCheckOutput(
+            verdict = PolicyCheckVerdict.ERRORED,
+            violationsCount = 0,
+            reportDigest = reportDigest,
+            policySetId = policySetId,
+            ruleSummaries = ruleSummaries,
+        )
     }
 }
