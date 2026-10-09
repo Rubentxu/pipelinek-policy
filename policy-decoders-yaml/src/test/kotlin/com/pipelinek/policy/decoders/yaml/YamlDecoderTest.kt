@@ -2,6 +2,9 @@ package com.pipelinek.policy.decoders.yaml
 
 import com.pipelinek.policy.decoder.DecodeRefusalCode
 import com.pipelinek.policy.decoder.DecodeResult
+import com.pipelinek.policy.decoder.NodeId
+import com.pipelinek.policy.decoder.ResourceDocument
+import com.pipelinek.policy.decoder.SourceAnchor
 import com.pipelinek.policy.kernel.value.ValueNode
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -110,5 +113,84 @@ class YamlDecoderTest {
         val result = decoder.decode(ByteArray(0))
         assertTrue(result is DecodeResult.Refused)
         assertEquals(DecodeRefusalCode.MALFORMED, (result as DecodeResult.Refused).refusal.code)
+    }
+
+    // ------------------------------------------------------------------
+    // B3 — real source spans (per-scalar marks, not (1,1,1,1) placeholders).
+    // Falsification: the old decoder registered TextSpan(1,1,1,1) for every
+    // node because `loadAllFromString` drops marks. These tests fail against
+    // the old implementation and pin the real positions.
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `scalar value on line 3 carries its real span`() {
+        val yaml = "metadata:\n  kind: deployment\n  team: tools\n".toByteArray()
+        val doc = (decoder.decode(yaml) as DecodeResult.Ok).documents.single()
+        val root = doc.root as ValueNode.MappingValue
+        val metadata = root.entries.getValue("metadata") as ValueNode.MappingValue
+        val team = metadata.entries.getValue("team") as ValueNode.TextValue
+
+        val anchor = doc.anchorFor(team)
+        assertTrue(
+            anchor is SourceAnchor.TextSpan && anchor.startLine == 3L,
+            "team scalar must anchor at line 3, got $anchor",
+        )
+    }
+
+    @Test
+    fun `nested scalar on line 2 column 5 carries its real span`() {
+        val yaml = "spec:\n  replicas: 3\n".toByteArray()
+        val doc = (decoder.decode(yaml) as DecodeResult.Ok).documents.single()
+        val spec = (doc.root as ValueNode.MappingValue).entries.getValue("spec") as ValueNode.MappingValue
+        val replicas = spec.entries.getValue("replicas") as ValueNode.NumberValue
+
+        val anchor = doc.anchorFor(replicas)
+        assertTrue(
+            anchor is SourceAnchor.TextSpan && anchor.startLine == 2L && anchor.startColumn >= 1L,
+            "replicas scalar must anchor at line 2, got $anchor",
+        )
+    }
+
+    @Test
+    fun `sequence elements carry distinct per-element spans`() {
+        val yaml = "items:\n  - a\n  - b\n".toByteArray()
+        val doc = (decoder.decode(yaml) as DecodeResult.Ok).documents.single()
+        val items = (doc.root as ValueNode.MappingValue).entries.getValue("items") as ValueNode.SequenceValue
+
+        val aAnchor = doc.anchorFor(items.elements[0])
+        val bAnchor = doc.anchorFor(items.elements[1])
+        assertTrue(aAnchor is SourceAnchor.TextSpan && aAnchor.startLine == 2L, "a at line 2, got $aAnchor")
+        assertTrue(bAnchor is SourceAnchor.TextSpan && bAnchor.startLine == 3L, "b at line 3, got $bAnchor")
+    }
+
+    @Test
+    fun `second document scalars anchor within their own document`() {
+        val yaml = "---\na: 1\n---\na: 2\n".toByteArray()
+        val docs = (decoder.decode(yaml) as DecodeResult.Ok).documents
+        assertEquals(2, docs.size)
+        val second = docs[1]
+        val a = (second.root as ValueNode.MappingValue).entries.getValue("a")
+        val anchor = second.anchorFor(a)
+        assertTrue(
+            anchor is SourceAnchor.TextSpan && anchor.startLine >= 4L,
+            "doc-2 scalar must anchor at the physical line 4+ of the stream, got $anchor",
+        )
+    }
+
+    /** Pre-order walk mirrors the decoder's NodeId assignment order. */
+    private fun ResourceDocument.anchorFor(target: ValueNode): SourceAnchor? {
+        var counter = 0L
+        var found: NodeId? = null
+        fun walkFind(node: ValueNode) {
+            val id = NodeId(counter++)
+            if (node === target && found == null) found = id
+            when (node) {
+                is ValueNode.MappingValue -> node.entries.values.forEach { walkFind(it) }
+                is ValueNode.SequenceValue -> node.elements.forEach { walkFind(it) }
+                else -> Unit
+            }
+        }
+        walkFind(root)
+        return sourceMap.of(found!!)
     }
 }

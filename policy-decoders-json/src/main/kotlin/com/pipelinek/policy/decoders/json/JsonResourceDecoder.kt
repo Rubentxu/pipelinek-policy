@@ -116,12 +116,27 @@ class JsonResourceDecoder : ResourceDecoder {
             return when (current) {
                 JsonToken.START_OBJECT -> parseObject()
                 JsonToken.START_ARRAY -> parseArray()
-                JsonToken.VALUE_STRING -> ValueNode.TextValue(parser.text)
+                JsonToken.VALUE_STRING -> {
+                    // B3: every materialized ValueNode carries a span; scalars
+                    // previously skipped registration, breaking NodeId↔node
+                    // correspondence for consumers that walk pre-order.
+                    registerSpan()
+                    ValueNode.TextValue(parser.text)
+                }
                 JsonToken.VALUE_NUMBER_INT -> parseInteger()
                 JsonToken.VALUE_NUMBER_FLOAT -> parseDecimal()
-                JsonToken.VALUE_TRUE -> ValueNode.BooleanValue(true)
-                JsonToken.VALUE_FALSE -> ValueNode.BooleanValue(false)
-                JsonToken.VALUE_NULL -> ValueNode.Null
+                JsonToken.VALUE_TRUE -> {
+                    registerSpan()
+                    ValueNode.BooleanValue(true)
+                }
+                JsonToken.VALUE_FALSE -> {
+                    registerSpan()
+                    ValueNode.BooleanValue(false)
+                }
+                JsonToken.VALUE_NULL -> {
+                    registerSpan()
+                    ValueNode.Null
+                }
                 else -> throw IllegalStateException("unexpected token $current")
             }
         }

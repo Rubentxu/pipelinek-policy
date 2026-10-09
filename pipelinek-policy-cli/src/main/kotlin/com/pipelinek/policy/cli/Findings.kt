@@ -9,8 +9,8 @@ import com.pipelinek.policy.kernel.policy.ViolationFingerprint
  */
 data class Location(
     val path: String,
-    val line: Int? = null,
-    val column: Int? = null,
+    val line: Long? = null,
+    val column: Long? = null,
 ) {
     fun render(): String = when {
         line != null && column != null -> "$path:$line:$column"
@@ -40,6 +40,8 @@ data class Finding(
             message: String,
             resourceFingerprint: String,
             locationPath: String,
+            line: Long? = null,
+            column: Long? = null,
         ): Finding = actionableFailure(
             state = FindingState.VIOLATION,
             policyId = policyId,
@@ -49,6 +51,8 @@ data class Finding(
             message = message,
             resourceFingerprint = resourceFingerprint,
             locationPath = locationPath,
+            line = line,
+            column = column,
         )
 
         fun error(
@@ -59,6 +63,8 @@ data class Finding(
             message: String,
             resourceFingerprint: String,
             locationPath: String,
+            line: Long? = null,
+            column: Long? = null,
         ): Finding = actionableFailure(
             state = FindingState.ERROR,
             policyId = policyId,
@@ -68,6 +74,8 @@ data class Finding(
             message = message,
             resourceFingerprint = resourceFingerprint,
             locationPath = locationPath,
+            line = line,
+            column = column,
         )
 
         private fun actionableFailure(
@@ -79,6 +87,8 @@ data class Finding(
             message: String,
             resourceFingerprint: String,
             locationPath: String,
+            line: Long?,
+            column: Long?,
         ): Finding {
             val fp = ViolationFingerprint.of(
                 policyId = policyId,
@@ -92,7 +102,7 @@ data class Finding(
                 resourceId = resourceId,
                 severity = "error",
                 state = state,
-                location = Location(path),
+                location = Location(path, line, column),
                 remediation = if (message.isBlank()) "fix resource to satisfy rule $ruleId" else message,
                 fingerprint = fp.value,
             )

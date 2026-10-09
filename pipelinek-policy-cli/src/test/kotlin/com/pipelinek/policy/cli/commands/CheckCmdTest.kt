@@ -211,6 +211,25 @@ class CheckCmdTest {
     }
 
     @Test
+    fun `findings carry the physical line and column of the violation`() {
+        val dir = kotlin.io.path.createTempDirectory("m9check-phys")
+        val bundle = dir.resolve("p.bundle").also { it.writeBytes(bundleBytes()) }
+        // team is on LINE 3 of the document; the finding must say so.
+        val res = dir.resolve("res.json").also {
+            it.writeText("{\n  \"kind\": \"deployment\",\n  \"metadata\": {\"team\": \"tools\"}\n}\n")
+        }
+
+        val (code, out) = runCheck("--policy", bundle.toString(), "--format", "jsonl", res.toString())
+
+        assertEquals(ExitCodes.VIOLATIONS, code, out)
+        val line = out.lines().first { it.contains("\"state\":\"violation\"") }
+        assertTrue("physical line expected: $line".let { msg ->
+            Regex("\"line\":\\s*3").containsMatchIn(line).also { if (!it) println(msg) }
+        })
+        assertTrue(Regex("\"column\":\\s*[0-9]+").containsMatchIn(line), "physical column expected: $line")
+    }
+
+    @Test
     fun `clean corpus exits 0`() {
         val dir = kotlin.io.path.createTempDirectory("m9check5")
         val bundle = dir.resolve("p.bundle").also { it.writeBytes(bundleBytes()) }

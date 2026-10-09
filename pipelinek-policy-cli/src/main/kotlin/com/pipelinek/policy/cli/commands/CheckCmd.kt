@@ -108,6 +108,7 @@ object CheckCmd {
                                 resourceFingerprint = runtime.report.resourceFingerprint,
                                 violation = evaluation.primary,
                                 isEvaluationError = true,
+                                document = doc,
                             ),
                         )
                         is RuleEvaluation.Violated -> evaluation.violations.map { violation ->
@@ -119,6 +120,7 @@ object CheckCmd {
                                 resourceFingerprint = runtime.report.resourceFingerprint,
                                 violation = violation,
                                 isEvaluationError = false,
+                                document = doc,
                             )
                         }
                         RuleEvaluation.Passed, RuleEvaluation.NotApplicable -> emptyList()
@@ -136,7 +138,17 @@ object CheckCmd {
         resourceFingerprint: String,
         violation: PolicyViolation,
         isEvaluationError: Boolean,
+        document: com.pipelinek.policy.decoder.ResourceDocument?,
     ): Finding {
+        // B3: resolve the violation's logical path to the document's physical
+        // anchor so findings carry line/column, not just the logical path.
+        val physical = document?.let {
+            com.pipelinek.policy.cli.PhysicalLocator.anchorFor(it, violation.location)
+        }
+        val line: Long? = (physical as? com.pipelinek.policy.decoder.SourceAnchor.TextSpan)?.startLine
+        val column: Long? = (physical as? com.pipelinek.policy.decoder.SourceAnchor.TextSpan)?.startColumn
+        val row: Long? = (physical as? com.pipelinek.policy.decoder.SourceAnchor.Cell)?.row
+        val col: Long? = (physical as? com.pipelinek.policy.decoder.SourceAnchor.Cell)?.column
         return if (isEvaluationError) {
             Finding.error(
                 policyId = policyId,
@@ -146,6 +158,8 @@ object CheckCmd {
                 message = violation.message,
                 resourceFingerprint = resourceFingerprint,
                 locationPath = violation.location.toString(),
+                line = line ?: row,
+                column = column ?: col,
             )
         } else {
             Finding.violation(
@@ -156,6 +170,8 @@ object CheckCmd {
                 message = violation.message,
                 resourceFingerprint = resourceFingerprint,
                 locationPath = violation.location.toString(),
+                line = line ?: row,
+                column = column ?: col,
             )
         }
     }

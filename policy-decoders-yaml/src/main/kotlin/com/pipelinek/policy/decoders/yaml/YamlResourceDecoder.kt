@@ -9,36 +9,57 @@ import com.pipelinek.policy.decoder.NodeId
 import com.pipelinek.policy.decoder.ResourceDecoder
 import com.pipelinek.policy.decoder.ResourceDocument
 import com.pipelinek.policy.decoder.ResourceFormat
+import com.pipelinek.policy.decoder.ResourceAttributes
 import com.pipelinek.policy.decoder.SourceAnchor
 import com.pipelinek.policy.decoder.SourceMap
 import com.pipelinek.policy.kernel.value.ResourceId
 import com.pipelinek.policy.kernel.value.ValueNode
-import org.snakeyaml.engine.v2.api.Load
 import org.snakeyaml.engine.v2.api.LoadSettings
+import org.snakeyaml.engine.v2.composer.Composer
 import org.snakeyaml.engine.v2.exceptions.DuplicateKeyException
+import org.snakeyaml.engine.v2.exceptions.Mark
 import org.snakeyaml.engine.v2.exceptions.YamlEngineException
+import org.snakeyaml.engine.v2.nodes.MappingNode
+import org.snakeyaml.engine.v2.nodes.Node
+import org.snakeyaml.engine.v2.nodes.NodeTuple
+import org.snakeyaml.engine.v2.nodes.ScalarNode
+import org.snakeyaml.engine.v2.nodes.SequenceNode
+import org.snakeyaml.engine.v2.nodes.Tag
+import org.snakeyaml.engine.v2.parser.ParserImpl
+import org.snakeyaml.engine.v2.scanner.StreamReader
+import java.math.BigDecimal
+import java.math.BigInteger
 
 /**
- * Spec REQ §ADDED REQ 2 (JSON+YAML parity) — YAML decoder.
+ * Spec REQ §ADDED REQ 2 (JSON+YAML parity) + B3 real source spans.
  *
  * Implementation notes:
- *   - Uses SnakeYAML engine 2.x's `Load.loadAllFromString` to fan out
- *     multi-document streams (`---` separators) into one parsed object
- *     per document (ADR-0011 D-04). Each parsed object is converted to
- *     a `ValueNode` tree via `fromJavaObject`.
- *   - Duplicate keys fail closed (ADR-0011 D-03) at any depth.
- *   - `DecodeOptions.yamlAliasCap` bounds recursive anchor expansion;
- *     the engine enforces the cap natively and surfaces a `Refused`
- *     via `DecodeRefusalCode.ALIAS_EXPANSION_EXCEEDED` when it triggers.
- *   - Source spans default to (1,1) because the high-level `loadAll`
- *     path does not propagate per-scalar marks; the per-document
- *     `NodeId` still lets consumers reference the document root.
+ *   - Composes the event stream via SnakeYAML engine 2.x `Composer`
+ *     (NOT the high-level `Load`) so every node carries its real
+ *     `Mark` (line/column). `setUseMarks(true)` is mandatory: without
+ *     marks the composer returns empty Optionals and spans degrade.
+ *   - Multi-document streams (`---` separators) fan out to one
+ *     `ResourceDocument` per document (ADR-0011 D-04), in source order.
+ *   - Duplicate keys fail closed (ADR-0011 D-03) at any depth; the
+ *     engine itself refuses via `DuplicateKeyException` when
+ *     `allowDuplicateKeys(false)`.
+ *   - `DecodeOptions.yamlAliasCap` bounds anchor expansion; the engine
+ *     enforces it natively (`maxAliasesForCollections`) and surfaces a
+ *     `Refused` with `ALIAS_EXPANSION_EXCEEDED`.
+ *   - Scalar typing follows the YAML 1.2 core schema resolution as the
+ *     engine's composer reports it (`Tag.INT` / `Tag.FLOAT` / `Tag.BOOL`
+ *     / `Tag.NULL`); only tagged-plain scalars are typed, everything
+ *     else stays text (law 9: no silent coercion). Integer carriers are
+ *     `Long` (BigInteger on overflow), decimals are always `BigDecimal`
+ *     so JSON/YAML canonicalize identically (mutation gate item 3).
+ *   - Spans are 1-indexed line/column `TextSpan`s derived from each
+ *     node's start mark (B3: no more (1,1,1,1) placeholders).
  */
 class YamlResourceDecoder : ResourceDecoder {
 
     override val descriptor: DecoderDescriptor = DecoderDescriptor(
         format = ResourceFormat.YAML,
-        version = "1.0.0-m2",
+        version = "1.1.0-b3",
     )
 
     override fun decode(
@@ -55,24 +76,24 @@ class YamlResourceDecoder : ResourceDecoder {
             val settings = LoadSettings.builder()
                 .setMaxAliasesForCollections(options.yamlAliasCap)
                 .setAllowDuplicateKeys(false)
+                .setUseMarks(true)
                 .build()
-            val loader = Load(settings)
-            val objects: Iterable<Any?> = loader.loadAllFromString(text)
+            val reader = StreamReader(text, settings)
+            val parser = ParserImpl(reader, settings)
+            val composer = Composer(parser, settings)
+
             val documents = mutableListOf<ResourceDocument>()
             var index = 0
-            for (parsed in objects) {
+            while (composer.hasNext()) {
+                val composed = composer.next()
                 val sourceMap = mutableMapOf<NodeId, SourceAnchor>()
-                val node = fromJavaObject(parsed, sourceMap)
-                val rootId = NodeId(0L)
-                sourceMap[rootId] = SourceAnchor.TextSpan(1L, 1L, 1L, 1L)
+                val root = fromNode(composed, sourceMap)
                 documents += ResourceDocument(
                     id = ResourceId("yaml://document-$index"),
                     format = ResourceFormat.YAML,
-                    root = node,
+                    root = root,
                     sourceMap = SourceMap(sourceMap.toMap()),
-                    attributes = com.pipelinek.policy.decoder.ResourceAttributes(
-                        mediaType = "application/yaml",
-                    ),
+                    attributes = ResourceAttributes(mediaType = "application/yaml"),
                 )
                 index++
             }
@@ -89,7 +110,10 @@ class YamlResourceDecoder : ResourceDecoder {
             DecodeResult.Refused(
                 DecodeRefusal(
                     DecodeRefusalCode.DUPLICATE_KEY,
-                    anchor = SourceAnchor.Logical("yaml://mapping"),
+                    anchor = run {
+                        val mark = e.problemMark
+                        if (mark.isPresent) mark.get().toTextSpan() else SourceAnchor.Logical("yaml://mapping")
+                    },
                 ),
             )
         } catch (e: YamlEngineException) {
@@ -99,80 +123,104 @@ class YamlResourceDecoder : ResourceDecoder {
                 DecodeRefusalCode.MALFORMED
             }
             DecodeResult.Refused(
-                DecodeRefusal(code, anchor = SourceAnchor.Logical("yaml://stream")),
+                DecodeRefusal(code, SourceAnchor.Logical("yaml://stream")),
             )
         } catch (e: Throwable) {
             DecodeResult.Refused(
-                DecodeRefusal(
-                    DecodeRefusalCode.MALFORMED,
-                    anchor = SourceAnchor.Logical("yaml://stream"),
-                ),
+                DecodeRefusal(DecodeRefusalCode.MALFORMED, SourceAnchor.Logical("yaml://stream")),
             )
         }
     }
 
-    /**
-     * Converts the SnakeYAML-parsed Java object graph into a `ValueNode`
-     * tree and registers a fresh `NodeId` per node in [sourceMap].
-     */
-    private fun fromJavaObject(
-        value: Any?,
+    /** Pre-order conversion mirroring the JSON builder's NodeId assignment. */
+    private fun fromNode(
+        node: Node,
         sourceMap: MutableMap<NodeId, SourceAnchor>,
     ): ValueNode {
+        // Id AND span are registered BEFORE descending so pre-order ids stay
+        // unique (post-registration let siblings collide on sourceMap.size).
         val id = NodeId(sourceMap.size.toLong())
-        val node: ValueNode = when (value) {
-            null -> ValueNode.Null
-            is Map<*, *> -> ValueNode.MappingValue(fromMapping(value, sourceMap))
-            is List<*> -> ValueNode.SequenceValue(value.map { fromJavaObject(it, sourceMap) })
-            is String -> ValueNode.TextValue(value)
-            is Number -> ValueNode.NumberValue(coerceNumber(value))
-            is Boolean -> ValueNode.BooleanValue(value)
+        val span = node.startMark
+            .map { it.toTextSpan() }
+            .orElseGet { SourceAnchor.TextSpan(1L, 1L, 1L, 1L) }
+        sourceMap[id] = span
+        return when (node) {
+            is ScalarNode -> scalarValue(node)
+            is SequenceNode -> ValueNode.SequenceValue(
+                node.value.map { fromNode(it, sourceMap) },
+            )
+            is MappingNode -> ValueNode.MappingValue(fromMapping(node, sourceMap))
             else -> throw YamlRefusal(
                 DecodeRefusalCode.UNSUPPORTED_HOST_VALUE,
                 SourceAnchor.Logical("yaml://unsupported"),
             )
         }
-        sourceMap[id] = SourceAnchor.TextSpan(1L, 1L, 1L, 1L)
-        return node
     }
 
+    /** Core-schema scalar resolution: only tagged-plain scalars are typed. */
+    private fun scalarValue(node: ScalarNode): ValueNode = when (node.tag) {
+        Tag.INT -> {
+            val asLong = node.value.toLongOrNull()
+            val asBig = if (asLong == null) runCatching { BigInteger(node.value) }.getOrNull() else null
+            when {
+                asLong != null -> ValueNode.NumberValue(asLong)
+                asBig != null -> ValueNode.NumberValue(promoteInteger(asBig))
+                // Non-decimal core-schema ints (0x.., 0o..) fall back to
+                // text: typing them anyway would be coercion in disguise.
+                else -> ValueNode.TextValue(node.value)
+            }
+        }
+        Tag.FLOAT -> {
+            val decimal = runCatching { BigDecimal(node.value) }.getOrNull()
+            if (decimal != null) ValueNode.NumberValue(decimal) else ValueNode.TextValue(node.value)
+        }
+        Tag.BOOL -> when (node.value) {
+            "true", "True", "TRUE" -> ValueNode.BooleanValue(true)
+            "false", "False", "FALSE" -> ValueNode.BooleanValue(false)
+            else -> ValueNode.TextValue(node.value)
+        }
+        Tag.NULL -> ValueNode.Null
+        else -> ValueNode.TextValue(node.value)
+    }
+
+    private fun promoteInteger(n: BigInteger): Number =
+        if (n.bitLength() <= 63) n.toLong() else n
+
     private fun fromMapping(
-        map: Map<*, *>,
+        node: MappingNode,
         sourceMap: MutableMap<NodeId, SourceAnchor>,
     ): Map<String, ValueNode> {
         val out = linkedMapOf<String, ValueNode>()
-        val seen = mutableSetOf<String>()
-        map.forEach { (k, v) ->
-            val keyStr = k.toString()
-            if (!seen.add(keyStr)) {
+        node.value.forEach { tuple: NodeTuple ->
+            val keyNode = tuple.keyNode as? ScalarNode
+                ?: throw YamlRefusal(
+                    DecodeRefusalCode.UNSUPPORTED_HOST_VALUE,
+                    SourceAnchor.Logical("yaml://non-scalar-key"),
+                )
+            val key = keyNode.value
+            if (out.containsKey(key)) {
                 throw YamlRefusal(
                     DecodeRefusalCode.DUPLICATE_KEY,
-                    SourceAnchor.Logical("yaml://mapping@$keyStr"),
+                    run {
+                        val mark = keyNode.startMark
+                        if (mark.isPresent) mark.get().toTextSpan() else SourceAnchor.Logical("yaml://mapping@$key")
+                    },
                 )
             }
-            out[keyStr] = fromJavaObject(v, sourceMap)
+            out[key] = fromNode(tuple.valueNode, sourceMap)
         }
         return out
     }
+
+    private fun Mark.toTextSpan(): SourceAnchor.TextSpan = SourceAnchor.TextSpan(
+        startLine = line.toLong() + 1L,
+        startColumn = column.toLong() + 1L,
+        endLine = line.toLong() + 1L,
+        endColumn = column.toLong() + 2L,
+    )
 
     private class YamlRefusal(
         val code: DecodeRefusalCode,
         val anchor: SourceAnchor,
     ) : RuntimeException()
-
-    /**
-     * Promotes SnakeYAML's small-integer carriers (`Integer` / `Short` /
-     * `Byte`) to `Long` so the integer-vs-decimal invariant matches the
-     * JSON decoder and the kernel stays type-stable. Decimals and BigInteger
-     * pass through untouched (mutation gate item 3).
-     */
-    private fun coerceNumber(n: Number): Number {
-        return when (n) {
-            is Long -> n
-            is Int -> n.toLong()
-            is Short -> n.toLong()
-            is Byte -> n.toLong()
-            else -> n
-        }
-    }
 }
