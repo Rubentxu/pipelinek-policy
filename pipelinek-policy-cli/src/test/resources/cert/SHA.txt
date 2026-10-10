@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 44c6fb71d860b27d8327387b6793f62680002897
+certified-sha: d8dfe26ab1438811bda5000a21c81a2010fa4133
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -145,4 +145,30 @@ baseline-suites: 42
 # measured property is that the key distinguishes, not that the host uses it,
 # and the evaluator's purity says nothing about whether the host reuses
 # anything.
-baseline-tests: 571
+#
+# H5.2 moved certified-sha 44c6fb71... -> d8dfe26a... and baseline-tests
+# 571 -> 580: nine new tests, all in the root module's hashed scope.
+#   - JsonEscapingTest (11) is NOT in this scope; it lives in
+#     pipelinek-policy-cli, whose source the anchor does not hash. That is why
+#     the H4.1 escaping fix did not move this anchor.
+#   - WaiversTest gained 2 cases (03f-unpinned waiver waives by subject and
+#     rule; an unpinned waiver for another subject does not waive). Every
+#     pre-existing case pinned a NON-null violationFingerprint, so the null
+#     branch of fingerprintMatches -- the predicate that decides whether a
+#     violation is silenced -- had no coverage at all.
+#   - PolicyBundleAdmissionFortressTest gained 3 cases (non-pack refused naming
+#     the magic, long wrong-magic file refused, well-formed pack still
+#     admitted). Found by mutant J1 surviving TWICE: first because it mutated
+#     the require message rather than the predicate, then because the magic
+#     check -- the front door of the admission boundary -- had no directed
+#     test. Every other assertion in that class is assertFailsWith<BundleRefusal>,
+#     which cannot tell a bad magic from a bad manifest, source map or UTF-8
+#     name. The third case is a positive control: without it "always refuse"
+#     would satisfy both negative assertions and J1 could never be killed.
+# Baseline 580 is a FLOOR, not a claim about what this change added: the
+# fresh certify.sh run reported 593 executed, 0 failures, 0 errors, 0
+# skipped. The 13 above the floor are the H4.1 JsonEscapingTest cases in
+# this module, which are counted in the executed total but do not enter
+# this file's own scope hash. Recorded here so the gap between floor and
+# executed is not mistaken for an unaccounted module.
+baseline-tests: 580
