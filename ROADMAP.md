@@ -518,6 +518,45 @@ Guardarraíles que condicionan B4 (decididos, no opcionales):
 - **Paridad CLI/plugin por construcción:** ambos adaptadores delegan en un
   único núcleo puro; ninguno implementa reglas.
 
+### Reconciliación B4–B6 contra el código (2026-10-10, HEAD `1d933fc`)
+
+Cada ítem se verificó contra el árbol, no contra el estado declarado. Un ítem
+solo cuenta Done con implementación **y** falsificación observable.
+
+| Item | Estado real | Evidencia en el árbol |
+|---|---|---|
+| B4.1 autoridad | **DONE** | `Layers.kt:67` `AuthorityRegistry(grants)`, `:103` `EMPTY`, `:201` fail-closed por parámetro |
+| B4.2 waivers | **DONE** | `Waivers.kt:228-229` lee `projectScope`/`datasetScope` vía `scopeSatisfied` |
+| B4.3 enforcement | **DONE** | `governance/EnforcementInterpreter.kt` puro y compartido |
+| B4.4 shadow | **DONE** | `PolicyCheckDsl.kt:49` `enforcement` con default `ENFORCED` |
+| B4.5 diff | **DONE** | `PolicySet.kt:83` `severity: RuleSeverity?`; `PolicyDiff.kt:143` emisión condicional |
+| B4.6 plan | **DONE** | `governance/PolicyCheckPlan.kt` calculado por el kernel |
+| B4.7 ingress | **ABIERTO** | `ResourceIngressLimits` **no existe**; `readBytes()` en 5 comandos CLI |
+| B4.8 replay | **DONE** | `Waivers.kt:70` instante inyectado, scopes aplicados |
+| B4.9 UAT | **ABIERTO** | `uat-external-distribution.sh` no fija 20 recursos ni verifica por comportamiento |
+| B5.5 identidad | **ABIERTO** | `rule.id` como clave en 8 sitios de `kernel/dataset` |
+| B5.6 acumuladores | **ABIERTO** | `Accumulator.kt:81` `BudgetExceededException` sigue lanzando |
+| B6.1–B6.10 | **ABIERTO** | `cert/SHA.txt` estático; gates que no pueden fallar |
+
+**Guardarraíl de pureza (B4): CERRADO.** `DomainIoPurityTest` ya usa
+`walkTopDown()` sobre las raíces de dominio y afirma cobertura explícita
+incluyendo `kernel/dataset/Accumulator.kt` y `kernel/dataset/DatasetPlanner.kt`.
+La ley 5 de B4 dejó de ser decorativa.
+
+**Corrección de una afirmación previa:** el resumen de sesión daba B4-T3
+(`PolicySet.layer` opcional) y B4-T5 (`resourceBudget`) como abiertos. B4.7 sí
+está abierto, pero como ausencia del tipo `ResourceIngressLimits`, no como un
+hueco en `PolicyCheckPlan`.
+
+### Prioridad derivada de esta reconciliación
+
+1. **B4.7 `ResourceIngressLimits`** — el host decodifica `resourceBase64` sin
+   techo. Es la precondición que T6 declaraba y no tuvo.
+2. **B5.3 UTF-8 estricto** — corrupción silenciosa de datos no-ASCII, condición de
+   cierre declarada por el propio roadmap.
+3. **B5.5 `RuleKey`** — dos policies con el mismo `ruleId` comparten contadores.
+4. **B4.9 + B6.1** — UAT real y certificación del SHA exacto.
+
 ## B5 — Streaming real, datasets y presupuestos (P1) — PARCIAL (M8 WU-1..6)
 
 Descomposición:

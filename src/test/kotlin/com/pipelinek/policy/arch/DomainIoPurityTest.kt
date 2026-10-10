@@ -89,6 +89,10 @@ class DomainIoPurityTest {
                     "kernel/dataset/StreamingEvaluator.kt",
                     "kernel/governance/EnforcementInterpreter.kt",
                     "kernel/governance/EnforcementMode.kt",
+                    "kernel/governance/PolicyCheckPlan.kt",
+                    // B4.7 ingress budget: pure by construction, and the guard
+                    // must say so explicitly rather than by prefix accident.
+                    "kernel/governance/ResourceIngressLimits.kt",
                 ),
             ),
             "the whole domain tree must be covered: $covered",
