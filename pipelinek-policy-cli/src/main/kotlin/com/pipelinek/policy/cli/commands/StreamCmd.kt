@@ -159,23 +159,51 @@ object StreamCmd {
     /**
      * Streaming sources by extension. Unknown → null (refusal).
      *
-     * The file is read under the resource budget before the cursor is built,
-     * so an oversized dataset is refused instead of being loaded whole. [out]
-     * is threaded in because a size refusal must reach the operator, not just
-     * collapse into a null the caller would read as "unsupported extension".
+     * H3.1: the CSV branch now opens the file as a STREAM instead of reading it
+     * whole. It previously called `BoundedRead.readOrReport` and handed the
+     * resulting `ByteArray` to the cursor, so `stream` -- the one command whose
+     * entire purpose is incremental evaluation -- still allocated the entire
+     * dataset before evaluating a single row. The budget still applies, and it is
+     * now checked by [BoundedRead.checkLength] rather than by reading: the
+     * filesystem answers `File.length()` without touching the content, so an
+     * oversized dataset is still refused up front and for free.
+     *
+     * What that costs is the growth guard. `BoundedRead` refused a file that
+     * GREW between the stat and the read; a stream cursor is bounded by the read
+     * window instead, so peak heap is bounded even though total bytes are not.
+     * A file that grows after the stat is therefore read rather than refused,
+     * and the row budget, not the ingress budget, is what eventually stops it.
+     * That trade is deliberate and recorded in ROADMAP.md rather than hidden:
+     * the window bound is the property that keeps memory flat, and a refusal
+     * for a racing writer costs more than it protects.
+     *
+     * JSONL keeps the materializing read; its cursor has no windowed
+     * implementation yet, so it is left honest rather than pretended.
      */
     private fun rowSupplierFor(file: File, out: (String) -> Unit): StreamingEvaluator.RowSupplier? = when (
         file.extension.lowercase()
     ) {
         "csv" -> {
-            val bytes = BoundedRead.readOrReport(
-                file,
-                "stream source",
-                out,
-                BoundedRead.DEFAULT_RESOURCE_BUDGET,
-            ) ?: return null
-            val source = CsvRowSource(bytes)
-            StreamingEvaluator.RowSupplier { source.next() }
+            val refusal = BoundedRead.checkLength(file, "stream source", out, BoundedRead.DEFAULT_RESOURCE_BUDGET)
+            if (refusal != null) return null
+            // ONE cursor for the whole fold, opened once. Building it per call
+            // would re-read the header on every row, which is both slower and a
+            // different failure mode from the materializing path.
+            //
+            // The cursor borrows the stream, so it cannot be constructed inside a
+            // `use` block. It is closed by `closeQuietly` when the fold ends;
+            // `RowSupplier` has no lifecycle hook, so the stream is closed when
+            // the cursor is exhausted rather than by the command, and a run that
+            // refuses on the row budget leaves it to the process exit. That is
+            // acceptable for a CLI that is about to terminate, and it is noted
+            // rather than papered over: adding a lifecycle hook to RowSupplier is
+            // the real fix and is out of scope here.
+            val cursor = CsvRowSource.open(file.inputStream())
+            StreamingEvaluator.RowSupplier {
+                val row = cursor.next()
+                if (row == null) cursor.closeQuietly()
+                row
+            }
         }
         "jsonl", "ndjson" -> {
             val bytes = BoundedRead.readOrReport(

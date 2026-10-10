@@ -682,6 +682,32 @@ mutate \
   'M2 non-matching rows must not consume the COUNT cap' \
   '*StreamingCountMatchesTest*'
 
+# N1: the streamed cursor must actually stream. This restores the H3.1 defect:
+# `open` materializes the stream into a byte array and hands that to the
+# array-backed cursor, which is exactly what the streaming entry point existed to
+# stop. The pre-existing `06b` memory test could not see this -- it allocated the
+# payload BEFORE taking its baseline, so a materializing cursor measured
+# -531040 bytes against a 64 MiB ceiling and passed. The new tests count bytes
+# pulled off the stream instead, which is deterministic.
+mutate \
+  policy-decoders-csv/src/main/kotlin/com/pipelinek/policy/decoders/csv/CsvRowSource.kt \
+  '            CsvRowSource(ByteSource.Windowed(stream), stream)' \
+  '            CsvRowSource(ByteSource.Array(stream.readBytes()), null)' \
+  'N1 a streamed cursor must not materialize the document' \
+  '*CsvRowStreamSourceTest*'
+
+# N2: the window must slide, not stop refilling. Replacing the slide with a
+# no-op makes the cursor give up once the window is full, so it reports EOF part
+# way through a document and silently evaluates only the rows that happened to
+# fit. The test that kills it asserts every row arrives and the stream is fully
+# consumed, which a truncated read satisfies for the prefix it did see.
+mutate \
+  policy-decoders-csv/src/main/kotlin/com/pipelinek/policy/decoders/csv/CsvRowSource.kt \
+  '                        slide()' \
+  '                        Unit' \
+  'N2 a full window must slide instead of truncating the document' \
+  '*CsvRowStreamSourceTest*'
+
 echo
 echo "== B6.6 mutation summary"
 echo "   killed:     $KILLS"
