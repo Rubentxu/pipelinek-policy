@@ -599,8 +599,8 @@ aceptarla, y `DONE` documental no acredita cumplimiento.
 | H3.1 lectura incremental | **PARCIAL** | `cli/BoundedRead.kt` lee por chunks con tope, pero devuelve `ReadResult.Ok(bytes: ByteArray)` (`:55`) y `readCapped` materializa en `ByteArrayOutputStream` (`:117-130`). Falta el cursor de filas incremental sobre `InputStream`. |
 | H3.2 presupuestos | **CERRADO (B4.7)** | `ResourceIngressLimits` en el kernel, admisión antes de decodificar, `BUNDLE_TOO_LARGE`/`RESOURCE_TOO_LARGE` distintos de `NOT_BASE64` (ley 8). |
 | H4.1 CLI agent-first | **PARCIAL** | `--json-help` existe y se despacha desde `PolicyCli.kt:18,37` con `CommandRegistry` como única fuente. Falta verificar el escape seguro en `check/test/diff/explain/inspect/stream`. |
-| H4.2 plugin externo | **PARCIAL** | `uat-external-distribution.sh` ejecuta el Step instalado vía `--plugin-jar` (B4.9). Falta procedencia del SDK publicado (B6.7). |
-| H4.3 replay y memoización | **ABIERTO** | B6.8. Sin.Files de fingerprint efectivo ni hit/miss observados. |
+| H4.2 plugin externo | **CERRADO (B6.7)** | `uat-external-distribution.sh` ejecuta el Step instalado vía `--plugin-jar` (B4.9) y verifica el sha256 de los cuatro artefactos del SDK antes de hacerlo (B6.7); `certify.sh` registra esos digests en el recibo. UAT verde en ambas direcciones. |
+| H4.3 replay y memoización | **PARCIAL** | B6.8. El plugin declara `ReplayPolicy.MEMOIZED` y el fingerprint se verificó distinguendo recurso, bundle, enforcement y formato, con determinismo (`ReplayFingerprintTest`, 8 tests, 1 mutante muerto). **Falta `NOT_MEASURED`:** ningún hit/miss observado a través de la distribución instalada; el host decide en `DurableInvocationResolver`, fuera de este repositorio. |
 | H4.4 compatibilidad cruzada | **ABIERTO** | No existe matriz Policy × SDK × JDK. Versión actual declarada `0.2.0-M2` (`build.gradle.kts:16`), coherente con el destino `v0.3.0`. |
 | H5.1 certificación de fuentes | **PARCIAL** | `certified-sha` cubre `src/{main,test}/kotlin` del **módulo raíz** (84 ficheros). Un cambio en producción de un submódulo deja válida una certificación previa. |
 | H5.2 mutation testing | **CERRADO (B6.5), AMPLIABLE** | `scripts/m6/mutation-gate.sh` con **17** mutantes semánticos (A1–A3 `appliesWhen`/veredicto, B1 precisión `BigDecimal`, B2 claves duplicadas, C1 orden de mappings, C2 orden de sequences, D1/D2/D3 transporte de `severity`, E1 grant de host en supersesión, E2 subject match en waivers, E3 precedencia error sobre violación, F1 el plugin debe usar el servicio de gobierno compartido, G1–G3 los dos defectos de agregación de B6.6). Último run: **17 muertos, 0 sobrevividos, 0 inválidos**, restore verde. Falsificado en negativo dos veces (test mal dirigido → `SURVIVED` + exit 1; mutante que no compila → `INVALID` + exit 1). Guard añadido: aborta con exit 3 si el fichero a mutar tiene cambios sin commitear, porque su restore usa `git checkout --` y antes destruía el fix en curso. H5.2 del plan exige además admisión de bundles, Missing/Null, identidad de reglas, agregados, waivers/autoridad/shadow y códigos de salida CLI: **no medidos**. |
@@ -766,7 +766,24 @@ Descomposición:
   integración. Recorrer el Step instalado, no solo `evaluate()`.
 - B6.8 Replay y memoización: reevaluar la declaración N/A de M10 cuando el SDK
   exponga el recorrido; sin extrapolar la pureza del evaluador a toda la
-  integración.
+  integración. **PARCIALMENTE MEDIDO (2026-10-10).** La declaración N/A de M10
+  era **incorrecta y ya no es aplicable**: el plugin declara
+  `ReplayPolicy.MEMOIZED` y el SDK tiene un recorrido real
+  (`Fingerprint.compute`, `EffectReplayPolicy.decide`,
+  `OperationStatus.isReusableCompletion`). Lo que se midió, con valores que el
+  SDK calculó sobre bytes reales (`ReplayFingerprintTest`, 8 tests):
+  el fingerprint **sí** distingue bytes del recurso, bytes del bundle, modo de
+  enforcement y formato, y **es determinista** para la misma entrada (misma
+  clave), que es lo que hace de `MEMOIZED` una caché y no un rerun.
+  Falsificado: quitar `resourceBase64` de los params mata
+  `a different resource yields a different fingerprint`.
+  **Lo que sigue `NOT_MEASURED`:** no se ha observado un **hit/miss** real a
+  través de la distribución instalada. El punto de decisión es que el host
+  sirva un veredicto cacheado, y eso ocurre en `DurableInvocationResolver`,
+  fuera de este repositorio. Sin esa observación, la propiedad medida es *la
+  clave distingue*, no *el host la usa*. No se extrapola la pureza del
+  evaluador a la integración: el evaluador puro no dice nada sobre si el host
+  reutiliza.
 - B6.9 Reconciliación documental: ROADMAP, README, ejemplos, contratos CLI,
   matriz de compatibilidad, estado de M4 y M8, ledger de deuda, notas de
   release. **La ausencia de TODO/FIXME no prueba ausencia de deuda.**

@@ -121,4 +121,28 @@ baseline-suites: 42
 # The CLI lost its two catch clauses for these exceptions and now reads the
 # refusal out of the report; StreamCmdTest.07d still pins budget-exceeded
 # plus exit 3, so the observable CLI contract did not change.
-baseline-tests: 563
+# B6.8 moved baseline-tests 563 -> 571 with certified-sha UNCHANGED at
+# 44c6fb71...: the eight new ReplayFingerprintTest tests live in
+# pipelinek-policy-plugin, which is outside the root-module scope the anchor
+# hashes, and only ROADMAP.md changed inside that scope. The anchor did not
+# move for the same reason the H1 release did not move it. Raised deliberately
+# after a fresh certify.sh run reported 571 executed, 0 failures, 0 errors, 0
+# skipped.
+#
+# B6.8 also found the M10 declaration WRONG rather than merely stale. M10
+# listed restart/replay as N/A; the plugin declares ReplayPolicy.MEMOIZED and
+# the SDK has a real replay path (Fingerprint.compute, EffectReplayPolicy.decide,
+# OperationStatus.isReusableCompletion), so the gate applied. What the new
+# tests measure, over fingerprints the SDK computed from real bytes, is that
+# the memo key DISTINGUISHES resource bytes, bundle bytes, enforcement mode and
+# format, and is DETERMINISTIC for the same input. Falsified: removing
+# resourceBase64 from the params kills "a different resource yields a
+# different fingerprint".
+#
+# What stays NOT_MEASURED, deliberately: no real hit/miss has been observed
+# through the installed distribution. The decision to serve a journalled
+# outcome lives in DurableInvocationResolver, outside this repository. The
+# measured property is that the key distinguishes, not that the host uses it,
+# and the evaluator's purity says nothing about whether the host reuses
+# anything.
+baseline-tests: 571
