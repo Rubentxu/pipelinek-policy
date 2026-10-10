@@ -20,4 +20,7 @@ baseline-suites: 42
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
 # predated most of the suite, so it could never detect a module falling out of
 # the check. certify.sh refuses to certify when fewer than this many run.
-baseline-tests: 500
+# B6.4 moved baseline-tests 500 → 505: the property suite grew from 4 to 10
+# tests (the previous count covered JSON/YAML/CSV in-memory evaluation only).
+# Raised deliberately after certify.sh reported 505 executed, 0 skipped.
+baseline-tests: 505
