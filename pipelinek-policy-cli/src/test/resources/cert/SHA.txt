@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 7b39d8261c50e957554e019a56443c82a3f3efb7
+certified-sha: 0d4d904e285dbf5c63a3edbc7b4c4dad90b5cc1f
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -55,4 +55,23 @@ baseline-suites: 42
 # Falsified by three new mutants: E1 drops the host grant check, E2 drops the
 # subject match, E3 reorders error below violation. All three die by assertion;
 # the gate reports 13 killed, 0 survived, 0 invalid.
-baseline-tests: 531
+# H1.2 moved baseline-tests 531 → 543 and certified-sha to 0d4d904e...: both adapters now run
+# PolicyGovernance.decide(), the host grant and waiver seam exists, and the CLI
+# grew --layer/--grant. Five defects surfaced while doing it, and every one of
+# them was caught by a test rather than by inspection:
+#   - LayerComposer renamed a SINGLE layer to layered:<id>, so the report digest
+#     depended on whether governance had been wired;
+#   - the --grant parser split on every colon, so a real sha256:<hex> digest
+#     produced four fields and every legitimate grant was rejected as USAGE;
+#   - CliArgs kept only the last value of a repeated flag, so --layer could carry
+#     exactly one layer and would compose the wrong set while reporting success;
+#   - GovernanceOutcome.activeViolations counted violation INSTANCES while the
+#     verdict counted RULES, so one violated rule published 2;
+#   - the new wire fields were force-encoded by encodeDefaults=true, breaking the
+#     byte-identical M6/M7 payload contract until @EncodeDefault(NEVER).
+# Falsified by a new pair of measurements, not by a new mutant count: with the
+# isolated M-F3 plugin bypass active, AdapterParityTest passed 7/7 while
+# GovernanceJourneyParityTest failed 3 of 5. The pre-existing parity suite was
+# blind to the bypass it was supposed to exclude, which is the reason this
+# milestone needed new tests rather than more assertions.
+baseline-tests: 543

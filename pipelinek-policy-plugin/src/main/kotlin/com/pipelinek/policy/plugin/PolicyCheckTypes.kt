@@ -1,6 +1,7 @@
 package com.pipelinek.policy.plugin
 
 import com.pipelinek.policy.kernel.governance.EnforcementMode
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 
 /**
@@ -39,7 +40,16 @@ data class PolicyCheckInput(
      * payloads decode unchanged (REQ-M7-06) — but EMPTY is the FAIL-CLOSED
      * reading: no grant means no supersession is honoured, and no waiver means
      * nothing is exempted.
+     *
+     * @EncodeDefault(NEVER) so an M6/M7 payload still encodes byte-identically
+     * without this field. `encodeDefaults = true` is deliberate in
+     * [PolicyCheckInputCodec] — `enforcement` must always appear — but that
+     * setting would otherwise force two new fields into every existing payload
+     * and break the REQ-M7-06 wire contract that `EnforcementModeWireTest`
+     * pins. The annotation overrides it per field: governance travels only when
+     * a host actually supplies it.
      */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val governance: PolicyGovernancePayload = PolicyGovernancePayload.EMPTY,
     /**
      * The instant waiver windows are evaluated against (law 5: the kernel
@@ -49,6 +59,7 @@ data class PolicyCheckInput(
      * evaluates every waiver as NOT_YET_VALID — failing closed rather than
      * failing open.
      */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val now: String = "1970-01-01T00:00:00Z",
 )
 

@@ -9,7 +9,9 @@ import com.pipelinek.policy.decoders.csv.CsvResourceDecoder
 import com.pipelinek.policy.decoders.json.JsonResourceDecoder
 import com.pipelinek.policy.decoders.map.MapAdapterDecoder
 import com.pipelinek.policy.decoders.yaml.YamlResourceDecoder
+import com.pipelinek.policy.kernel.governance.EnforcementInterpreter
 import com.pipelinek.policy.kernel.governance.GovernanceContext
+import com.pipelinek.policy.kernel.governance.GovernanceTally
 import com.pipelinek.policy.kernel.governance.PolicyCheckPlan
 import com.pipelinek.policy.kernel.governance.PolicyCheckPlanRefusal
 import com.pipelinek.policy.kernel.governance.PolicyCheckPlanRequest
@@ -186,7 +188,24 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
         // the host's governance inputs to the service, and renders what comes
         // back.
         val governed = govern(ready.verifiedBundle, tree, input)
-        return when (governed) {
+        return renderGoverned(governed)
+    }
+
+    /**
+     * Render the governance result.
+     *
+     * Split out so the mutation gate can replace the single call above with the
+     * plugin's historical inline path. A single-line anchor that the gate
+     * substitutes wholesale is the only way to swap a whole decision path
+     * without an artificial `unused` seam in production code.
+     *
+     * The [EnforcementInterpreter] and [GovernanceTally] imports above exist
+     * for the MUTANT text the gate substitutes, not for production code. They
+     * are retained deliberately: a mutant that does not compile is reported
+     * INVALID and proves nothing, so the mutated file has to stay buildable.
+     */
+    private fun renderGoverned(governed: PolicyGovernance.Result): PolicyCheckOutput =
+        when (governed) {
             is PolicyGovernance.Result.Refused -> PolicyCheckOutput.refused(
                 "layer composition refused: ${governed.refusal.code}",
             )
@@ -214,7 +233,6 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
                 )
             }
         }
-    }
 
     /**
      * H1.2 / B4-T10 · the plugin's whole governance contribution.

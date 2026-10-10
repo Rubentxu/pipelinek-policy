@@ -113,10 +113,21 @@ data class GovernanceOutcome(
     val waivedRuleKeys: Set<RuleKey> = waivers.waivedRuleKeys
 
     /**
-     * Violations still ACTIVE after waivers. A waived violation is evidence and
-     * is still reported, but it does not deny, so this is the number a gate needs.
+     * Rules STILL violating after waivers. A waived violation is evidence and
+     * is still reported in the rule summaries, but it does not count here.
+     *
+     * Counted PER RULE, not per violation, and deliberately so. The verdict is
+     * a per-rule decision, so the number published beside it must be the same
+     * unit: `activeFingerprints` counts violation INSTANCES, which folds the
+     * location into the identity, and a rule with two un-waived locations would
+     * report 2 while the verdict counted that rule once. The first version of
+     * this field read `activeFingerprints.size` and
+     * `EnforcementPrecedenceTest` caught it — one violated rule published 2.
+     *
+     * The same walk [verdictOf] performs, so the published count and the
+     * verdict cannot disagree by construction.
      */
-    val activeViolations: Int = waivers.activeFingerprints.size
+    val activeViolations: Int = countViolatingRules(report, waivers)
 }
 
 /**
@@ -200,25 +211,44 @@ object PolicyGovernance {
      * reconstruction: the matcher already classified every violation, so this
      * cannot drift from what the engine decided.
      */
-    private fun verdictOf(report: PolicyReport, waivers: WaiverApplication): GovernanceVerdict {
-        val active = waivers.activeFingerprints
-        val violatingRules = report.results.entries.count { (key, evaluation) ->
-            evaluation is RuleEvaluation.Violated &&
-                evaluation.violations.any { violation ->
-                    ViolationFingerprint.of(
-                        policySetId = key.policySetId,
-                        policyId = key.policyId,
-                        ruleId = key.ruleId,
-                        location = violation.location.toString(),
-                        resourceFingerprint = report.resourceFingerprint,
-                    ) in active
-                }
-        }
-        return EnforcementInterpreter.verdict(
+    private fun verdictOf(report: PolicyReport, waivers: WaiverApplication): GovernanceVerdict =
+        EnforcementInterpreter.verdict(
             GovernanceTally(
                 errors = report.results.values.count { it is RuleEvaluation.Error },
-                violations = violatingRules,
+                violations = countViolatingRules(report, waivers),
             ),
         )
+}
+
+/**
+ * How many RULES still violate, after waivers.
+ *
+ * Per rule, not per violation: the tally counts rule outcomes, so a fully
+ * waived rule contributes zero while a rule with two violations of which only
+ * one was waived still contributes one. Counting violations would let a waiver
+ * on the first location hide the second.
+ *
+ * The read is [WaiverApplication.activeFingerprints] rather than a local
+ * reconstruction: the matcher already classified every violation, so this
+ * cannot drift from what the engine decided.
+ *
+ * File-private rather than a member of [PolicyGovernance], because
+ * [GovernanceOutcome] is a top-level data class and BOTH it and
+ * [PolicyGovernance.verdictOf] must count identically. There is exactly one
+ * definition here, so the published count and the verdict cannot drift apart.
+ */
+private fun countViolatingRules(report: PolicyReport, waivers: WaiverApplication): Int {
+    val active = waivers.activeFingerprints
+    return report.results.entries.count { (key, evaluation) ->
+        evaluation is RuleEvaluation.Violated &&
+            evaluation.violations.any { violation ->
+                ViolationFingerprint.of(
+                    policySetId = key.policySetId,
+                    policyId = key.policyId,
+                    ruleId = key.ruleId,
+                    location = violation.location.toString(),
+                    resourceFingerprint = report.resourceFingerprint,
+                ) in active
+            }
     }
 }

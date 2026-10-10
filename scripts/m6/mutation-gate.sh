@@ -93,6 +93,7 @@ module_for_pattern() {
     *PolicyIrSeverityRoundTripTest*) echo ":" ;;
     *H1SeverityBundlePathTest*) echo ":" ;;
     *H1GovernanceBusinessCaseTest*) echo ":" ;;
+    *GovernanceJourneyParityTest*) echo ":pipelinek-policy-parity:" ;;
     *)                     echo ":" ;;
   esac
 }
@@ -431,6 +432,58 @@ mutate \
         tally.errors > 0 -> GovernanceVerdict.ERRORED' \
   'E3 an evaluation error must outrank a violation under SHADOW' \
   '*H1GovernanceBusinessCaseTest*'
+
+# ---------------------------------------------------------------------------
+# Group F — H1.2: the ADAPTERS. These target the wiring, not the kernel.
+#
+# Every mutant above kills a mechanism. Group F kills the CLAIM that both real
+# entry points run one shared governance service, which is the only claim
+# H1.2 makes and the only one no pre-existing suite could falsify.
+#
+# F1 is the load-bearing one. It restores the plugin's historical behaviour:
+# evaluate the project bundle inline, count the tally in the adapter, resolve
+# precedence locally. Measured before adding this gate:
+#
+#   AdapterParityTest           7 tests, 0 failures  (SURVIVED the bypass)
+#   GovernanceJourneyParityTest  5 tests, 3 failures (killed the bypass)
+#
+# The contrast is the finding. Parity of the verdict is not evidence that the
+# adapters share a path: on a single layer the composer is the identity, so
+# two implementations agree whether or not governance runs.
+# F1 is a SOURCE mutation, like every other mutant in this gate. The first
+# attempt read an M_F3_BYPASS environment variable instead, which meant the
+# mutant was active for the whole gate run — including F0, the sanity check
+# that exists to prove the suite is green at rest. The gate reported its own
+# mutant as INVALID, correctly: a mutant that cannot be enabled for exactly
+# one assertion is not a controlled experiment. It is applied, tested and
+# restored by the same machinery as A1..E3.
+# ---------------------------------------------------------------------------
+
+mutate \
+  pipelinek-policy-plugin/src/main/kotlin/com/pipelinek/policy/plugin/PolicyCheckStepDefinition.kt \
+  'val governed = govern(ready.verifiedBundle, tree, input)
+        return renderGoverned(governed)' \
+  'val _unusedGovernance = govern(ready.verifiedBundle, tree, input)
+        val report = IrRuntimeAdapter.evaluate(ready.verifiedBundle, tree).report
+        return PolicyCheckOutput.of(
+            verdict = EnforcementInterpreter.verdict(
+                GovernanceTally(
+                    errors = report.results.values.count { it is RuleEvaluation.Error },
+                    violations = report.results.values.count { it is RuleEvaluation.Violated },
+                ),
+            ),
+            violationsCount = report.results.values.count { it is RuleEvaluation.Violated },
+            reportDigest = report.digest,
+            policySetId = report.policySetId,
+            ruleSummaries = report.results.entries
+                .sortedBy { it.key.value }
+                .map { (key, ev) ->
+                    RuleSummary(ruleId = key.ruleId, outcome = outcomeName(ev), policyId = key.policyId)
+                },
+            enforcement = input.enforcement,
+        )' \
+  'F1 the plugin must run the shared governance service, not evaluate inline' \
+  '*GovernanceJourneyParityTest*'
 
 echo
 echo "== B6.5 mutation summary"
