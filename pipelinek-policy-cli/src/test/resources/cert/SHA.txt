@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: bb5f049ce846fb31a5222328b4d3c18f2be2890a
+certified-sha: 7b39d8261c50e957554e019a56443c82a3f3efb7
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -42,4 +42,17 @@ baseline-suites: 42
 # the gap where H1.1 was fixed in the codec but never crossed
 # pack → verifyPacked → evaluate. Raised after a fresh run reported 519
 # executed, 0 failures, 0 errors, 0 skipped.
-baseline-tests: 519
+# UAT-H1-03/04/05/06 moved baseline-tests 519 → 531 and certified-sha to
+# 7b39d8261c50e957554e019a56443c82a3f3efb7: the twelve new
+# H1GovernanceBusinessCaseTest tests are what moved the tree. They close the
+# last four H1 rows by exercising the composed business cases instead of the
+# mechanism each suite already covered: supersession in the WEAKENING direction
+# (every pre-existing case was a strengthening 3→5 swap), waiver routing with
+# more than one waiver (every pre-existing case passed exactly one, which
+# cannot tell matching the right one from matching the only one), the SHADOW
+# precedence from a tally derived from a REAL report rather than hand-built,
+# and a diff over three documents rather than two.
+# Falsified by three new mutants: E1 drops the host grant check, E2 drops the
+# subject match, E3 reorders error below violation. All three die by assertion;
+# the gate reports 13 killed, 0 survived, 0 invalid.
+baseline-tests: 531

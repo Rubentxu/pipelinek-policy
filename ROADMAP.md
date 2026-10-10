@@ -602,8 +602,8 @@ aceptarla, y `DONE` documental no acredita cumplimiento.
 | H4.2 plugin externo | **PARCIAL** | `uat-external-distribution.sh` ejecuta el Step instalado vía `--plugin-jar` (B4.9). Falta procedencia del SDK publicado (B6.7). |
 | H4.3 replay y memoización | **ABIERTO** | B6.8. Sin.Files de fingerprint efectivo ni hit/miss observados. |
 | H4.4 compatibilidad cruzada | **ABIERTO** | No existe matriz Policy × SDK × JDK. Versión actual declarada `0.2.0-M2` (`build.gradle.kts:16`), coherente con el destino `v0.3.0`. |
-| H5.1 certificación de fuentes | **PARCIAL** | `certified-sha` cubre `src/{main,test}/kotlin` del **módulo raíz** (81 ficheros). Un cambio en producción de un submódulo deja válida una certificación previa. |
-| H5.2 mutation testing | **CERRADO (B6.5), AMPLIABLE** | `scripts/m6/mutation-gate.sh` con **9** mutantes semánticos (A1–A3 `appliesWhen`/veredicto, B1 precisión `BigDecimal`, B2 claves duplicadas, C1 orden de mappings, C2 orden de sequences, D1/D2 transporte de `severity`). Último run: **9 muertos, 0 sobrevividos, 0 inválidos**, restore verde. Falsificado en negativo dos veces (test mal dirigido → `SURVIVED` + exit 1; mutante que no compila → `INVALID` + exit 1). Guard añadido: aborta con exit 3 si el fichero a mutar tiene cambios sin commitear, porque su restore usa `git checkout --` y antes destruía el fix en curso. H5.2 del plan exige además admisión de bundles, Missing/Null, identidad de reglas, agregados, waivers/autoridad/shadow y códigos de salida CLI: **no medidos**. |
+| H5.1 certificación de fuentes | **PARCIAL** | `certified-sha` cubre `src/{main,test}/kotlin` del **módulo raíz** (84 ficheros). Un cambio en producción de un submódulo deja válida una certificación previa. |
+| H5.2 mutation testing | **CERRADO (B6.5), AMPLIABLE** | `scripts/m6/mutation-gate.sh` con **13** mutantes semánticos (A1–A3 `appliesWhen`/veredicto, B1 precisión `BigDecimal`, B2 claves duplicadas, C1 orden de mappings, C2 orden de sequences, D1/D2/D3 transporte de `severity`, E1 grant de host en supersesión, E2 subject match en waivers, E3 precedencia error sobre violación). Último run: **13 muertos, 0 sobrevividos, 0 inválidos**, restore verde. Falsificado en negativo dos veces (test mal dirigido → `SURVIVED` + exit 1; mutante que no compila → `INVALID` + exit 1). Guard añadido: aborta con exit 3 si el fichero a mutar tiene cambios sin commitear, porque su restore usa `git checkout --` y antes destruía el fix en curso. H5.2 del plan exige además admisión de bundles, Missing/Null, identidad de reglas, agregados, waivers/autoridad/shadow y códigos de salida CLI: **no medidos**. |
 | H5.3–H5.5 | **ABIERTO** | B6.6, B6.9, B6.10. |
 
 **Medición transversal:** `check` incluye `detekt` (verificado con
@@ -625,10 +625,10 @@ cada criterio:
 |---|---|---|
 | `UAT-H1-01` severity por `pack → verifyPacked → evaluate` | **PASS** | `H1SeverityBundlePathTest.UAT-H1-01 CRITICAL severity survives pack verifyPacked evaluate`. Falsificado: el mutante D1, que compila y revierte la emisión en el writer, mata este test. |
 | `UAT-H1-02` `SEVERITY_CHANGED` entre dos **bundles** | **PASS** | `H1SeverityBundlePathTest.UAT-H1-02 two bundles differing only in severity yield SEVERITY_CHANGED`. El guard `the two bundles differ only in severity` compara las reglas decodificadas, no los digests. Falsificado por el mismo mutante D1. |
-| `UAT-H1-03` supersesión sin grant válido | **PARTIAL** | `LayersTest` y `CanonicalPolicyJsonFortressTest` cubren `SupersessionAuthority` y su round-trip, pero no el caso de negocio "dos capas no pueden superseder sin grant válido" como veredicto. |
-| `UAT-H1-04` waiver afecta solo a su sujeto y scope | **PARTIAL** | `WaiversTest` tiene 14 tests incluyendo `03a` válido, `03b` vencido (`WaiverExpired`) y `03c` aún no válido (`WaiverNotYetValid`). Falta el caso de alcance: dos waivers con subjects distintos en la misma evaluación. |
-| `UAT-H1-05` `Error + Violated` bajo `SHADOW` | **PARTIAL** | `EnforcementInterpreterTest` cubre `refusal outranks everything` y `an evaluation error outranks any violation`. Falta el escenario combinado `Error + Violated` **bajo SHADOW**, que es donde el error podría degradarse a PASS. |
-| `UAT-H1-06` diferencia exclusiva del tercer documento | **NOT_MEASURED** | No hay test de tres documentos contra A/B. |
+| `UAT-H1-03` supersesión sin grant válido | **PASS** | `H1GovernanceBusinessCaseTest.UAT-H1-03 a lower layer weakening an upper floor without a grant is refused`. El hueco era la DIRECCIÓN: todos los escenarios de `LayersTest` reemplazan un suelo de 3 por uno de 5, que es reforzar. El debilitamiento que ADR-0014 existe para impedir nunca se ejercitó extremo a extremo. Falsificado por el mutante **E1**, que quita `authorities.authorizes(...)` y revive el defecto B4-T2. |
+| `UAT-H1-04` waiver afecta solo a su sujeto y scope | **PASS** | `H1GovernanceBusinessCaseTest.UAT-H1-04 two waivers in one application each route to their own violation`. Los 14 tests de `WaiversTest` pasaban **un solo** waiver, que no distingue "encontró el correcto" de "encontró el único"; `WaiverMatcher` resuelve con `firstOrNull`, así que el orden decide. Los tests nuevos pasan dos, invierten el orden, y fijan regla y subjectPath para que solo el valor del sujeto discrimine. Falsificado por el mutante **E2**, que quita `subjectMatches`. |
+| `UAT-H1-05` `Error + Violated` bajo `SHADOW` | **PASS** | `H1GovernanceBusinessCaseTest.UAT-H1-05 an error plus a violation denies under SHADOW`. `EnforcementInterpreterTest` construye todos los tally A MANO, así que el paso de un report real a los tres contadores nunca se afirmó, pese a que ambos adaptadores lo derivan por su cuenta. El caso arranca desde un report con error y violación a la vez. Falsificado por el mutante **E3**, que baja el error por debajo de la violación. |
+| `UAT-H1-06` diferencia exclusiva del tercer documento | **PASS** | `H1GovernanceBusinessCaseTest.UAT-H1-06 three documents detect a difference exclusive to the third`. `PolicyDiffTest` cubre A/B a fondo, pero **todo** caso tiene exactamente dos documentos: un diff que filtrara estado entre llamadas respondería bien a todos ellos y aun así reportaría mal un tercero. El documento intermedio es la prueba: A y B son idénticos, B→C da exactamente un `NEW_VIOLATION`, y A→C daría lo mismo ignorando B. |
 | `AAT-H1` kernel sin I/O ni SDK | **PASS** | `DomainIoPurityTest` es un guard de baseline auditado sobre el **árbol de paquetes** (no una lista de nombres), cubre `kernel/dataset` y `kernel/governance`, y falla si se añade un nuevo paquete de dominio. Es la AAT-H1 completa. |
 
 La brecha que quedaba era la primera: H1.1 estaba corregido y falsificado por
@@ -636,15 +636,18 @@ mutación en el codec, pero **no certificado por el camino que hace el defecto
 observable**. Cerrada en `8875569`: la severidad sí llega al reporte decodificado,
 y dos bundles que solo difieren en severidad producen `SEVERITY_CHANGED`.
 
-Lo que queda abierto para cerrar H1: `UAT-H1-03`, `UAT-H1-04` y `UAT-H1-05` en
-`PARTIAL` (les falta el caso de negocio, no la infraestructura) y `UAT-H1-06`
-sin medir. H1 no se cierra con `PARTIAL` donde el plan exige `PASS`.
+Las seis UAT-H1 y la AAT-H1 están `PASS` y falsificadas por mutación. Lo que
+queda abierto para cerrar H1 es **H1.2**: el servicio de aplicación puro que
+comparten CLI y plugin, con el `AuthorityRegistry` del host como entrada
+explícita, verificado extremo a extremo por la costura pública de plugin externo
+(ley 11). Ninguna UAT lo cubría porque no es un caso de una suite, es un
+recorrido entre dos adaptadores.
 
 ### Los cinco releases
 
 | Hito | Release | Estado | Bloqueante medido |
 |---|---|---|---|
-| H1 | `v0.3.0-alpha.1` | ABIERTO | UAT-H1-03/04/05 parciales, UAT-H1-06 sin medir, H1.2 sin medir |
+| H1 | `v0.3.0-alpha.1` | ABIERTO | Solo H1.2 (gobernanza extremo a extremo por la costura pública de plugin) queda sin medir. Las seis UAT-H1 y la AAT-H1 están `PASS`. |
 | H2 | `v0.3.0-alpha.2` | ABIERTO | H2.1 colisión de identidad viva |
 | H3 | `v0.3.0-beta.1` | ABIERTO | H3.1 materializa en `ByteArray` |
 | H4 | `v0.3.0-rc.1` | ABIERTO | Procedencia del SDK sin fijar |
@@ -663,7 +666,11 @@ incorrecto:
    `CRITICAL` que sobrevive en memoria y se pierde al serializar produce un
    reporte que miente sobre su propia severidad. Corregido en `e44a1ae` y
    certificado cruzando el camino de bundle en `8875569`.
-3. **H2.1 antes que H3.** `localRuleIds` colisiona por identidad, y H3
+3. **Las seis UAT-H1 certificadas.** `H1GovernanceBusinessCaseTest` cierra
+   UAT-H1-03/04/05/06. El patrón se repite en las tres brechas: la suite de
+   mecanismo era buena y el caso de negocio nunca se ejerció. E1–E3 falsifican
+   las tres decisiones de producción que esos casos existen para sostener.
+4. **H2.1 antes que H3.** `localRuleIds` colisiona por identidad, y H3
    caracteriza el streaming sobre los mismos `StreamingEvaluator`; corregir la
    identidad primero evita certificar dos veces el mismo defecto.
 
