@@ -1,5 +1,7 @@
 package com.pipelinek.policy.kernel.dataset
 
+import com.pipelinek.policy.kernel.path.DocumentPath
+import com.pipelinek.policy.kernel.selector.Selector
 import com.pipelinek.policy.kernel.value.ValueNode
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -11,9 +13,17 @@ import kotlin.test.assertTrue
 /** M8 REQ 04/05 · Accumulators with caps + BudgetMetrics (04a/04b/05x). */
 class AccumulatorTest {
 
+    /**
+     * A selector that matches every row, so these cap tests keep their original
+     * meaning: `Accumulator.Count` only ever consumed the cap for MATCHING rows,
+     * and a universal predicate makes every row a match.
+     */
+    private val anyRow = Selector.of(DocumentPath.ROOT)
+
+
     @Test
     fun `04a - count accumulates and materializes as NumberValue`() {
-        val acc = Accumulator.Count(cap = 10)
+        val acc = Accumulator.Count(anyRow, cap = 10)
         repeat(5) { acc.accept(ValueNode.TextValue("row-$it")) }
         assertEquals(ValueNode.NumberValue(5L), acc.result())
         assertEquals(5L, acc.rowsSeen)
@@ -33,7 +43,7 @@ class AccumulatorTest {
 
     @Test
     fun `04b - falsification - count cap refuses instead of folding forever`() {
-        val acc = Accumulator.Count(cap = 2)
+        val acc = Accumulator.Count(anyRow, cap = 2)
         acc.accept(ValueNode.TextValue("a"))
         acc.accept(ValueNode.TextValue("b"))
         // B5.6: the cap is now a typed VALUE, not a thrown exception.

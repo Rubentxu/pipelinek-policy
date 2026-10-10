@@ -654,6 +654,34 @@ mutate \
   'L3 success must never be reported as a usage error' \
   '*HelpAndExitCodesTest*'
 
+# M1: COUNT must count MATCHING rows, not every row. This is the H2.3 defect,
+# restored to its original form: `Count` took no predicate and incremented per
+# row, on the reasoning that "any node counts as one row". Reintroducing that
+# makes COUNT mean "count every row in the dataset", so an author writing "count
+# rows where `n` is a NUMBER" is satisfied by rows holding text -- and the
+# `accumulatorCap` bounds rows rather than the matches M8 REQ M8-04 04b names
+# ("cap 10 con 11 matches => refusal BUDGET_EXCEEDED").
+#
+# The mutation drops the match test, which is the smallest edit that reproduces
+# the measured defect: three matching rows among five returned 5.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/Accumulator.kt \
+  '            !matchesAt(value) -> Outcome.Accepted.also { seen++; outcome = it }' \
+  '            true -> Outcome.Accepted.also { seen++; outcome = it }' \
+  'M1 COUNT must count matching rows, not every row' \
+  '*StreamingCountMatchesTest*'
+
+# M2: the other direction. Making a non-match consume the COUNT cap would bound
+# reading rather than matching, so a long stream of rows that match nothing
+# refuses a COUNT rule that has counted nothing. The sibling test asserts one
+# match among five rows must not hit a cap of two; this mutation inverts it.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/Accumulator.kt \
+  '            !matchesAt(value) -> Outcome.Accepted.also { seen++; outcome = it }' \
+  '            matchesAt(value) -> Outcome.Accepted.also { seen++; outcome = it }' \
+  'M2 non-matching rows must not consume the COUNT cap' \
+  '*StreamingCountMatchesTest*'
+
 echo
 echo "== B6.6 mutation summary"
 echo "   killed:     $KILLS"

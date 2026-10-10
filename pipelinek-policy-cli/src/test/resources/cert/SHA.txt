@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: d8dfe26ab1438811bda5000a21c81a2010fa4133
+certified-sha: 2d43f5bb2bde25d226e1c71c4dab5db09b97025a
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -171,4 +171,34 @@ baseline-suites: 42
 # this module, which are counted in the executed total but do not enter
 # this file's own scope hash. Recorded here so the gap between floor and
 # executed is not mistaken for an unaccounted module.
-baseline-tests: 580
+# H2.3 moved certified-sha d8dfe26a... -> 2d43f5bb... and baseline-tests
+# 580 -> 588: eight new tests in the root module's hashed scope, plus the
+# COUNT semantic fix that they hold down.
+#   - StreamingCountMatchesTest (3) pins that streaming COUNT counts MATCHING
+#     rows. Observed RED before the fix: three matching rows among five
+#     returned 5, because Accumulator.Count took no predicate and incremented
+#     per row ("any node counts as one row"). That made COUNT mean "count every
+#     row", so a rule saying "count rows where `n` is a NUMBER" was satisfied by
+#     rows holding text, and it contradicted M8 REQ M8-04 04b, which phrases the
+#     budget in terms of MATCHES.
+#     The pre-existing `05b - COUNT aggregate folds every row via accumulator`
+#     was blind to this by construction: its predicate is Selector.of(ROOT), so
+#     every row matches, and it asserts NumberValue(4L) for four rows -- exactly
+#     what a row counter produces. It could not fail if COUNT only ever counted
+#     rows. StreamingCountMatchesTest adds the positive control that test lacked,
+#     so "always return the match count" cannot pass either.
+#   - The third case pins the BUDGET half: the accumulatorCap bounds matches, so
+#     one match among five rows must NOT refuse a cap of 2, while three matches
+#     must. This is what separates "counts matches" from "counts rows" where the
+#     value assertions alone cannot.
+#   - CountMatchesTest (4) pins the in-memory evaluator, which was already
+#     correct. It is kept because the streaming and whole-document paths share
+#     no code, so only a direct test of each keeps them from drifting.
+#     Worth recording: the first version of this file asserted `Violated` and
+#     PASSED, which looked like confirmation but was not -- the in-memory
+#     evaluator refuses COUNT outright with a typed TYPE_MISMATCH ("COUNT
+#     produces a Number and must be used in a numeric comparison"), so every
+#     COUNT rule is Violated for a reason unrelated to counting.
+# Falsified by two new mutants, M1 (drop the match test) and M2 (invert it, so
+# non-matching rows consume the cap). Both die by assertion.
+baseline-tests: 588

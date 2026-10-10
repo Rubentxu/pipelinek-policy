@@ -60,10 +60,47 @@ sealed interface Accumulator {
     /** Count of rows folded so far (for BudgetMetrics). */
     val rowsSeen: Long
 
-    /** Count-based accumulator (COUNT op). */
-    class Count(private val cap: Long) : Accumulator {
+    /**
+     * H2.3 · Count accumulator (COUNT op), counting MATCHING rows.
+     *
+     * The accumulator used to ignore its argument and increment for every row,
+     * on the stated reasoning that "any node counts as one row". That makes
+     * COUNT mean "count every row in the dataset" and silently discards the
+     * author's predicate: a rule that says "count rows where `n` is a NUMBER"
+     * is satisfied by rows holding text. It also contradicts M8_SPECIFICATION
+     * REQ M8-04 04b, which phrases the budget in terms of MATCHES ("cap 10 con
+     * 11 matches => refusal BUDGET_EXCEEDED"), and the class-level law above,
+     * which requires COUNT to admit only NumberValue elements (law 9, no silent
+     * coercion).
+     *
+     * Measured before the fix: three numeric rows among five returned 5.
+     *
+     * The [cap] therefore bounds MATCHES, exactly as 04b describes. Rows that do
+     * not match are still read and still count against [DatasetPlan.rowBudget] --
+     * reading them costs real work -- but they do not consume the COUNT cap.
+     * Keeping those two budgets on different quantities is the whole point:
+     * conflating them means a long stream of non-matching rows refuses a COUNT
+     * rule that has not matched anything.
+     *
+     * Match semantics are deliberately identical to
+     * `Evaluator.matchesAtLocation` and to [BooleanFold.matchesAt], so the
+     * streaming and whole-document paths cannot drift: the ROW is the element,
+     * a scalar row is wrapped under `"value"`, Missing on an OPTIONAL selector
+     * matches, and TypeMismatch never matches (law 9).
+     */
+    class Count(
+        private val predicate: Selector,
+        private val cap: Long,
+    ) : Accumulator {
         private var count: Long = 0
-        override val rowsSeen: Long get() = count
+
+        /**
+         * Rows folded, matching or not. This feeds BudgetMetrics, which
+         * measures reading, so it must stay equal to the rows the cursor
+         * actually delivered -- not the number of matches.
+         */
+        private var seen: Long = 0
+        override val rowsSeen: Long get() = seen
         override var outcome: Outcome? = null
             private set
 
@@ -71,23 +108,39 @@ sealed interface Accumulator {
             require(cap >= 0) { "count cap must be >= 0" }
         }
 
-        override fun accept(value: ValueNode): Outcome {
-            if (count >= cap) {
-                // B5.6: refuse as a value and leave the fold untouched, so
-                // result() and rowsSeen stay consistent with what was folded.
-                val refused = Outcome.Refused(Outcome.Cap.COUNT, count, cap)
-                outcome = refused
-                return refused
+        override fun accept(value: ValueNode): Outcome = when {
+            // A non-match is folded, not refused: the row WAS read, so rowsSeen
+            // must account for it, and refusing here would report a budget
+            // exhaustion that never happened. It does not consume the COUNT
+            // cap, which bounds matches, not reading.
+            !matchesAt(value) -> Outcome.Accepted.also { seen++; outcome = it }
+            // B5.6: refuse as a value and leave the fold untouched, so
+            // result() and rowsSeen stay consistent with what was folded.
+            count >= cap -> Outcome.Refused(Outcome.Cap.COUNT, count, cap).also { outcome = it }
+            else -> Outcome.Accepted.also {
+                count++
+                seen++
+                outcome = it
             }
-            // Count does not inspect content: any node counts as one row.
-            @Suppress("UNUSED_EXPRESSION")
-            value
-            count++
-            outcome = Outcome.Accepted
-            return Outcome.Accepted
         }
 
         override fun result(): ValueNode = ValueNode.NumberValue(count)
+
+        /**
+         * Mirror of `Evaluator.matchesAtLocation`: the ROW is the element, so
+         * the predicate resolves against the row itself. A mapping row resolves
+         * directly; a scalar row is wrapped under `"value"`, which is what the
+         * whole-document path does for a scalar collection entry.
+         */
+        private fun matchesAt(row: ValueNode): kotlin.Boolean {
+            val rooted: ValueNode =
+                if (row is ValueNode.MappingValue) row else ValueNode.MappingValue(linkedMapOf("value" to row))
+            return when (predicate.resolve(rooted)) {
+                is Selector.Result.Present -> true
+                is Selector.Result.Missing -> !predicate.isRequired()
+                is Selector.Result.TypeMismatch -> false
+            }
+        }
     }
 
     /**

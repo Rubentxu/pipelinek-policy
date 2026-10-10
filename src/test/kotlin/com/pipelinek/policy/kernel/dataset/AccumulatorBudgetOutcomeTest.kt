@@ -1,5 +1,7 @@
 package com.pipelinek.policy.kernel.dataset
 
+import com.pipelinek.policy.kernel.path.DocumentPath
+import com.pipelinek.policy.kernel.selector.Selector
 import com.pipelinek.policy.kernel.value.ValueNode
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -28,6 +30,14 @@ import java.math.BigDecimal
  * round-trip is visibly wrong rather than accidentally right.
  */
 class AccumulatorBudgetOutcomeTest {
+
+    /**
+     * A selector that matches every row, so these cap tests keep their original
+     * meaning: `Accumulator.Count` only ever consumed the cap for MATCHING rows,
+     * and a universal predicate makes every row a match.
+     */
+    private val anyRow = Selector.of(DocumentPath.ROOT)
+
 
     private fun number(raw: String): ValueNode = ValueNode.NumberValue(java.math.BigDecimal(raw))
 
@@ -62,7 +72,7 @@ class AccumulatorBudgetOutcomeTest {
 
     @Test
     fun `01a exceeding the count cap yields a typed outcome, not an exception`() {
-        val acc = Accumulator.Count(cap = 2)
+        val acc = Accumulator.Count(anyRow, cap = 2)
         assertEquals(Accumulator.Outcome.Accepted, acc.accept(ValueNode.TextValue("a")))
         acc.accept(ValueNode.TextValue("b"))
         // No `assertFailsWith`: a fold must not unwind the stack to report a
@@ -89,7 +99,7 @@ class AccumulatorBudgetOutcomeTest {
     fun `01c a refused accumulator keeps a coherent partial result`() {
         // A refusal must not leave the accumulator in a state where `result()`
         // disagrees with `rowsSeen`. Truncation must be visible, not implied.
-        val acc = Accumulator.Count(cap = 2)
+        val acc = Accumulator.Count(anyRow, cap = 2)
         acc.accept(ValueNode.TextValue("a"))
         acc.accept(ValueNode.TextValue("b"))
         acc.accept(ValueNode.TextValue("c")) // refused
@@ -103,7 +113,7 @@ class AccumulatorBudgetOutcomeTest {
         // The old contract forced callers to know `BudgetExceededException`.
         // This test compiles only if the outcome is inspectable without it;
         // a regression to throwing breaks it at the call site.
-        val acc = Accumulator.Count(cap = 1)
+        val acc = Accumulator.Count(anyRow, cap = 1)
         acc.accept(ValueNode.TextValue("a"))
         val refused = assertIs<Accumulator.Outcome.Refused>(acc.accept(ValueNode.TextValue("b")))
         assertEquals(Accumulator.Outcome.Cap.COUNT, refused.cap)
