@@ -1,5 +1,7 @@
 package com.pipelinek.policy.kernel.dataset
 
+import com.pipelinek.policy.kernel.expression.Expression
+import com.pipelinek.policy.kernel.selector.Selector
 import com.pipelinek.policy.kernel.value.ValueNode
 import java.math.BigDecimal
 
@@ -36,6 +38,13 @@ sealed interface Accumulator {
             SUM,
             ROW_BUDGET,
             TYPE_MISMATCH,
+            /**
+             * B6.6: an `ALL` predicate whose element did not match. This is NOT
+             * a refusal of the row: the row was folded correctly, and the rule
+             * is simply violated by that element. It is named as a Cap so the
+             * closed set stays closed without forcing the two to be conflated.
+             */
+            PREDICATE_FAILED,
         }
     }
 
@@ -79,6 +88,100 @@ sealed interface Accumulator {
         }
 
         override fun result(): ValueNode = ValueNode.NumberValue(count)
+    }
+
+    /**
+     * B6.6 · Boolean collection accumulator (ALL / ANY / NONE ops).
+     *
+     * These three ops produce a BOOLEAN, not a number, so folding them through
+     * [Sum] was always wrong: `Sum` admits only `NumberValue`, so an `ANY` over
+     * a text column was refused as TYPE_MISMATCH on every row and reported as
+     * `Error(type_mismatch ...)`. They are a genuine single-pass fold — they
+     * inspect every row — so they cannot simply be skipped either; skipping
+     * removed the rule from the report altogether.
+     *
+     * Semantics are deliberately identical to `Evaluator.evalCollectionPredicate`
+     * so the two evaluation paths cannot drift:
+     *  - element matches when [Selector.resolve] is Present, or Missing on an
+     *    OPTIONAL selector; TypeMismatch never matches (law 9, no coercion);
+     *  - `ALL` short-circuits to `false` at the first non-matching element;
+     *  - `ANY` short-circuits to `true` at the first matching element;
+     *  - `NONE` short-circuits to `false` at the first matching element;
+     *  - an EMPTY source leaves `ALL` and `NONE` true and `ANY` false, because
+     *    they are built from `none {}` / `any {}` / an empty loop.
+     *
+     * [shortCircuited] records whether the verdict became final early, so the
+     * caller can stop paying for rows it cannot change the answer of.
+     */
+    class BooleanFold(
+        private val op: Expression.CollectionOp,
+        private val predicate: Selector,
+        private val cap: Long,
+    ) : Accumulator {
+        private var seen: Long = 0
+        private var verdict: kotlin.Boolean = when (op) {
+            Expression.CollectionOp.ALL, Expression.CollectionOp.NONE -> true
+            else -> false
+        }
+        private var decided = false
+
+        override val rowsSeen: Long get() = seen
+        override var outcome: Outcome? = null
+            private set
+
+        /** True once the verdict is final and further rows cannot change it. */
+        val shortCircuited: kotlin.Boolean get() = decided
+
+        init {
+            require(op != Expression.CollectionOp.COUNT) { "COUNT is folded by Accumulator.Count" }
+            require(cap >= 0) { "boolean cap must be >= 0" }
+        }
+
+        override fun accept(value: ValueNode): Outcome {
+            // A decided verdict is still consuming the cap: the rows ARE being
+            // read, so refusing them keeps `rowsRefused` honest instead of
+            // pretending the stream was shorter than it was.
+            if (decided || seen >= cap) {
+                return Outcome.Refused(Outcome.Cap.COUNT, seen, cap).also { outcome = it }
+            }
+            val elementMatches = matchesAt(value)
+            seen++
+            when (op) {
+                Expression.CollectionOp.ALL -> if (!elementMatches) {
+                    verdict = false
+                    decided = true
+                }
+                Expression.CollectionOp.ANY -> if (elementMatches) {
+                    verdict = true
+                    decided = true
+                }
+                Expression.CollectionOp.NONE -> if (elementMatches) {
+                    verdict = false
+                    decided = true
+                }
+                Expression.CollectionOp.COUNT -> error("rejected in init")
+            }
+            return Outcome.Accepted.also { outcome = it }
+        }
+
+        /** The materialized verdict. This is the value a rule is satisfied by. */
+        override fun result(): ValueNode = ValueNode.BooleanValue(verdict)
+
+        /**
+         * Mirror of `Evaluator.matchesAtLocation`: the ROW is the element, so
+         * the predicate resolves against the row itself. A mapping row resolves
+         * directly; a scalar row is wrapped under `"value"`, which is what the
+         * whole-document path does for a scalar collection entry.
+         */
+        private fun matchesAt(row: ValueNode): kotlin.Boolean {
+            val rooted: ValueNode =
+                if (row is ValueNode.MappingValue) row else ValueNode.MappingValue(linkedMapOf("value" to row))
+            return when (predicate.resolve(rooted)) {
+                is Selector.Result.Present -> true
+                is Selector.Result.Missing -> !predicate.isRequired()
+                is Selector.Result.TypeMismatch -> false
+            }
+        }
     }
 
     /** Numeric sum accumulator (SUM op). TYPE_MISMATCH on non-number rows. */

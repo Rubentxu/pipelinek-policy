@@ -74,7 +74,13 @@ object StreamingEvaluator {
         val aggregateRules = rulesByKey(set).filter { (_, _, rule) -> rule.id in plan.aggregateRuleIds }
         val localOnlySet = localOnly(set, plan, aggregateRules.map { it.third })
         val tallies = localRules.associate { (key, _, _) -> key to LocalTally() }
-        val accumulators = aggregateRules.associate { (key, _, rule) -> key to accumulatorFor(rule, plan) }
+        // B6.6: `accumulatorFor` returns null for boolean collection
+        // predicates (ALL/ANY/NONE), which are not folds. Associate drops them
+        // rather than storing a null, so `accumulatorsUsed` stays a count of
+        // real accumulators and `accumulators[key]` is unambiguously absent.
+        val accumulators = aggregateRules
+            .mapNotNull { (key, _, rule) -> accumulatorFor(rule, plan)?.let { key to it } }
+            .toMap()
 
         var consumed = 0L
         var refused = 0L
@@ -177,6 +183,11 @@ object StreamingEvaluator {
         var refused = 0
         aggregateRules.forEach { (key, _, _) ->
             val acc = accumulators[key] ?: return@forEach
+            // B6.6: a short-circuited boolean fold has its final verdict and
+            // stays satisfied by the remaining rows. Counting those rows as
+            // refusals would report the rule as an Error even though every row
+            // was read and folded correctly.
+            if (acc is Accumulator.BooleanFold && acc.shortCircuited) return@forEach
             val outcome = acc.accept(row)
             if (outcome is Accumulator.Outcome.Refused) {
                 refused++
@@ -208,6 +219,7 @@ object StreamingEvaluator {
         }
         aggregateRules.forEach { (key, _, _) ->
             val refusal = aggregateRefusals[key]
+            val acc = accumulators[key]
             results[key] = when {
                 // B5.6: a refusal names the cap and the numbers. The previous
                 // code reported a bare Aggregate over a silently truncated
@@ -215,8 +227,21 @@ object StreamingEvaluator {
                 refusal != null -> RuleOutcome.Error(
                     "${refusal.cap.name.lowercase()} cap ${refusal.limit} reached after ${refusal.consumed}",
                 )
-                else -> accumulators[key]?.let { RuleOutcome.Aggregate(it.result()) }
-                    ?: RuleOutcome.Error("no accumulator for rule ${key.ruleId}")
+                // B6.6: a boolean fold that short-circuited is not a refusal —
+                // its verdict is already final. Reporting Error here would turn
+                // a satisfied ANY into a failure.
+                acc == null -> return@forEach
+                // A boolean predicate's verdict IS the result: true is Passed,
+                // false is a violation, exactly as the whole-document path
+                // treats a false boolean rule.
+                else -> {
+                    val value = acc.result()
+                    if (value is ValueNode.BooleanValue) {
+                        if (value.boolean) RuleOutcome.Passed else RuleOutcome.Violated(1L, -1L)
+                    } else {
+                        RuleOutcome.Aggregate(value)
+                    }
+                }
             }
         }
         return StreamingReport(
@@ -231,11 +256,42 @@ object StreamingEvaluator {
         )
     }
 
-    private fun accumulatorFor(rule: Rule, plan: DatasetPlan): Accumulator =
-        when (aggregateOp(rule)) {
+    /**
+     * B6.6 · Only COUNT is an ACCUMULATOR-shaped op.
+     *
+     * `Expression.CollectionOp` is ALL / ANY / NONE / COUNT, and only COUNT folds
+     * rows into a value. ALL, ANY and NONE are BOOLEAN predicates over the same
+     * rows, which the whole-document `Evaluator.evalCollectionPredicate` already
+     * evaluates directly.
+     *
+     * This used to route them to `Accumulator.Sum` via a catch-all `else`. Since
+     * `Sum` only admits `NumberValue`, every ANY rule over text rows refused with
+     * `Error(type_mismatch)` in the streaming path while the whole-document path
+     * evaluated the same rule correctly — measured, not inferred. A rule that
+     * sums nothing was reported as a type error, and the two evaluation paths
+     * disagreed about the same policy.
+     *
+     * There is no SUM op in the enum, so `Accumulator.Sum` has no author-facing
+     * route here at all. It is left in place because B5.6 pins its exactness
+     * (BigDecimal beyond 2^53) as a kernel property, and a dead accumulator is
+     * cheaper than a wrong one; adding SUM to the enum is a separate decision.
+     */
+    /**
+     * B6.6: every AGGREGATE-shaped rule gets a real accumulator. `COUNT` folds a
+     * number, and ALL/ANY/NONE fold a boolean verdict — returning null for the
+     * boolean ops would drop the rule from the report, and folding them through
+     * `Sum` refused every row as TYPE_MISMATCH because they emit no number.
+     */
+    private fun accumulatorFor(rule: Rule, plan: DatasetPlan): Accumulator? {
+        val predicate = rule.expression as? Expression.CollectionPredicate ?: return null
+        return when (predicate.op) {
             Expression.CollectionOp.COUNT -> Accumulator.Count(plan.accumulatorCap)
-            else -> Accumulator.Sum(plan.accumulatorCap)
+            Expression.CollectionOp.ALL,
+            Expression.CollectionOp.ANY,
+            Expression.CollectionOp.NONE,
+            -> Accumulator.BooleanFold(predicate.op, predicate.predicate, plan.accumulatorCap)
         }
+    }
 
     private fun aggregateOp(rule: Rule): Expression.CollectionOp? =
         (rule.expression as? Expression.CollectionPredicate)?.op
