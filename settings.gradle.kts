@@ -28,4 +28,5 @@ include(
     "policy-decoders-map",
     "pipelinek-policy-plugin",
     "pipelinek-policy-cli",
+    "pipelinek-policy-parity",
 )
