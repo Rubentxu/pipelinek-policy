@@ -94,7 +94,7 @@ class StreamCmdTest {
         val bad = dir.resolve("ragged.csv").also { it.writeText("temp\nok\n1,2\n") }
 
         val (code, out) = runStream("--policy", bundle.toString(), bad.toString())
-        assertEquals(4, code, out)
+        assertEquals(ExitCodes.ADMISSION_ERROR, code, out)
         assertTrue(out.contains("decode-refusal"), out)
     }
 
@@ -105,7 +105,7 @@ class StreamCmdTest {
         val xml = dir.resolve("data.xml").also { it.writeText("<a/>") }
 
         val (code, out) = runStream("--policy", bundle.toString(), xml.toString())
-        assertEquals(4, code, out)
+        assertEquals(ExitCodes.ADMISSION_ERROR, code, out)
         assertTrue(out.contains("no streaming source"), out)
     }
 

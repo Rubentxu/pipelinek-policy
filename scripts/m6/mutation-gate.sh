@@ -90,6 +90,9 @@ module_for_pattern() {
     *SelectorTest*)        echo ":" ;;
     *HelpAndExitCodesTest*) echo ":pipelinek-policy-cli:" ;;
     *WaiversTest*)         echo ":" ;;
+    *StreamCmdTest*)   echo ":pipelinek-policy-cli:" ;;
+    *CompileBundleTestTest*) echo ":pipelinek-policy-cli:" ;;
+    *CheckCmdTest*)    echo ":pipelinek-policy-cli:" ;;
     *MutationGateTest*)    echo ":" ;;
     *RuleEvaluationTest*)  echo ":" ;;
     *CanonicalDigestTest*) echo ":" ;;
@@ -618,6 +621,38 @@ mutate \
   '        true' \
   'K2 a fingerprint-pinned waiver must not waive every violation' \
   '*WaiversTest*'
+
+# L1: USAGE vs ADMISSION_ERROR. 1 means "you invoked me wrongly"; 4 means "I
+# understood you and refused your input". An agent retries on 1 and gives up on
+# 4, so collapsing them makes a malformed invocation indistinguishable from a
+# genuinely inadmissible bundle.
+mutate \
+  pipelinek-policy-cli/src/main/kotlin/com/pipelinek/policy/cli/ExitCodes.kt \
+  '    const val ADMISSION_ERROR: Int = 4' \
+  '    const val ADMISSION_ERROR: Int = 1' \
+  'L1 an admission refusal must not be reported as a usage error' \
+  '*CompileBundleTestTest*'
+
+# L2: COMPILER_ERROR. 5 is the only code that tells an author their policy
+# SOURCE is wrong, as opposed to their bundle or their resource. Collapsing it
+# into the admission code blames the wrong artifact and the author fixes the
+# wrong thing.
+mutate \
+  pipelinek-policy-cli/src/main/kotlin/com/pipelinek/policy/cli/ExitCodes.kt \
+  '    const val COMPILER_ERROR: Int = 5' \
+  '    const val COMPILER_ERROR: Int = 4' \
+  'L2 a rejected policy source must not be reported as a bundle refusal' \
+  '*HelpAndExitCodesTest*'
+
+# L3: OK. The one code that must never be produced by accident. A mutation that
+# returns 0 where a refusal belongs is exactly the silent-pass failure the whole
+# exit-code matrix exists to make impossible.
+mutate \
+  pipelinek-policy-cli/src/main/kotlin/com/pipelinek/policy/cli/ExitCodes.kt \
+  '    const val OK: Int = 0' \
+  '    const val OK: Int = 1' \
+  'L3 success must never be reported as a usage error' \
+  '*CheckCmdTest*'
 
 echo
 echo "== B6.6 mutation summary"

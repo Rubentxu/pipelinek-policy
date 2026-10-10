@@ -1,5 +1,6 @@
 package com.pipelinek.policy.cli
 
+import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.bundle.PolicyBundle
 import com.pipelinek.policy.cli.commands.CompileCmd
 import com.pipelinek.policy.ir.PolicyIrLowerer.lower
@@ -100,7 +101,7 @@ class HelpAndExitCodesTest {
         // violation ⇒ 2 (NOT collapsed to 0: falsifies silent-pass)
         assertEquals(ExitCodes.VIOLATIONS, run("check", "--policy", bundle.toString(), bad.toString()).first)
         // decode refusal ⇒ 4
-        assertEquals(4, run("check", "--policy", bundle.toString(), refuse.toString()).first)
+        assertEquals(ExitCodes.ADMISSION_ERROR, run("check", "--policy", bundle.toString(), refuse.toString()).first)
         // unknown command ⇒ 1
         assertEquals(ExitCodes.USAGE, run("warpipe").first)
     }

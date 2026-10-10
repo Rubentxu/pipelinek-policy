@@ -94,7 +94,7 @@ class CheckCmdTest {
             "--policy", bundle.toString(), "--format", "jsonl",
             ok.toString(), bad.toString(), refuse.toString(),
         )
-        assertEquals(4, code, "admission refusal must dominate: $out")
+        assertEquals(ExitCodes.ADMISSION_ERROR, code, "admission refusal must dominate: $out")
         val lines = out.lines().filter { it.isNotBlank() }
         assertEquals(2, lines.size, "one violation finding + one refusal: $out")
         assertTrue(lines.any { it.contains("\"state\":\"violation\"") && it.contains("bad.json") })
@@ -153,7 +153,7 @@ class CheckCmdTest {
             "--policy", bundle.toString(), "--format", "jsonl", resource.toString(), refused.toString(),
         )
 
-        assertEquals(4, code, "admission refusal must remain the highest-priority outcome: $out")
+        assertEquals(ExitCodes.ADMISSION_ERROR, code, "admission refusal must remain the highest-priority outcome: $out")
         assertTrue(out.contains("\"state\":\"error\""), out)
         assertTrue(out.contains("\"state\":\"violation\""), out)
         assertTrue(out.contains("\"state\":\"refusal\""), out)
@@ -166,12 +166,12 @@ class CheckCmdTest {
         // JSON content with an unknown extension: must REFUSE, not sniff-parse.
         val sneaky = dir.resolve("sneaky.conf").also { it.writeText("""{"metadata":{"team":"x"}}""") }
         val (code, out) = runCheck("--policy", bundle.toString(), sneaky.toString())
-        assertEquals(4, code)
+        assertEquals(ExitCodes.ADMISSION_ERROR, code)
         assertTrue(out.contains("no decoder for extension .conf"))
         // And valid json content under .csv refuses too (csv parser rejects it).
         val fakeCsv = dir.resolve("fake.csv").also { it.writeText("""{"metadata":{"team":"x"}}""") }
         val (code2, out2) = runCheck("--policy", bundle.toString(), fakeCsv.toString())
-        assertTrue(code2 == 4 || code2 == ExitCodes.VIOLATIONS, out2)
+        assertTrue(code2 == ExitCodes.ADMISSION_ERROR || code2 == ExitCodes.VIOLATIONS, out2)
     }
 
     @Test

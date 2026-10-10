@@ -92,7 +92,7 @@ class CompileBundleTestTest {
     fun `bundle verify refuses garbage with admission exit code`() {
         val junk = dir.resolve("junk.bundle").also { it.writeBytes(byteArrayOf(1, 2, 3)) }
         val (code, out) = run("bundle", "--verify", junk.toString())
-        assertEquals(4, code)
+        assertEquals(ExitCodes.ADMISSION_ERROR, code)
         assertTrue(out.contains("\"verified\": false"))
     }
 
