@@ -24,7 +24,23 @@ plugins {
 // was used is visible in the build invocation and in the receipt that runs it.
 // The default is unchanged, so a build that does not ask for a different SDK
 // resolves exactly what it resolved before.
-val sdkVersion: String = providers.gradleProperty("sdkVersion").getOrElse("0.47.0")
+//
+// `getOrElse` alone is NOT enough. It only fires when the property is ABSENT.
+// `-PsdkVersion=` (or `-PsdkVersion= `, or a CI variable that expands to empty)
+// leaves the property PRESENT and EMPTY, so the default is never used and the
+// build resolves `pipeline-sdk-bom` to an empty version. That failure was
+// observed: every SDK coordinate reported FAILED, and the "build succeeded"
+// line was only because `dependencies` still printed a tree. An empty override
+// is a caller mistake, so it is rejected at configuration time with a message
+// naming the default, rather than becoming a confusing resolution failure
+// several tasks later.
+val DEFAULT_SDK_VERSION = "0.47.0"
+val requestedSdkVersion = providers.gradleProperty("sdkVersion").orNull
+require(requestedSdkVersion == null || requestedSdkVersion.isNotBlank()) {
+    "sdkVersion was provided but is blank. Omit -PsdkVersion to use the default " +
+        "($DEFAULT_SDK_VERSION), or pass an explicit version."
+}
+val sdkVersion: String = requestedSdkVersion?.trim() ?: DEFAULT_SDK_VERSION
 
 // H1 release · the ONE declared version, propagated instead of repeated.
 //

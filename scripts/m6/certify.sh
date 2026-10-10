@@ -177,11 +177,15 @@ SDK_VERSION=""
 if [ -n "${SDK_VERSION_OVERRIDE:-}" ]; then
   SDK_VERSION="$SDK_VERSION_OVERRIDE"
 else
-  # Both declared forms are accepted, because only the first is currently in the
-  # file and a matcher that handles one shape silently goes empty on the other:
-  #   val sdkVersion = "0.47.0"                                  (literal)
+  # Every declared form is accepted, because a matcher that handles one shape
+  # silently goes empty on another and the guard below then aborts the run:
+  #   val DEFAULT_SDK_VERSION = "0.47.0"                         (named constant)
+  #   val sdkVersion = "0.47.0"                                  (bare literal)
   #   val sdkVersion = providers.gradleProperty(..).getOrElse(..) (property)
+  # The DEFAULT form is the current one, so it is tried first: if both a named
+  # constant and a bare literal ever existed, the named one is the declared default.
   SDK_VERSION="$(sed -n \
+    -e 's/^val DEFAULT_SDK_VERSION = "\([^"]*\)"$/\1/p' \
     -e 's/^val sdkVersion = "\([^"]*\)"$/\1/p' \
     -e 's/^val sdkVersion.*getOrElse("\([^"]*\)").*$/\1/p' \
     pipelinek-policy-plugin/build.gradle.kts | head -1)"

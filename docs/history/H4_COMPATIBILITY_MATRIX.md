@@ -13,9 +13,12 @@ and zero skips. Comparing counts would let a swapped suite pass.
 
 - **Policy content combinations are not enumerated.** "Policy" here is the policy
   surface of this codebase, not every policy an author could write.
-- **A cell is not host evidence.** B6.7 runs the installed-plugin UAT against the
-  declared SDK only; a cell here does NOT show the plugin loading in a live
-  PipelineK host on that SDK.
+- **A cell is not host evidence.** The installed-plugin UAT was re-run against
+  this build and does pass in a live PipelineK host (16 compliant resources ->
+  exit 0 with 16 successful checks; 4 violating -> exit 1, VIOLATED, PLUGIN
+  failure). But that UAT pins the declared SDK 0.47.0 **by digest**, so
+  loading in a live host on 0.48.0 is still `NOT_MEASURED`. The 0.48.0 cells
+  below are build-and-test only.
 - **A cell is an observation, not a support promise.**
 - **The Gradle launcher is pinned to JDK 21 in every cell.** The JDK axis is
   the *test toolchain* (`jvmToolchain` via `-PtestJvm`), not the JVM running

@@ -130,6 +130,108 @@ The third row is the point: a matcher that cannot read the declaration now **sto
 instead of publishing a blank. Re-run after the fix: `sdk: 4 artifacts at 0.47.0`,
 digest block restored.
 
+## D3 · A blank `-PsdkVersion` silently broke the build
+
+Found only by exercising the property's own edge cases after the fact, which is
+exactly the check the first pass skipped.
+
+`providers.gradleProperty("sdkVersion").getOrElse("0.47.0")` looks correct:
+absent property, use the default. But `getOrElse` fires only when the property is
+**absent**. `-PsdkVersion=` (an empty value, or a CI variable expanding to nothing)
+leaves it **present and empty**, so the default is never used. Observed result:
+
+```
++--- dev.rubentxu.pipeline.v2:pipeline-sdk-bom ->  FAILED
++--- dev.rubentxu.pipeline.v2:pipeline-domain FAILED
++--- dev.rubentxu.pipeline.v2:pipeline-events FAILED
++--- dev.rubentxu.pipeline.v2:pipeline-scripting-api FAILED
+```
+
+Every SDK coordinate failed while the task itself still exited 0, because
+`dependencies` prints a tree even when resolution failed. A caller passing an empty
+override got a confusing resolution failure several steps later instead of being
+told what was wrong.
+
+Fixed with an explicit configuration-time guard naming the default, plus `.trim()`
+so a whitespace-only value is caught by the same check. Falsified on the real build:
+
+| Invocation | Observed |
+|---|---|
+| no override | `pipeline-domain:0.47.0` (default intact) |
+| `-PsdkVersion=0.48.0` | `pipeline-domain:0.48.0` |
+| `-PsdkVersion=` | **rejected at configuration time** |
+| `-PsdkVersion="  "` | **rejected at configuration time** |
+| `-PsdkVersion=9.9.9` | resolution failure (SDK genuinely absent) |
+
+This also changed the declaration shape to `DEFAULT_SDK_VERSION`, which
+`certify.sh` had to be taught: its regex matched the `getOrElse` form and would
+have gone empty, at which point the guard correctly aborted the run rather than
+emitting a blank SDK version. That guard earned its keep immediately.
+
+## D4 · The matrix axes could not be falsified
+
+`MATRIX_SDKS=("0.47.0" "0.48.0")` was a literal, so the claim "the matrix reports
+NOT_MEASURED for an absent SDK rather than PASS" could not be tested without
+editing the script. Axes are now overridable via `MATRIX_SDKS_OVERRIDE` /
+`MATRIX_JDKS_OVERRIDE`, empty meaning defaults, so shipped behaviour is unchanged.
+Verified: `MATRIX_SDKS_OVERRIDE=9.9.9` produces
+
+```
+verdict: NOT_MEASURED (no cell executed; a matrix that ran nothing certifies nothing)
+exit 1
+```
+
+with each missing artifact named. Never PASS.
+
+## Acceptance evidence on the real public interfaces
+
+Unit tests are a proxy. These are the paths a user or a host actually runs, all
+exercised after the build change.
+
+### The installed plugin inside a live PipelineK host
+
+`scripts/m6/uat-external-distribution.sh` — the real acceptance path, rebuilt
+distribution, plugin loaded via `--plugin-jar`:
+
+| Step | Observed |
+|---|---|
+| SDK provenance | 4 artifacts at 0.47.0, digests matched |
+| Distribution precondition | invalid command rejected `rc=1` (proved by behaviour, not `--help`) |
+| 16 compliant resources | `PASS ok (exit 0, 16 successful checks, 0 error findings)` |
+| 4 violating resources | `VIOLATE ok (exit 1, VIOLATED, PLUGIN failure, fail-fast after 1 step)` |
+
+So the plugin does load in a real host and decide correctly in both directions.
+This is what the earlier "a cell is not host evidence" caveat was protecting, and
+it holds for the declared SDK only.
+
+### The installed CLI, end to end
+
+`installDist` launcher, observed exit codes against the documented matrix:
+
+| Invocation | Observed exit |
+|---|---|
+| no args | 1 (usage printed) |
+| unknown command | 1 |
+| `--json-help` | 0, all 9 commands, exit-code legend matches `ExitCodes` |
+| `--version` | 1, `unknown command: --version` |
+
+`--version` is not implemented; it is not documented either, so this is a gap in
+the surface rather than a contradiction. Recorded as **N/A** rather than quietly
+ignored.
+
+Full policy round trip through the real binary:
+
+| Step | Observed |
+|---|---|
+| `compile` valid IR | exit 0, `bundleSha256` 571 bytes |
+| `compile` IR missing `irVersion` | exit 5 (compiler error), as documented |
+| `inspect` compiled bundle | exit 0, IR round-trips identically |
+| `check` against compiled bundle | exit 0 on a satisfied rule |
+| `check --policy <source.json>` | exit 4, `bundle refused: invalid pack magic` |
+
+The last row is the CLI refusing to treat policy source as a compiled bundle, which
+is the admission boundary behaving correctly rather than a defect.
+
 ## Observed limit: the Gradle launcher JDK
 
 `./gradlew check` **fails in this environment** with:
@@ -179,5 +281,29 @@ What is **not** established:
    (`pipeline-domain/0.40.0-dev.2`, `pipeline-scripting-api/0.40.0-dev.2`) and
    **no `pipeline-sdk-bom/0.40.0-dev.2` at all**, so the build has no platform to
    resolve against. `pipeline-sdk-bom` contains exactly `0.47.0` and `0.48.0`.
+5. Host evidence exists for the **declared** SDK only. The UAT pins 0.47.0 by
+   digest, so the plugin loading in a live host on **0.48.0** remains
+   `NOT_MEASURED`. The 0.48.0 cells are build-and-test only.
+6. The CLI has no `--version` flag. Observed exit 1, `unknown command`. It is not
+   documented, so this is **N/A** to the acceptance contract rather than a failure.
+
+## Requirement trace
+
+Each changed public output mapped to a concrete check and observed result, rather
+than to an aggregate test count.
+
+| Changed output | Concrete check | Observed |
+|---|---|---|
+| `sdkVersion` default unchanged | resolve with no override | `pipeline-domain:0.47.0` |
+| `sdkVersion` override works | resolve with `-PsdkVersion=0.48.0` | `pipeline-domain:0.48.0` |
+| blank override rejected | resolve with `-PsdkVersion=` | rejected at config time |
+| matrix measures 4 real cells | `compat-matrix.sh` | 4/4 PASS, exit 0 |
+| matrix refuses PASS on nothing | `MATRIX_SDKS_OVERRIDE=9.9.9` | NOT_MEASURED, exit 1 |
+| matrix cells are the same suite | id-set diff per cell | identical, 577 each |
+| plugin loads in a real host | `uat-external-distribution.sh` | 16 pass / 4 violate |
+| CLI exit-code contract | installed launcher, 5 invocations | matches documented matrix |
+| policy round trip | compile → inspect → check | exit 0 throughout |
+| admission receipt H4.4 line | run with report PASS / FAIL / absent | matches the real verdict in each |
+| certification SDK version | `certify.sh` SDK parse + guard | `4 artifacts at 0.47.0`, exit 3 if unreadable |
 
 An observation is not a support promise, and the row now says so.

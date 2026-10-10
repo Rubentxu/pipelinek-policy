@@ -62,6 +62,18 @@ REPORT_DIR="$JCODE_SCRATCH_DIR/h4.4"
 MATRIX_JDKS=("21" "25")
 MATRIX_SDKS=("0.47.0" "0.48.0")
 
+# The axes are overridable so they can be FALSIFIED. Proving the script reports
+# NOT_MEASURED for an absent SDK, rather than PASS, requires actually running it
+# against an absent SDK; that is not possible while the axis is a literal.
+# Empty or unset means "use the defaults", which keeps the shipped behaviour
+# identical for every ordinary invocation.
+if [ -n "${MATRIX_SDKS_OVERRIDE:-}" ]; then
+  read -r -a MATRIX_SDKS <<< "$MATRIX_SDKS_OVERRIDE"
+fi
+if [ -n "${MATRIX_JDKS_OVERRIDE:-}" ]; then
+  read -r -a MATRIX_JDKS <<< "$MATRIX_JDKS_OVERRIDE"
+fi
+
 SDK_GROUP_PATH="${SDK_GROUP_PATH:-$HOME/.m2/repository/dev/rubentxu/pipeline/v2}"
 GRADLE="$PWD/gradle-jdk21.sh"
 
@@ -233,9 +245,12 @@ fi
   echo
   echo "- **Policy content combinations are not enumerated.** \"Policy\" here is the policy"
   echo "  surface of this codebase, not every policy an author could write."
-  echo "- **A cell is not host evidence.** B6.7 runs the installed-plugin UAT against the"
-  echo "  declared SDK only; a cell here does NOT show the plugin loading in a live"
-  echo "  PipelineK host on that SDK."
+  echo "- **A cell is not host evidence.** The installed-plugin UAT was re-run against"
+  echo "  this build and does pass in a live PipelineK host (16 compliant resources ->"
+  echo "  exit 0 with 16 successful checks; 4 violating -> exit 1, VIOLATED, PLUGIN"
+  echo "  failure). But that UAT pins the declared SDK 0.47.0 **by digest**, so"
+  echo "  loading in a live host on 0.48.0 is still \`NOT_MEASURED\`. The 0.48.0 cells"
+  echo "  below are build-and-test only."
   echo "- **A cell is an observation, not a support promise.**"
   echo "- **The Gradle launcher is pinned to JDK 21 in every cell.** The JDK axis is"
   echo "  the *test toolchain* (\`jvmToolchain\` via \`-PtestJvm\`), not the JVM running"
