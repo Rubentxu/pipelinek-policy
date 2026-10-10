@@ -201,6 +201,71 @@ class PolicyBundleAdmissionFortressTest {
         assertTrue(BundleVerifier.verifyPacked(valid).semanticDigest.isNotBlank())
     }
 
+    /**
+     * The magic check is the front door of the admission boundary, and until
+     * this case it had NO coverage: every existing assertion in this class is
+     * `assertFailsWith<BundleRefusal>`, which cannot distinguish a bad magic
+     * from a bad manifest, a bad source map, or a bad UTF-8 name. Drop the
+     * magic predicate and the whole class stays green.
+     *
+     * That gap was found by mutation gate item J1, which survived twice --
+     * first because it mutated the require message, then because the predicate
+     * it attacked had no directed test at all.
+     */
+    @Test
+    fun `packed admission refuses bytes that are not a pack, naming the magic`() {
+        val notAPack = "this is a perfectly ordinary text file, not a bundle".toByteArray()
+
+        val refusal = assertFailsWith<BundleRefusal> { BundleVerifier.verifyPacked(notAPack) }
+
+        // the refusal must name the magic specifically, so a corrupted bundle is
+        // diagnosable rather than merely rejected
+        assertTrue(
+            refusal.message.orEmpty().contains("magic"),
+            "expected a magic-specific refusal, got: ${refusal.message}",
+        )
+    }
+
+    /** A file long enough to be read, but with the wrong magic, is still refused. */
+    @Test
+    fun `packed admission refuses a long file whose magic is wrong`() {
+        val wrongMagic = "PKB0".toByteArray(Charsets.UTF_8) + ByteArray(512) { 0x41 }
+
+        val refusal = assertFailsWith<BundleRefusal> { BundleVerifier.verifyPacked(wrongMagic) }
+
+        assertTrue(
+            refusal.message.orEmpty().contains("magic"),
+            "expected a magic-specific refusal, got: ${refusal.message}",
+        )
+    }
+
+    /**
+     * The positive control. Without it, "always refuse" would also make both
+     * cases above pass, and J1 could never be killed by a verifier that had
+     * simply been broken into refusing everything.
+     */
+    @Test
+    fun `packed admission still admits a well-formed pack`() {
+        val ir = resource("/ir/legacy-v1-source-ref.json")
+        val digest = sha256(ir)
+        // reuse the golden manifest verbatim: the verifier RECALCULATES it and
+        // refuses a manifest that differs, so inventing one here would fail for
+        // a reason that has nothing to do with the magic being checked
+        val manifest = "{\"bundleId\":\"legacy-set\",\"bundleVersion\":\"1\"," +
+            "\"semanticDigest\":\"$digest\",\"artifactDigest\":\"$digest\"," +
+            "\"requiredFunctions\":[],\"irVersion\":1}"
+        val good = pack(
+            sortedMapOf(
+                "manifest.json" to manifest.toByteArray(Charsets.UTF_8),
+                "metadata.txt" to byteArrayOf(),
+                "policy-source-map.txt" to "rule=legacy.kt:1:1-1:10:rule".toByteArray(Charsets.UTF_8),
+                "policy.ir.json" to ir,
+            ),
+        )
+
+        assertEquals("legacy-set", BundleVerifier.verifyPacked(good).bundle.document.policySet.id)
+    }
+
     private fun resource(path: String): ByteArray =
         checkNotNull(javaClass.getResourceAsStream(path)) { "missing test resource $path" }.use { it.readBytes() }
 
