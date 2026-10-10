@@ -137,13 +137,17 @@ ARTIFACTS=()
 while IFS= read -r a; do ARTIFACTS+=("$a"); done < <(
     find build/libs pipelinek-policy-*/build/libs policy-decoders-*/build/libs \
         -name '*.jar' -type f 2>/dev/null \
-    | grep -vE '/[^/]*-[0-9][^/]*\.jar$' | grep -v "$VERSION" || true
+    | grep -vE '/[^/]*-[0-9][^/]*\.jar$' | grep -vF "$VERSION" || true
 )
 [ "${#ARTIFACTS[@]}" -gt 0 ] || fail "no jars found for version $VERSION; run a build first"
+# Superseded VERSIONED jars are what would pollute a release. Module jars have
+# no version in their name and are the ones the modules publish, so they are
+# expected output, not leftovers.
 STALE="$(find build/libs pipelinek-policy-*/build/libs policy-decoders-*/build/libs \
-    -name '*.jar' -type f 2>/dev/null | grep -vE '/[^/]*-[0-9][^/]*\.jar$' || true)"
+    -name '*.jar' -type f 2>/dev/null | grep -E '/[^/]*-[0-9][^/]*\.jar$' \
+    | grep -vF "$VERSION" || true)"
 if [ -n "$STALE" ]; then
-    log "· note: ignoring superseded version jars present in build output:"
+    log "· note: ignoring superseded version jars left in build output:"
     printf '%s\n' "$STALE" | sed 's/^/    /'
 fi
 log "· artifacts: ${#ARTIFACTS[@]} jars for $VERSION"
@@ -199,16 +203,21 @@ log "· SBOM: $(basename "$SBOM") (valid JSON, $RESOLVED coordinates reported by
 # is reported as an unmet item, not a hard gate failure.
 PROV_STATUS="NOT_ATTESTED"
 PROV_ERR=""
+# Keyless attestation needs network and an OIDC exchange. Without a timeout it
+# can block for minutes and take the whole release gate with it, so it is
+# bounded and treated as an unmet item rather than a hard failure.
 if command -v cosign >/dev/null 2>&1; then
-    # Keyless attestation writes an OCI bundle to disk; without --bundle and
-    # --new-bundle-format cosign fails before it ever touches the network, so
-    # a missing bundle path is a local usage error, not a provenance failure.
-    if cosign attest-blob --predicate "$SBOM" --type spdxjson \
+    if timeout 60 cosign attest-blob --predicate "$SBOM" --type spdxjson \
         --yes --bundle "$OUT_DIR/provenance.bundle.json" --new-bundle-format \
         "$SUMS" >"$OUT_DIR/provenance.log" 2>&1; then
         PROV_STATUS="ATTESTED"
     else
-        PROV_ERR="$(tail -3 "$OUT_DIR/provenance.log" | tr '\n' ' ')"
+        PROV_RC=$?
+        if [ "$PROV_RC" -eq 124 ]; then
+            PROV_ERR="timed out after 60s (keyless attestation needs OIDC/network)"
+        else
+            PROV_ERR="$(tail -3 "$OUT_DIR/provenance.log" | tr '\n' ' ')"
+        fi
     fi
 fi
 log "· provenance: $PROV_STATUS"
