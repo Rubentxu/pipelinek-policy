@@ -22,6 +22,20 @@
 # tree whose gate went red is worse than no release script. Every gate here is
 # a hard failure, and the receipt is regenerated on every run so it can never
 # describe a run that did not happen.
+#
+# THREE LESSONS from building this, each learned by being wrong first:
+#   1. An evidence receipt measured on a clean tree is ONE COMMIT BEHIND the
+#      commit that carries it. A gate demanding receipt HEAD == candidate HEAD
+#      is therefore unsatisfiable, and the only way past it is to stop
+#      certifying. The invariant that matters is that the receipt certifies the
+#      candidate's SOURCES.
+#   2. The test baseline is a FLOOR, not a fixed point. certify.sh fails only
+#      on a drop, because a drop means a suite fell out of the check. Requiring
+#      equality rejects every legitimate test addition between anchor updates.
+#   3. A gate firing is not proof the gate works. Two of the early gates here
+#      failed for reasons that had nothing to do with what they claimed to
+#      check, and one hung forever instead of failing. Every gate below was run
+#      to see it fire on a real defect, not just read.
 
 set -euo pipefail
 
