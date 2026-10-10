@@ -1,3 +1,19 @@
-certified-sha: 5a9162b1912ee00853c33610a6917be136525d37
+# B6.1 · Certification anchor.
+#
+# `certified-sha` is CHECKED against the SHA-1 of the sorted Kotlin source
+# paths and their contents by CertificationAnchorTest.01b. The previous value
+# (5a9162b1912ee00853c33610a6917be136525d37) was static text that nothing ever
+# compared to anything, so it drifted silently while still looking like a
+# certification.
+#
+# How to re-certify: run the whole gate, then update this file to the SHA the
+# test reports in its failure message. Do not regenerate it from a script that
+# overwrites whatever it finds — the point of the anchor is that moving it is
+# a deliberate act with a reason.
+#
+# Scope: the root module's src/{main,test}/kotlin only. The digest answers one
+# question — does the certified code still match the marked code — and does not
+# claim to be a git tree hash.
+certified-sha: 3f8d8e5a2755fae612acf99ba13b95a45a978456
 baseline-suites: 42
 baseline-tests: 273
