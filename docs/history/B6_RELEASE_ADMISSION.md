@@ -42,12 +42,38 @@ b9b07336873af0ae310cef8705ab15ea28fdfc318976f680d3d51e6707ec6f3d  policy-decoder
 ## Provenance
 
 - status: **NOT_ATTESTED**
-- reason: cosign keyless attestation unavailable in this environment (timed out after 60s (keyless attestation needs OIDC/network))
-  Signing provenance remains an outstanding item for the human gate.
+- reason: cosign keyless attestation requires an interactive OIDC device-flow
+  login. It was retried at publication time with network available (the Sigstore
+  OIDC discovery endpoint answered HTTP 200), and it reached the device-flow
+  prompt before failing with `expired_token` because nobody completed the
+  browser login. This needs the account owner, not more compute.
+- attempted subject: `pipelinek-policy-plugin-all.jar`
+  sha256 `d84e2fe8699fe2c32a8904901eab85bda1023dbe8adff9192d03176afb767957`
+  (the digest the receipt already carries, so the intended attestation subject is
+  unambiguous).
+- remaining step: `cosign attest-blob` after an interactive login.
+
+## Published and remotely verified
+
+Publication was approved by a human and executed. Every claim below is an
+observed result, not an inference from a successful exit code.
+
+- **push**: `main` -> `origin/main`, `9b694df..9588998`, exit 0.
+- **annotated tag**: `v0.3.0-alpha.1`, `git cat-file -t` reports `tag`
+  (not `commit`), so it carries a message and a tagger rather than being a bare
+  pointer.
+- **GitHub Release**: https://github.com/Rubentxu/pipelinek-policy/releases/tag/v0.3.0-alpha.1,
+  flagged as a prerelease, 8 assets attached.
+- **remote verification**: all 8 assets were downloaded back with
+  `gh release download` and re-hashed with SHA-256. **8/8 match the digests in
+  this receipt.** This is the check that matters: uploading an artifact and
+  seeing exit 0 proves only that the upload returned, not that the bytes on the
+  far side are the bytes this build produced.
 
 ## Outstanding before a production-ready release
 
-1. Human gate: annotated tag, push, GitHub Release.
+1. ~~Human gate: annotated tag, push, GitHub Release.~~ DONE and remotely
+   verified above.
 2. Signed provenance (`cosign attest-blob`) with network access.
 3. B6.8 replay hit/miss: `NOT_MEASURED`, decision lives outside this repo.
 4. H4.4 compatibility matrix: PASS (see docs/history/H4_COMPATIBILITY_MATRIX.md). A cell measures build+test only; it is not evidence of the plugin loading in a live PipelineK host on that SDK.
