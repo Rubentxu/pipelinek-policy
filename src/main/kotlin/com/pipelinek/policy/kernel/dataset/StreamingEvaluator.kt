@@ -318,7 +318,7 @@ object StreamingEvaluator {
     private fun accumulatorFor(rule: Rule, plan: DatasetPlan): Accumulator? {
         val predicate = rule.expression as? Expression.CollectionPredicate ?: return null
         return when (predicate.op) {
-            Expression.CollectionOp.COUNT -> Accumulator.Count(plan.accumulatorCap)
+            Expression.CollectionOp.COUNT -> Accumulator.Count(predicate.predicate, plan.accumulatorCap)
             Expression.CollectionOp.ALL,
             Expression.CollectionOp.ANY,
             Expression.CollectionOp.NONE,
