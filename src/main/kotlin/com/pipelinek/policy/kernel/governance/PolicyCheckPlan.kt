@@ -23,8 +23,18 @@ enum class PolicyCheckPlanRefusal {
     /** The resource string is not valid Base64. */
     RESOURCE_NOT_BASE64,
 
+    /**
+     * B4.7: the encoded resource exceeds the ingress budget. DISTINCT from
+     * [RESOURCE_NOT_BASE64] (law 8) — an oversized payload is well-formed
+     * Base64, and an operator needs to tell an attack from a typo.
+     */
+    RESOURCE_TOO_LARGE,
+
     /** The packed bundle string is not valid Base64. */
     BUNDLE_NOT_BASE64,
+
+    /** B4.7: the encoded bundle exceeds the ingress budget. Distinct per law 8. */
+    BUNDLE_TOO_LARGE,
 
     /** The declared resource format is not a member of [ResourceFormat]. */
     UNKNOWN_RESOURCE_FORMAT,
@@ -70,6 +80,12 @@ data class PolicyCheckPlanRequest(
     val packedBundleBase64: String,
     val declaredFormat: String,
     val availableDecoderFormats: Set<ResourceFormat>,
+    /**
+     * B4.7: the ingress budget applied to BOTH payloads before anything is
+     * decoded. Defaults to the shipped budget, so a host that never heard of
+     * B4.7 is bounded anyway; a host with a tighter policy passes its own.
+     */
+    val ingressLimits: ResourceIngressLimits = ResourceIngressLimits(),
 )
 
 /**
@@ -143,11 +159,32 @@ sealed interface PolicyCheckPlan {
         // One return per refusal; the catch contains the UNEXPECTED.
         @Suppress("ReturnCount", "TooGenericExceptionCaught")
         fun compute(request: PolicyCheckPlanRequest): PolicyCheckPlan {
-            val resourceBytes = decodeBase64(request.resourceBase64)
-                ?: return PlanRefused(PolicyCheckPlanRefusal.RESOURCE_NOT_BASE64)
+            // B4.7: admit BEFORE decoding. The previous bare
+            // `Base64.getDecoder().decode(...)` materialised the whole payload
+            // first and could only reject it afterwards, which is precisely
+            // what an ingress budget exists to prevent. `admitResource` runs an
+            // O(1) encoded-length guard first and allocates nothing when it
+            // refuses.
+            val resourceBytes = when (val a = request.ingressLimits.admitResource(request.resourceBase64)) {
+                is ResourceIngressAdmission.Admitted -> a.bytes
+                // Law 8: malformed encoding and oversize are DIFFERENT facts.
+                // Collapsing them would tell an operator "too large" about a
+                // typo. The encoded/decoded oversize distinction is refined
+                // inside the typed refusal for hosts that render it.
+                is ResourceIngressAdmission.Refused -> return when (a.refusal) {
+                    ResourceIngressRefusal.RESOURCE_NOT_BASE64 ->
+                        PlanRefused(PolicyCheckPlanRefusal.RESOURCE_NOT_BASE64)
+                    else -> PlanRefused(PolicyCheckPlanRefusal.RESOURCE_TOO_LARGE)
+                }
+            }
 
-            val packedBundle = decodeBase64(request.packedBundleBase64)
-                ?: return PlanRefused(PolicyCheckPlanRefusal.BUNDLE_NOT_BASE64)
+            val packedBundle = when (val a = request.ingressLimits.admitBundle(request.packedBundleBase64)) {
+                is ResourceIngressAdmission.Admitted -> a.bytes
+                is ResourceIngressAdmission.Refused -> return when (a.refusal) {
+                    ResourceIngressRefusal.BUNDLE_NOT_BASE64 -> PlanRefused(PolicyCheckPlanRefusal.BUNDLE_NOT_BASE64)
+                    else -> PlanRefused(PolicyCheckPlanRefusal.BUNDLE_TOO_LARGE)
+                }
+            }
 
             val format = runCatching { ResourceFormat.valueOf(request.declaredFormat.uppercase()) }
                 .getOrNull()
@@ -192,11 +229,9 @@ sealed interface PolicyCheckPlan {
          * cause would retain nothing worth reading; the typed refusal is the
          * information the caller acts on.
          */
-        @Suppress("SwallowedException")
-        private fun decodeBase64(value: String): ByteArray? = try {
-            java.util.Base64.getDecoder().decode(value)
-        } catch (e: IllegalArgumentException) {
-            null
-        }
+        // B4.7: the previous private `decodeBase64` helper was removed rather
+        // than left unused. A private helper that decodes with no budget is
+        // exactly the hazard B4.7 exists to remove, and dead code invites a
+        // future caller to reuse it.
     }
 }

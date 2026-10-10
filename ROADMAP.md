@@ -531,7 +531,7 @@ solo cuenta Done con implementación **y** falsificación observable.
 | B4.4 shadow | **DONE** | `PolicyCheckDsl.kt:49` `enforcement` con default `ENFORCED` |
 | B4.5 diff | **DONE** | `PolicySet.kt:83` `severity: RuleSeverity?`; `PolicyDiff.kt:143` emisión condicional |
 | B4.6 plan | **DONE** | `governance/PolicyCheckPlan.kt` calculado por el kernel |
-| B4.7 ingress | **PARCIAL** | `ResourceIngressLimits` **existe** (`aea22a0`: 64 MiB por defecto, techo de 256 MiB, guarda O(1) antes de Base64, vocabulario de rechazo cerrado y tipado) pero **no está cableado**: `PolicyCheckPlanRequest`/`PolicyCheckPlan` no lo aceptan y los hosts CLI/plugin no usan la ruta tipada. `readBytes()` sigue sin cota en 5 comandos CLI |
+| B4.7 ingress | **PARCIAL** | Cableado en el kernel: `PolicyCheckPlanRequest.ingressLimits` (default = presupuesto enviado) y `compute` admite **antes** de decodificar, con `RESOURCE_TOO_LARGE`/`BUNDLE_TOO_LARGE` distintos de `NOT_BASE64` (ley 8); el helper privado `decodeBase64` sin cota fue eliminado. **Pendiente**: los hosts CLI (16 `readBytes()` sin cota) y el plugin siguen sin usar la ruta tipada |
 | B4.8 replay | **DONE** | `Waivers.kt:70` instante inyectado, scopes aplicados |
 | B4.9 UAT | **ABIERTO** | `uat-external-distribution.sh` no fija 20 recursos ni verifica por comportamiento |
 | B5.3 UTF-8 | **DONE** | `7fff04a`: los 5 bucles byte→char de `CsvRowSource`, `CsvResourceDecoder` y `JsonlSource` acumulan bytes y decodifican UTF-8 una vez. Falsificado revirtiendo el fix (RED 9/9 CSV, 6/7 JSONL; el único verde fue el control ASCII) |
