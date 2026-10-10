@@ -590,7 +590,7 @@ aceptarla, y `DONE` documental no acredita cumplimiento.
 | Línea | Estado medido | Evidencia en el árbol |
 |---|---|---|
 | H1.1 `severity` en PolicyIR | **CERRADO (H1.1 + UAT-H1-01/02)** | El defecto estaba en el codec, no en `PolicyIrDocument`: `Rule.severity` ya viajaba dentro del `PolicySet`, pero `CanonicalPolicyJsonWriter.policies()` no lo emitía y el decoder no lo leía. Dos reglas que solo diferían en severidad codificaban a bytes idénticos. Fix en `e44a1ae`, mutantes D1/D2 al gate (**9/9 muertos**), RED observado antes del fix (4/5 tests). **Certificado después en el camino que hace el defecto observable:** `H1SeverityBundlePathTest` cruza `pack → verifyPacked → IrRuntimeAdapter.evaluate` y demuestra `UAT-H1-01` (CRITICAL llega CRITICAL al reporte decodificado) y `UAT-H1-02` (dos bundles que solo difieren en severidad dan `SEVERITY_CHANGED`). 6/6 verdes, falsificado por mutante D1 que **compila** y mata 3 de 6 incluidos ambos criterios; permanente como mutante D3 del gate. Ancla recalibrada a `bb5f049c...`, `baseline-tests` 513 → 519. | 
-| H1.2 gobierno extremo a extremo | **PARCIAL** | `governance/` existe (`EnforcementInterpreter`, `PolicyCheckPlan`, `Layers`, `Waivers`). Falta verificar el servicio de aplicación puro compartido por CLI y plugin con `AuthorityRegistry` del host como entrada explícita. |
+| H1.2 gobierno extremo a extremo | **DEFECTO VIVO** | La fila decía PARCIAL por "falta verificar". Midiendo el árbol, el problema es anterior: `LayerComposer`, `WaiverMatcher` y `AuthorityRegistry` tienen **0 call sites de código en producción** (solo 1 hit cada uno, y ambos son comentarios/KDoc; `AuthorityRegistry` ni siquiera aparece). En tests: 16, 23 y 10. El motor de gobierno está completo y fijado, y **nadie lo ejecuta**: CLI y plugin no componen capas, no aplican waivers y no reciben grants del host. Es el P0 de `docs/auditoria-2026-10-10.md:52` (B4-T10), todavía vivo. |
 | H1.3 semantic diff `corpus.first()` | **CERRADO (B4.5)** | `PolicyDiff.kt:163-169` emite `SEVERITY_CHANGED` condicionalmente; `:142` documenta que la emisión previa era *"permanently dead"*. No hay `corpus.first()` en la ruta de diff. Pendiente de certificar: `UAT-H1-06` (tres documentos evaluados contra A/B detectan una diferencia exclusiva del tercero). |
 | H2.1 `RuleKey` en dataset planning | **DEFECTO VIVO** | `DatasetPlanner.kt:35` `val localRuleIds: List<String>`; consumido en `StreamingEvaluator.kt:73` y `:131` por `it.id in plan.localRuleIds`. Una regla LOCAL y otra AGGREGATE con el mismo texto colisionan. |
 | H2.2 resultado de planificación sellado | **ABIERTO** | Requiere inspección de `DatasetShapeAnalyzer`/`IndexPlan` en su bloque. |
@@ -636,18 +636,21 @@ mutación en el codec, pero **no certificado por el camino que hace el defecto
 observable**. Cerrada en `8875569`: la severidad sí llega al reporte decodificado,
 y dos bundles que solo difieren en severidad producen `SEVERITY_CHANGED`.
 
-Las seis UAT-H1 y la AAT-H1 están `PASS` y falsificadas por mutación. Lo que
-queda abierto para cerrar H1 es **H1.2**: el servicio de aplicación puro que
-comparten CLI y plugin, con el `AuthorityRegistry` del host como entrada
-explícita, verificado extremo a extremo por la costura pública de plugin externo
-(ley 11). Ninguna UAT lo cubría porque no es un caso de una suite, es un
-recorrido entre dos adaptadores.
+Las seis UAT-H1 y la AAT-H1 están `PASS` y falsificadas por mutación. Al medir
+H1.2 aparece algo que el roadmap daba por existente: `LayerComposer`,
+`WaiverMatcher` y `AuthorityRegistry` están **implementados y fijados, pero
+desconectados**. Cero call sites en producción, decenas en tests. Una supersesión,
+un waiver y un grant de host son hoy invariantes que el producto ni siquiera
+puede recibir, de modo que UAT-H1-03 y UAT-H1-04 certifican una máquina que
+nadie arranca. H1 no se cierra: se cierra **cableando** ese gobierno por la
+costura pública de plugin (ley 11) y verificando el recorrido entre los dos
+adaptadores.
 
 ### Los cinco releases
 
 | Hito | Release | Estado | Bloqueante medido |
 |---|---|---|---|
-| H1 | `v0.3.0-alpha.1` | ABIERTO | Solo H1.2 (gobernanza extremo a extremo por la costura pública de plugin) queda sin medir. Las seis UAT-H1 y la AAT-H1 están `PASS`. |
+| H1 | `v0.3.0-alpha.1` | ABIERTO | H1.2: el motor de gobierno (`LayerComposer`, `WaiverMatcher`, `AuthorityRegistry`) tiene 0 call sites en producción. Las seis UAT-H1 y la AAT-H1 están `PASS`. |
 | H2 | `v0.3.0-alpha.2` | ABIERTO | H2.1 colisión de identidad viva |
 | H3 | `v0.3.0-beta.1` | ABIERTO | H3.1 materializa en `ByteArray` |
 | H4 | `v0.3.0-rc.1` | ABIERTO | Procedencia del SDK sin fijar |
