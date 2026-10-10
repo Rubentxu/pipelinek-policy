@@ -91,6 +91,7 @@ module_for_pattern() {
     *ValueNodeTest*)       echo ":" ;;
     *PolicyDiffTest*)      echo ":" ;;
     *PolicyIrSeverityRoundTripTest*) echo ":" ;;
+    *H1SeverityBundlePathTest*) echo ":" ;;
     *)                     echo ":" ;;
   esac
 }
@@ -358,6 +359,21 @@ mutate \
                 }' \
   'D1 declared severity must be encoded, not dropped in transit' \
   '*PolicyIrSeverityRoundTripTest*'
+
+# D3 is the same production mutation as D1, aimed at the END-TO-END bundle path
+# instead of the codec in isolation. D1 dying proves the round-trip test is
+# sensitive to the writer; D3 dying proves UAT-H1-01 and UAT-H1-02 are sensitive
+# to it too. Without D3 the release criterion could be satisfied by a bundle-path
+# test that never actually looked at the packed bytes.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/ir/CanonicalPolicyJsonWriter.kt \
+  'rule.severity?.let {
+                    append(",\"severity\":").append(CanonicalPolicyJsonNodeWriter.quote(it.name))
+                }' \
+  'rule.let {
+                }' \
+  'D3 severity must survive pack verifyPacked evaluate, not just the codec' \
+  '*H1SeverityBundlePathTest*'
 
 mutate \
   src/main/kotlin/com/pipelinek/policy/ir/CanonicalPolicyJson.kt \

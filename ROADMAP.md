@@ -589,9 +589,9 @@ aceptarla, y `DONE` documental no acredita cumplimiento.
 
 | Línea | Estado medido | Evidencia en el árbol |
 |---|---|---|
-| H1.1 `severity` en PolicyIR | **CERRADO (H1.1)** | El defecto era en el codec, no en `PolicyIrDocument`: el `Rule.severity` ya viajaba dentro del `PolicySet`, pero `CanonicalPolicyJsonWriter.policies()` emitía `code/expected/actual/params/supersession` y no `severity`, y el decoder no lo leía. Dos reglas que solo difieren en severidad codificaban a bytes idénticos. Fix en commit `e44a1ae`: el writer emite `severity` solo cuando está declarada (nunca por defecto, porque la ausencia es dato significante para `PolicyDiff`), y el decoder la lee como vocabulario cerrado rechazando nombres desconocidos con `IrRefusal.CorruptEncoding` en lugar de degradar a `null`. **RED observado antes del fix: 4 de 5 tests nuevos fallaban** (INFO volvía `null`, CRITICAL e INFO bytes idénticos, sin clave `severity` en el documento). GREEN con `--rerun-tasks`. Mutantes D1/D2 añadidos al gate: **9/9 muertos**. Ancla recalibrada a `44a5d89c...`, `baseline-tests` 508 → 513. |
+| H1.1 `severity` en PolicyIR | **CORREGIDO, NO CERTIFICADO** | El defecto estaba en el codec, no en `PolicyIrDocument`: `Rule.severity` ya viajaba dentro del `PolicySet`, pero `CanonicalPolicyJsonWriter.policies()` no lo emitía y el decoder no lo leía. Dos reglas que solo diferían en severidad codificaban a bytes idénticos. Fix en `e44a1ae`, mutantes D1/D2 al gate (**9/9 muertos**), RED observado antes del fix (4/5 tests). **Pero los criterios del plan siguen sin certificar:** `UAT-H1-01` (severity vía `pack → verifyPacked → evaluate`) y `UAT-H1-02` (`SEVERITY_CHANGED` entre dos **bundles**) no existen. `PolicyDiffSeverityTest` opera sobre `PolicyReport` en memoria, que es exactamente el camino que el defecto NO tocaba. Cero tests con identificador `UAT-H1-*` en el árbol. |
 | H1.2 gobierno extremo a extremo | **PARCIAL** | `governance/` existe (`EnforcementInterpreter`, `PolicyCheckPlan`, `Layers`, `Waivers`). Falta verificar el servicio de aplicación puro compartido por CLI y plugin con `AuthorityRegistry` del host como entrada explícita. |
-| H1.3 semantic diff `corpus.first()` | **CERRADO (B4.5)** | `PolicyDiff.kt:163-169` emite `SEVERITY_CHANGED` condicionalmente; `:142` documenta que la emisión previa era *"permanently dead"*. No hay `corpus.first()` en la ruta de diff. |
+| H1.3 semantic diff `corpus.first()` | **CERRADO (B4.5)** | `PolicyDiff.kt:163-169` emite `SEVERITY_CHANGED` condicionalmente; `:142` documenta que la emisión previa era *"permanently dead"*. No hay `corpus.first()` en la ruta de diff. Pendiente de certificar: `UAT-H1-06` (tres documentos evaluados contra A/B detectan una diferencia exclusiva del tercero). |
 | H2.1 `RuleKey` en dataset planning | **DEFECTO VIVO** | `DatasetPlanner.kt:35` `val localRuleIds: List<String>`; consumido en `StreamingEvaluator.kt:73` y `:131` por `it.id in plan.localRuleIds`. Una regla LOCAL y otra AGGREGATE con el mismo texto colisionan. |
 | H2.2 resultado de planificación sellado | **ABIERTO** | Requiere inspección de `DatasetShapeAnalyzer`/`IndexPlan` en su bloque. |
 | H2.3 agregados | **PARCIAL** | `Accumulator.Sum` ya acumula en `BigDecimal` (`Accumulator.kt:90,111`) y `Outcome` es tipado con vocabulario cerrado COUNT/SUM/ROW_BUDGET/TYPE_MISMATCH (B5.6). Pendiente: COUNT debe contar **coincidencias**, no filas. |
@@ -603,7 +603,7 @@ aceptarla, y `DONE` documental no acredita cumplimiento.
 | H4.3 replay y memoización | **ABIERTO** | B6.8. Sin.Files de fingerprint efectivo ni hit/miss observados. |
 | H4.4 compatibilidad cruzada | **ABIERTO** | No existe matriz Policy × SDK × JDK. Versión actual declarada `0.2.0-M2` (`build.gradle.kts:16`), coherente con el destino `v0.3.0`. |
 | H5.1 certificación de fuentes | **PARCIAL** | `certified-sha` cubre `src/{main,test}/kotlin` del **módulo raíz** (81 ficheros). Un cambio en producción de un submódulo deja válida una certificación previa. |
-| H5.2 mutation testing | **CERRADO (B6.5)** | `scripts/m6/mutation-gate.sh` con 7 mutantes semánticos (A1–A3 `appliesWhen`/veredicto, B1 precisión `BigDecimal`, B2 claves duplicadas, C1 orden de mappings, C2 orden de sequences). Último run: **7 muertos, 0 sobrevividos, 0 inválidos**, restore verde. Falsificado en negativo dos veces (test mal dirigido → `SURVIVED` + exit 1; mutante que no compila → `INVALID` + exit 1). Dos tests dirigidos añadidos durante el cierre: rechazo de `TypedRefusal` en `appliesWhen`, y orden canónico de sequences con aserción asimétrica. |
+| H5.2 mutation testing | **CERRADO (B6.5), AMPLIABLE** | `scripts/m6/mutation-gate.sh` con **9** mutantes semánticos (A1–A3 `appliesWhen`/veredicto, B1 precisión `BigDecimal`, B2 claves duplicadas, C1 orden de mappings, C2 orden de sequences, D1/D2 transporte de `severity`). Último run: **9 muertos, 0 sobrevividos, 0 inválidos**, restore verde. Falsificado en negativo dos veces (test mal dirigido → `SURVIVED` + exit 1; mutante que no compila → `INVALID` + exit 1). Guard añadido: aborta con exit 3 si el fichero a mutar tiene cambios sin commitear, porque su restore usa `git checkout --` y antes destruía el fix en curso. H5.2 del plan exige además admisión de bundles, Missing/Null, identidad de reglas, agregados, waivers/autoridad/shadow y códigos de salida CLI: **no medidos**. |
 | H5.3–H5.5 | **ABIERTO** | B6.6, B6.9, B6.10. |
 
 **Medición transversal:** `check` incluye `detekt` (verificado con
@@ -612,6 +612,41 @@ existen (`docs/03-specifications/POLICY_IR.md`, ADR-0015,
 `docs/07-performance/PERFORMANCE_AND_SCALE.md`, `docs/history/M6_UAT_EVIDENCE.md`,
 `docs/history/M10_CSV_1GIB_RECEIPT.md`, `docs/06-testing/*`). `gradle-jdk21.sh`
 existe. **Cero tags** en el repositorio: ningún release ha sido publicado.
+
+### Brecha entre el plan y la evidencia: las UAT-H1 no existen por identificador
+
+El plan nombra seis UAT para H1. **Ninguna aparece en el árbol con su
+identificador**: `UAT-H1-0*` devuelve cero coincidencias. Pero la ausencia del
+etiqueta no es ausencia de comportamiento, y confundir las dos cosas sería
+exactamente el error que el plan quiere evitar. Al auditar qué cubre realmente
+cada criterio:
+
+| UAT del plan | Estado medido | Evidencia real en el árbol |
+|---|---|---|
+| `UAT-H1-01` severity por `pack → verifyPacked → evaluate` | **NOT_MEASURED** | El round-trip canónico sí está cubierto (`PolicyIrSeverityRoundTripTest`), pero el camino de **bundle** no. El fix tocó el codec; nadie cruzó `pack → verifyPacked → evaluate`. |
+| `UAT-H1-02` `SEVERITY_CHANGED` entre dos **bundles** | **NOT_MEASURED** | `PolicyDiffSeverityTest` construye `PolicyReport` en memoria. El defecto corregido era perder severidad **al pasar por bytes**, y ese camino nunca se ejercitó. |
+| `UAT-H1-03` supersesión sin grant válido | **PARTIAL** | `LayersTest` y `CanonicalPolicyJsonFortressTest` cubren `SupersessionAuthority` y su round-trip, pero no el caso de negocio "dos capas no pueden superseder sin grant válido" como veredicto. |
+| `UAT-H1-04` waiver afecta solo a su sujeto y scope | **PARTIAL** | `WaiversTest` tiene 14 tests incluyendo `03a` válido, `03b` vencido (`WaiverExpired`) y `03c` aún no válido (`WaiverNotYetValid`). Falta el caso de alcance: dos waivers con subjects distintos en la misma evaluación. |
+| `UAT-H1-05` `Error + Violated` bajo `SHADOW` | **PARTIAL** | `EnforcementInterpreterTest` cubre `refusal outranks everything` y `an evaluation error outranks any violation`. Falta el escenario combinado `Error + Violated` **bajo SHADOW**, que es donde el error podría degradarse a PASS. |
+| `UAT-H1-06` diferencia exclusiva del tercer documento | **NOT_MEASURED** | No hay test de tres documentos contra A/B. |
+| `AAT-H1` kernel sin I/O ni SDK | **PASS** | `DomainIoPurityTest` es un guard de baseline auditado sobre el **árbol de paquetes** (no una lista de nombres), cubre `kernel/dataset` y `kernel/governance`, y falla si se añade un nuevo paquete de dominio. Es la AAT-H1 completa. |
+
+La fila que importa es la primera: **H1.1 está corregido y falsificado por
+mutación, pero no certificado por el camino que hace el defecto observable.**
+Un P0 arreglado a medias es un P0 que sigue abierto hasta que se demuestra.
+
+Lo que esto cambia para el release: H1 no se cierra con `PARTIAL` donde el plan
+exige `PASS`. La brecha es real y está medida.
+
+### Los cinco releases
+
+| Hito | Release | Estado | Bloqueante medido |
+|---|---|---|---|
+| H1 | `v0.3.0-alpha.1` | ABIERTO | UAT-H1-01/02 sin ejecutar; H1.2 parcial |
+| H2 | `v0.3.0-alpha.2` | ABIERTO | H2.1 colisión de identidad viva |
+| H3 | `v0.3.0-beta.1` | ABIERTO | H3.1 materializa en `ByteArray` |
+| H4 | `v0.3.0-rc.1` | ABIERTO | Procedencia del SDK sin fijar |
+| H5 | `v0.3.0` | ABIERTO | Ancla no cubre submódulos |
 
 ### Orden de ejecución derivado de la medición
 
@@ -622,9 +657,13 @@ incorrecto:
 1. **B6.5 cerrado.** El gate de mutation testing está verde y falsificado en
    ambos sentidos. Era condición de todo lo demás: es la herramienta que
    certifica, y certificar sin ella es afirmar sin medir.
-2. **H1.1 cerrado.** Era un P0 semántico: una decisión
+2. **H1.1 corregido, UAT-H1 pendientes.** Era un P0 semántico: una decisión
    `CRITICAL` que sobrevive en memoria y se pierde al serializar produce un
-   reporte que miente sobre su propia severidad. Corregido en `e44a1ae`.
+   reporte que miente sobre su propia severidad. Corregido en `e44a1ae`, pero
+   el release H1 exige `UAT-H1-01` y `UAT-H1-02`, que no existían: la
+   severidad no se ha comprobado todavía cruzando `pack → verifyPacked →
+   evaluate`, ni comparando dos bundles reales. Cerrar el release sin eso sería
+   certificar la mitad del camino que hace el defecto observable.
 3. **H2.1 antes que H3.** `localRuleIds` colisiona por identidad, y H3
    caracteriza el streaming sobre los mismos `StreamingEvaluator`; corregir la
    identidad primero evita certificar dos veces el mismo defecto.
