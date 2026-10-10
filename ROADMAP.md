@@ -589,7 +589,7 @@ aceptarla, y `DONE` documental no acredita cumplimiento.
 
 | Línea | Estado medido | Evidencia en el árbol |
 |---|---|---|
-| H1.1 `severity` en PolicyIR | **CORREGIDO, NO CERTIFICADO** | El defecto estaba en el codec, no en `PolicyIrDocument`: `Rule.severity` ya viajaba dentro del `PolicySet`, pero `CanonicalPolicyJsonWriter.policies()` no lo emitía y el decoder no lo leía. Dos reglas que solo diferían en severidad codificaban a bytes idénticos. Fix en `e44a1ae`, mutantes D1/D2 al gate (**9/9 muertos**), RED observado antes del fix (4/5 tests). **Pero los criterios del plan siguen sin certificar:** `UAT-H1-01` (severity vía `pack → verifyPacked → evaluate`) y `UAT-H1-02` (`SEVERITY_CHANGED` entre dos **bundles**) no existen. `PolicyDiffSeverityTest` opera sobre `PolicyReport` en memoria, que es exactamente el camino que el defecto NO tocaba. Cero tests con identificador `UAT-H1-*` en el árbol. |
+| H1.1 `severity` en PolicyIR | **CERRADO (H1.1 + UAT-H1-01/02)** | El defecto estaba en el codec, no en `PolicyIrDocument`: `Rule.severity` ya viajaba dentro del `PolicySet`, pero `CanonicalPolicyJsonWriter.policies()` no lo emitía y el decoder no lo leía. Dos reglas que solo diferían en severidad codificaban a bytes idénticos. Fix en `e44a1ae`, mutantes D1/D2 al gate (**9/9 muertos**), RED observado antes del fix (4/5 tests). **Certificado después en el camino que hace el defecto observable:** `H1SeverityBundlePathTest` cruza `pack → verifyPacked → IrRuntimeAdapter.evaluate` y demuestra `UAT-H1-01` (CRITICAL llega CRITICAL al reporte decodificado) y `UAT-H1-02` (dos bundles que solo difieren en severidad dan `SEVERITY_CHANGED`). 6/6 verdes, falsificado por mutante D1 que **compila** y mata 3 de 6 incluidos ambos criterios; permanente como mutante D3 del gate. Ancla recalibrada a `bb5f049c...`, `baseline-tests` 513 → 519. | 
 | H1.2 gobierno extremo a extremo | **PARCIAL** | `governance/` existe (`EnforcementInterpreter`, `PolicyCheckPlan`, `Layers`, `Waivers`). Falta verificar el servicio de aplicación puro compartido por CLI y plugin con `AuthorityRegistry` del host como entrada explícita. |
 | H1.3 semantic diff `corpus.first()` | **CERRADO (B4.5)** | `PolicyDiff.kt:163-169` emite `SEVERITY_CHANGED` condicionalmente; `:142` documenta que la emisión previa era *"permanently dead"*. No hay `corpus.first()` en la ruta de diff. Pendiente de certificar: `UAT-H1-06` (tres documentos evaluados contra A/B detectan una diferencia exclusiva del tercero). |
 | H2.1 `RuleKey` en dataset planning | **DEFECTO VIVO** | `DatasetPlanner.kt:35` `val localRuleIds: List<String>`; consumido en `StreamingEvaluator.kt:73` y `:131` por `it.id in plan.localRuleIds`. Una regla LOCAL y otra AGGREGATE con el mismo texto colisionan. |
@@ -623,26 +623,28 @@ cada criterio:
 
 | UAT del plan | Estado medido | Evidencia real en el árbol |
 |---|---|---|
-| `UAT-H1-01` severity por `pack → verifyPacked → evaluate` | **NOT_MEASURED** | El round-trip canónico sí está cubierto (`PolicyIrSeverityRoundTripTest`), pero el camino de **bundle** no. El fix tocó el codec; nadie cruzó `pack → verifyPacked → evaluate`. |
-| `UAT-H1-02` `SEVERITY_CHANGED` entre dos **bundles** | **NOT_MEASURED** | `PolicyDiffSeverityTest` construye `PolicyReport` en memoria. El defecto corregido era perder severidad **al pasar por bytes**, y ese camino nunca se ejercitó. |
+| `UAT-H1-01` severity por `pack → verifyPacked → evaluate` | **PASS** | `H1SeverityBundlePathTest.UAT-H1-01 CRITICAL severity survives pack verifyPacked evaluate`. Falsificado: el mutante D1, que compila y revierte la emisión en el writer, mata este test. |
+| `UAT-H1-02` `SEVERITY_CHANGED` entre dos **bundles** | **PASS** | `H1SeverityBundlePathTest.UAT-H1-02 two bundles differing only in severity yield SEVERITY_CHANGED`. El guard `the two bundles differ only in severity` compara las reglas decodificadas, no los digests. Falsificado por el mismo mutante D1. |
 | `UAT-H1-03` supersesión sin grant válido | **PARTIAL** | `LayersTest` y `CanonicalPolicyJsonFortressTest` cubren `SupersessionAuthority` y su round-trip, pero no el caso de negocio "dos capas no pueden superseder sin grant válido" como veredicto. |
 | `UAT-H1-04` waiver afecta solo a su sujeto y scope | **PARTIAL** | `WaiversTest` tiene 14 tests incluyendo `03a` válido, `03b` vencido (`WaiverExpired`) y `03c` aún no válido (`WaiverNotYetValid`). Falta el caso de alcance: dos waivers con subjects distintos en la misma evaluación. |
 | `UAT-H1-05` `Error + Violated` bajo `SHADOW` | **PARTIAL** | `EnforcementInterpreterTest` cubre `refusal outranks everything` y `an evaluation error outranks any violation`. Falta el escenario combinado `Error + Violated` **bajo SHADOW**, que es donde el error podría degradarse a PASS. |
 | `UAT-H1-06` diferencia exclusiva del tercer documento | **NOT_MEASURED** | No hay test de tres documentos contra A/B. |
 | `AAT-H1` kernel sin I/O ni SDK | **PASS** | `DomainIoPurityTest` es un guard de baseline auditado sobre el **árbol de paquetes** (no una lista de nombres), cubre `kernel/dataset` y `kernel/governance`, y falla si se añade un nuevo paquete de dominio. Es la AAT-H1 completa. |
 
-La fila que importa es la primera: **H1.1 está corregido y falsificado por
-mutación, pero no certificado por el camino que hace el defecto observable.**
-Un P0 arreglado a medias es un P0 que sigue abierto hasta que se demuestra.
+La brecha que quedaba era la primera: H1.1 estaba corregido y falsificado por
+mutación en el codec, pero **no certificado por el camino que hace el defecto
+observable**. Cerrada en `8875569`: la severidad sí llega al reporte decodificado,
+y dos bundles que solo difieren en severidad producen `SEVERITY_CHANGED`.
 
-Lo que esto cambia para el release: H1 no se cierra con `PARTIAL` donde el plan
-exige `PASS`. La brecha es real y está medida.
+Lo que queda abierto para cerrar H1: `UAT-H1-03`, `UAT-H1-04` y `UAT-H1-05` en
+`PARTIAL` (les falta el caso de negocio, no la infraestructura) y `UAT-H1-06`
+sin medir. H1 no se cierra con `PARTIAL` donde el plan exige `PASS`.
 
 ### Los cinco releases
 
 | Hito | Release | Estado | Bloqueante medido |
 |---|---|---|---|
-| H1 | `v0.3.0-alpha.1` | ABIERTO | UAT-H1-01/02 sin ejecutar; H1.2 parcial |
+| H1 | `v0.3.0-alpha.1` | ABIERTO | UAT-H1-03/04/05 parciales, UAT-H1-06 sin medir, H1.2 sin medir |
 | H2 | `v0.3.0-alpha.2` | ABIERTO | H2.1 colisión de identidad viva |
 | H3 | `v0.3.0-beta.1` | ABIERTO | H3.1 materializa en `ByteArray` |
 | H4 | `v0.3.0-rc.1` | ABIERTO | Procedencia del SDK sin fijar |
@@ -657,13 +659,10 @@ incorrecto:
 1. **B6.5 cerrado.** El gate de mutation testing está verde y falsificado en
    ambos sentidos. Era condición de todo lo demás: es la herramienta que
    certifica, y certificar sin ella es afirmar sin medir.
-2. **H1.1 corregido, UAT-H1 pendientes.** Era un P0 semántico: una decisión
+2. **H1.1 cerrado y certificado.** Era un P0 semántico: una decisión
    `CRITICAL` que sobrevive en memoria y se pierde al serializar produce un
-   reporte que miente sobre su propia severidad. Corregido en `e44a1ae`, pero
-   el release H1 exige `UAT-H1-01` y `UAT-H1-02`, que no existían: la
-   severidad no se ha comprobado todavía cruzando `pack → verifyPacked →
-   evaluate`, ni comparando dos bundles reales. Cerrar el release sin eso sería
-   certificar la mitad del camino que hace el defecto observable.
+   reporte que miente sobre su propia severidad. Corregido en `e44a1ae` y
+   certificado cruzando el camino de bundle en `8875569`.
 3. **H2.1 antes que H3.** `localRuleIds` colisiona por identidad, y H3
    caracteriza el streaming sobre los mismos `StreamingEvaluator`; corregir la
    identidad primero evita certificar dos veces el mismo defecto.

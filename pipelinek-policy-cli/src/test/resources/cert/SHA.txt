@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 44a5d89c93a633f765f70b0a193f7a44b8bb0d89
+certified-sha: bb5f049ce846fb31a5222328b4d3c18f2be2890a
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -36,4 +36,10 @@ baseline-suites: 42
 # them were observed RED before the fix (severity round-tripped to null, CRITICAL
 # and INFO encoded to identical bytes), and they stay because they are the only
 # thing standing between a CRITICAL rule and a report that understates it.
-baseline-tests: 513
+# UAT-H1-01/02 moved baseline-tests 513 → 519 and certified-sha to
+# bb5f049ce846fb31a5222328b4d3c18f2be2890a: the six new
+# H1SeverityBundlePathTest tests are what moved the tree. They close
+# the gap where H1.1 was fixed in the codec but never crossed
+# pack → verifyPacked → evaluate. Raised after a fresh run reported 519
+# executed, 0 failures, 0 errors, 0 skipped.
+baseline-tests: 519

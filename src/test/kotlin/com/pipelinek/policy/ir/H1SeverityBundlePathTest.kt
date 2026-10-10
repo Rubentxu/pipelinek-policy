@@ -55,7 +55,7 @@ class H1SeverityBundlePathTest {
 
         val evaluation = report.results.values.single()
         assertTrue(evaluation.violations.isNotEmpty(), "the rule must violate for this test to mean anything")
-        val declared = report.severities[RULE_KEY]
+        val declared = report.severities[ruleKey]
         assertEquals(
             RuleSeverity.CRITICAL,
             declared,
@@ -92,7 +92,7 @@ class H1SeverityBundlePathTest {
 
         assertEquals(
             null,
-            report.severities[RULE_KEY],
+            report.severities[ruleKey],
             "an absent severity must not be invented anywhere along the path; " +
                 "only rules that DECLARED one appear in PolicyReport.severities",
         )
@@ -161,7 +161,7 @@ class H1SeverityBundlePathTest {
 
     // --- helpers ---
 
-    private val RULE_KEY = RuleKey.of("set", "policy", "replicas")
+    private val ruleKey = RuleKey.of("set", "policy", "replicas")
 
     private fun verifyPacked(document: PolicyIrDocument) = BundleVerifier.verifyPacked(
         PolicyBundle(document).pack(),
