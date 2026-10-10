@@ -531,7 +531,7 @@ solo cuenta Done con implementación **y** falsificación observable.
 | B4.4 shadow | **DONE** | `PolicyCheckDsl.kt:49` `enforcement` con default `ENFORCED` |
 | B4.5 diff | **DONE** | `PolicySet.kt:83` `severity: RuleSeverity?`; `PolicyDiff.kt:143` emisión condicional |
 | B4.6 plan | **DONE** | `governance/PolicyCheckPlan.kt` calculado por el kernel |
-| B4.7 ingress | **PARCIAL** | Cableado en el kernel: `PolicyCheckPlanRequest.ingressLimits` (default = presupuesto enviado) y `compute` admite **antes** de decodificar, con `RESOURCE_TOO_LARGE`/`BUNDLE_TOO_LARGE` distintos de `NOT_BASE64` (ley 8); el helper privado `decodeBase64` sin cota fue eliminado. **Pendiente**: los hosts CLI (16 `readBytes()` sin cota) y el plugin siguen sin usar la ruta tipada |
+| B4.7 ingress | **DONE** | Kernel: `PolicyCheckPlanRequest.ingressLimits` (default = presupuesto enviado) y `compute` admite **antes** de decodificar, con `RESOURCE_TOO_LARGE`/`BUNDLE_TOO_LARGE` distintos de `NOT_BASE64` (ley 8); el helper privado `decodeBase64` sin cota fue eliminado. Hosts: `BoundedRead` (CLI) acota los 16 `readBytes()` sin cota — stat O(1) primero, luego lectura **capada** a `budget + 1`, de modo que el crecimiento entre stat y read se acota y no solo se detecta; presupuestos derivados de `ResourceIngressLimits`, nunca literales duplicados. El plugin acota su `release.properties` de classpath con un tope propio (64 KiB), explícitamente **no** el presupuesto de ingress. Falsificado: cap → `readBytes()` mata 1/12 (`BoundedReadTest`), y `CheckCmd` → `readBytes()` mata 1/4 (`OversizedInputRefusalTest`). Gate: 495 tests, 0/0/0 |
 | B4.8 replay | **DONE** | `Waivers.kt:70` instante inyectado, scopes aplicados |
 | B4.9 UAT | **ABIERTO** | `uat-external-distribution.sh` no fija 20 recursos ni verifica por comportamiento |
 | B5.3 UTF-8 | **DONE** | `7fff04a`: los 5 bucles byte→char de `CsvRowSource`, `CsvResourceDecoder` y `JsonlSource` acumulan bytes y decodifican UTF-8 una vez. Falsificado revirtiendo el fix (RED 9/9 CSV, 6/7 JSONL; el único verde fue el control ASCII) |
@@ -546,17 +546,17 @@ La ley 5 de B4 dejó de ser decorativa.
 
 **Corrección de una afirmación previa:** el resumen de sesión daba B4-T3
 (`PolicySet.layer` opcional) y B4-T5 (`resourceBudget`) como abiertos. B4.7 sí
-está abierto, pero como ausencia del tipo `ResourceIngressLimits`, no como un
-hueco en `PolicyCheckPlan`.
+estaba abierto, como ausencia del tipo `ResourceIngressLimits` y como lecturas
+de host sin cota. Cerrado en dos commits: el cableado del kernel
+(`bf2639e`) y el acotado de los hosts CLI y plugin (este bloque).
 
 ### Prioridad derivada de esta reconciliación
 
-1. **B4.7 `ResourceIngressLimits`** — el host decodifica `resourceBase64` sin
-   techo. Es la precondición que T6 declaraba y no tuvo.
-2. **B5.3 UTF-8 estricto** — corrupción silenciosa de datos no-ASCII, condición de
-   cierre declarada por el propio roadmap.
-3. **B5.5 `RuleKey`** — dos policies con el mismo `ruleId` comparten contadores.
-4. **B4.9 + B6.1** — UAT real y certificación del SHA exacto.
+1. ~~**B4.7 `ResourceIngressLimits`**~~ — **cerrado**: tipo en el kernel,
+   admisión antes de decodificar, y todos los hosts leen con cota.
+2. ~~**B5.3 UTF-8 estricto**~~ — **cerrado** en `7fff04a`.
+3. ~~**B5.5 `RuleKey`**~~ — **cerrado** en `2980c48`.
+4. **B4.9 + B6.1** — UAT real y certificación del SHA exacto. *Siguiente.*
 
 ## B5 — Streaming real, datasets y presupuestos (P1) — PARCIAL (M8 WU-1..6)
 

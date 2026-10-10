@@ -2,11 +2,12 @@ package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.bundle.IrRuntimeAdapter
+import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
-import com.pipelinek.policy.cli.FindingsEmitter
 import com.pipelinek.policy.cli.Finding
 import com.pipelinek.policy.cli.FindingState
+import com.pipelinek.policy.cli.FindingsEmitter
 import com.pipelinek.policy.cli.dedup
 import com.pipelinek.policy.decoder.DecodeOptions
 import com.pipelinek.policy.decoder.DecodeResult
@@ -60,7 +61,9 @@ object CheckCmd {
             return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
-            BundleVerifier.verifyPacked(bundleFile.readBytes())
+            val _bounded = BoundedRead.readOrReport(bundleFile, "check", out)
+            ?: return ExitCodes.ADMISSION_ERROR
+            BundleVerifier.verifyPacked(_bounded)
         } catch (e: Exception) {
             out(FindingsEmitter.text(listOf(Finding.refusal(policyPath, "bundle refused: ${e.message}"))))
             return ExitCodes.ADMISSION_ERROR
@@ -68,7 +71,7 @@ object CheckCmd {
 
         val findings = mutableListOf<Finding>()
         for (res in resources) {
-            findings += checkResource(verified, res)
+            findings += checkResource(verified, res, out)
         }
         val deduped = findings.dedup()
         emit(deduped, format, out)
@@ -95,6 +98,7 @@ object CheckCmd {
     private fun checkResource(
         verified: com.pipelinek.policy.bundle.VerifiedBundle,
         resourcePath: String,
+        out: (String) -> Unit,
     ): List<Finding> {
         val file = File(resourcePath)
         if (!file.isFile) {
@@ -105,7 +109,13 @@ object CheckCmd {
             ?: return listOf(
                 Finding.refusal(resourcePath, "no decoder for extension .$ext (by-extension only, no sniffing)"),
             )
-        return when (val decoded = decoder.decode(file.readBytes(), DecodeOptions())) {
+        val resourceBytes = BoundedRead.readOrReport(
+            file,
+            "check resource",
+            out,
+            BoundedRead.DEFAULT_RESOURCE_BUDGET,
+        ) ?: return listOf(Finding.refusal(resourcePath, "resource exceeds the ingress budget"))
+        return when (val decoded = decoder.decode(resourceBytes, DecodeOptions())) {
             is DecodeResult.Refused ->
                 listOf(Finding.refusal(resourcePath, "decode refused: ${decoded.refusal.code}"))
             is DecodeResult.Ok -> decoded.documents.flatMap { doc ->

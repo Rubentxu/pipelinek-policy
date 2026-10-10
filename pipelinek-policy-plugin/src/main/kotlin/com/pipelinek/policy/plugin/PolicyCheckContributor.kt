@@ -116,9 +116,33 @@ object PolicyPluginDeclaration {
         )
     }
 
+    /**
+     * Read the plugin's own `release.properties` off the classpath.
+     *
+     * Deliberately NOT the ingress resource budget. That budget exists to
+     * bound untrusted INPUT; this is the plugin's own packaged metadata, so
+     * 64 MiB of headroom would be a number that reads as protection while
+     * protecting nothing. The cap here is a sanity bound on a file that
+     * should be a few hundred bytes — small enough that a corrupt or
+     * substituted jar cannot demand heap it has no business holding, and
+     * stated here rather than imported so nobody mistakes it for the
+     * ingress budget it is not.
+     */
+    private const val RELEASE_PROPERTIES_MAX_BYTES = 64 * 1024
+
     internal fun releaseProperties(classLoader: ClassLoader): Map<String, String> {
         val resource = classLoader.getResource(RELEASE_PROPERTIES_RESOURCE) ?: return emptyMap()
-        val text = resource.openStream().use { it.readBytes().toString(Charsets.UTF_8) }
+        // Refuse rather than truncate. A properties file cut in half would
+        // parse into a plausible-looking map with missing keys, which is
+        // worse than saying nothing: the caller cannot tell a truncated
+        // release description from a complete one.
+        val text = resource.openStream().use { stream ->
+            val bytes = stream.readNBytes(RELEASE_PROPERTIES_MAX_BYTES + 1)
+            if (bytes.size > RELEASE_PROPERTIES_MAX_BYTES) {
+                return emptyMap()
+            }
+            bytes.toString(Charsets.UTF_8)
+        }
         val map = linkedMapOf<String, String>()
         for (line in text.lineSequence()) {
             val trimmed = line.trim()

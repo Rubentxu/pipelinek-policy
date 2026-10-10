@@ -176,12 +176,20 @@ class StreamCmdTest {
             val line = ("ok," + "x".repeat(59) + "\n").toByteArray()
             val target = 64L * 1024 * 1024
             var written = "temp,pad\n".toByteArray().size.toLong()
-            while (written < target) {
+            // Stop BEFORE overshooting. The previous `while (written < target)`
+            // appended a whole extra row past the budget and produced a
+            // 67108869-byte file, five bytes over the ingress budget. That
+            // used to pass because the CLI read without a bound; with B4.7
+            // host enforcement it is now correctly refused. The UAT intent is
+            // "a file at the budget", so the fixture is trimmed to fit rather
+            // than the budget being raised to fit the fixture.
+            while (written + line.size <= target) {
                 s.write(line)
                 written += line.size
             }
         }
-        assertTrue(csv.toFile().length() >= 64L * 1024 * 1024)
+        assertTrue(csv.toFile().length() <= 64L * 1024 * 1024)
+        assertTrue(csv.toFile().length() > 64L * 1024 * 1024 - 128)
 
         System.gc()
         val before = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()

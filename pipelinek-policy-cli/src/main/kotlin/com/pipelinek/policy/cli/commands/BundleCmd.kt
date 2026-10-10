@@ -2,6 +2,7 @@ package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.cli.CliArgs
+import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.ExitCodes
 import java.io.File
 
@@ -30,8 +31,13 @@ object BundleCmd {
                 failed = true
                 continue
             }
+            val bounded = BoundedRead.readOrReport(file, "bundle", out)
+            if (bounded == null) {
+                failed = true
+                continue
+            }
             try {
-                val verified = BundleVerifier.verifyPacked(file.readBytes())
+                val verified = BundleVerifier.verifyPacked(bounded)
                 out(
                     "{\"path\": \"$path\", \"verified\": true, " +
                         "\"semanticDigest\": \"${verified.semanticDigest}\", " +

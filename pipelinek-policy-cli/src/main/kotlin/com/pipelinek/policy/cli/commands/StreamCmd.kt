@@ -1,6 +1,7 @@
 package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.BundleVerifier
+import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.decoders.csv.CsvRowRefusal
@@ -60,7 +61,9 @@ object StreamCmd {
             return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
-            BundleVerifier.verifyPacked(bundleFile.readBytes())
+            val _bounded = BoundedRead.readOrReport(bundleFile, "stream", out)
+            ?: return ExitCodes.ADMISSION_ERROR
+            BundleVerifier.verifyPacked(_bounded)
         } catch (e: Exception) {
             out(msg(jsonOut, "refusal", "bundle refused: ${e.message}"))
             return ExitCodes.ADMISSION_ERROR
@@ -96,7 +99,7 @@ object StreamCmd {
                     out(msg(jsonOut, "refusal", "dataset not found: $resource"))
                     return ExitCodes.ADMISSION_ERROR
                 }
-                val rows = rowSupplierFor(file)
+                val rows = rowSupplierFor(file, out)
                     ?: run {
                         out(msg(jsonOut, "refusal", "no streaming source for .${
                             file.extension.lowercase()
@@ -147,16 +150,35 @@ object StreamCmd {
         return if (violations > 0) ExitCodes.VIOLATIONS else ExitCodes.OK
     }
 
-    /** Streaming sources by extension. Unknown → null (refusal). */
-    private fun rowSupplierFor(file: File): StreamingEvaluator.RowSupplier? = when (
+    /**
+     * Streaming sources by extension. Unknown → null (refusal).
+     *
+     * The file is read under the resource budget before the cursor is built,
+     * so an oversized dataset is refused instead of being loaded whole. [out]
+     * is threaded in because a size refusal must reach the operator, not just
+     * collapse into a null the caller would read as "unsupported extension".
+     */
+    private fun rowSupplierFor(file: File, out: (String) -> Unit): StreamingEvaluator.RowSupplier? = when (
         file.extension.lowercase()
     ) {
         "csv" -> {
-            val source = CsvRowSource(file.readBytes())
+            val bytes = BoundedRead.readOrReport(
+                file,
+                "stream source",
+                out,
+                BoundedRead.DEFAULT_RESOURCE_BUDGET,
+            ) ?: return null
+            val source = CsvRowSource(bytes)
             StreamingEvaluator.RowSupplier { source.next() }
         }
         "jsonl", "ndjson" -> {
-            val source = JsonlSource(file.readBytes())
+            val bytes = BoundedRead.readOrReport(
+                file,
+                "stream source",
+                out,
+                BoundedRead.DEFAULT_RESOURCE_BUDGET,
+            ) ?: return null
+            val source = JsonlSource(bytes)
             StreamingEvaluator.RowSupplier { source.next() }
         }
         else -> null

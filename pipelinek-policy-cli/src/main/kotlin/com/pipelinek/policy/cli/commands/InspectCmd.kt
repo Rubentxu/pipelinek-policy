@@ -1,6 +1,7 @@
 package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.BundleVerifier
+import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.ir.CanonicalPolicyJson
@@ -23,8 +24,10 @@ object InspectCmd {
             out("inspect: bundle not found: $path")
             return ExitCodes.ADMISSION_ERROR
         }
+        val bytes = BoundedRead.readOrReport(file, "inspect", out)
+            ?: return ExitCodes.ADMISSION_ERROR
         val verified = try {
-            BundleVerifier.verifyPacked(file.readBytes())
+            BundleVerifier.verifyPacked(bytes)
         } catch (e: Exception) {
             out("inspect: bundle refused: ${e.message}")
             return ExitCodes.ADMISSION_ERROR

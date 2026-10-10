@@ -1,6 +1,7 @@
 package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.PolicyBundle
+import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.ir.CanonicalPolicyJson
@@ -32,7 +33,9 @@ object CompileCmd {
             return ExitCodes.COMPILER_ERROR
         }
         val document = try {
-            CanonicalPolicyJson.decode(file.readBytes())
+            BoundedRead.readOrReport(file, "compile source", out, BoundedRead.DEFAULT_RESOURCE_BUDGET)
+                ?.let { CanonicalPolicyJson.decode(it) }
+                ?: return ExitCodes.ADMISSION_ERROR
         } catch (e: Exception) {
             out("compile: canonical IR refused: ${e.message}")
             return ExitCodes.COMPILER_ERROR

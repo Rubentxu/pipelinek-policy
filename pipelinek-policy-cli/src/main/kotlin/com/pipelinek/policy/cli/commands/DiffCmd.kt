@@ -2,11 +2,14 @@ package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.bundle.IrRuntimeAdapter
+import com.pipelinek.policy.bundle.VerifiedBundle
+import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.decoder.DecodeOptions
 import com.pipelinek.policy.decoder.DecodeResult
 import com.pipelinek.policy.decoder.ResourceDecoder
+import com.pipelinek.policy.decoder.ResourceDocument
 import com.pipelinek.policy.decoders.csv.CsvResourceDecoder
 import com.pipelinek.policy.decoders.json.JsonResourceDecoder
 import com.pipelinek.policy.decoders.yaml.YamlResourceDecoder
@@ -54,11 +57,14 @@ object DiffCmd {
         return ExitCodes.USAGE
     }
 
-    private fun loadVerified(path: String, out: (String) -> Unit) = try {
-        BundleVerifier.verifyPacked(File(path).readBytes())
-    } catch (e: Exception) {
-        out("diff: bundle refused: $path (${e.message})")
-        null
+    private fun loadVerified(path: String, out: (String) -> Unit): VerifiedBundle? {
+        val bounded = BoundedRead.readOrReport(File(path), "diff", out) ?: return null
+        return try {
+            BundleVerifier.verifyPacked(bounded)
+        } catch (e: Exception) {
+            out("diff: bundle refused: $path (${e.message})")
+            null
+        }
     }
 
     internal fun diffJson(diff: PolicyDiff): String {
@@ -72,13 +78,19 @@ object DiffCmd {
             "  \"digest\": \"${diff.diffDigest}\",\n  \"entries\": [\n$entries\n  ]\n}"
     }
 
-    private fun decodeOne(resource: String, out: (String) -> Unit) =
-        when (val d = decoderFor(File(resource).extension.lowercase())) {
-            null -> {
+    private fun decodeOne(resource: String, out: (String) -> Unit): ResourceDocument? {
+        val d = decoderFor(File(resource).extension.lowercase())
+            ?: run {
                 out("diff: no decoder for $resource (by-extension only)")
-                null
+                return null
             }
-            else -> when (val decoded = d.decode(File(resource).readBytes(), DecodeOptions())) {
+        val resourceBytes = BoundedRead.readOrReport(
+            File(resource),
+            "diff resource",
+            out,
+            BoundedRead.DEFAULT_RESOURCE_BUDGET,
+        ) ?: return null
+        return when (val decoded = d.decode(resourceBytes, DecodeOptions())) {
                 is DecodeResult.Refused -> {
                     out("diff: decode refused: ${decoded.refusal.code}")
                     null

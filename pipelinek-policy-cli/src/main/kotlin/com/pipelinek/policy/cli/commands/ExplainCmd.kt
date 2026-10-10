@@ -2,10 +2,12 @@ package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.bundle.IrRuntimeAdapter
+import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.decoder.DecodeOptions
 import com.pipelinek.policy.decoder.DecodeResult
+import com.pipelinek.policy.decoder.ResourceDocument
 import com.pipelinek.policy.kernel.evaluator.RuleKey
 import com.pipelinek.policy.kernel.expression.Expression
 import com.pipelinek.policy.kernel.policy.RuleEvaluation
@@ -37,7 +39,9 @@ object ExplainCmd {
             return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
-            BundleVerifier.verifyPacked(file.readBytes())
+            val _bounded = BoundedRead.readOrReport(file, "explain", out)
+            ?: return ExitCodes.ADMISSION_ERROR
+            BundleVerifier.verifyPacked(_bounded)
         } catch (e: Exception) {
             out("explain: bundle refused: ${e.message}")
             return ExitCodes.ADMISSION_ERROR
@@ -119,13 +123,19 @@ object ExplainCmd {
                 "\"source\": ${renderExpression(e.source)}}"
     }
 
-    private fun decodeOne(resource: String, out: (String) -> Unit) =
-        when (val d = decoderFor(File(resource).extension.lowercase())) {
-            null -> {
+    private fun decodeOne(resource: String, out: (String) -> Unit): ResourceDocument? {
+        val d = decoderFor(File(resource).extension.lowercase())
+            ?: run {
                 out("explain: no decoder for $resource (by-extension only)")
-                null
+                return null
             }
-            else -> when (val decoded = d.decode(File(resource).readBytes(), DecodeOptions())) {
+        val resourceBytes = BoundedRead.readOrReport(
+            File(resource),
+            "explain resource",
+            out,
+            BoundedRead.DEFAULT_RESOURCE_BUDGET,
+        ) ?: return null
+        return when (val decoded = d.decode(resourceBytes, DecodeOptions())) {
                 is DecodeResult.Refused -> {
                     out("explain: decode refused: ${decoded.refusal.code}")
                     null

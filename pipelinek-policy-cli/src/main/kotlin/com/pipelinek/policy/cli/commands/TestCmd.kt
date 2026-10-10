@@ -2,6 +2,7 @@ package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.bundle.IrRuntimeAdapter
+import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.decoder.DecodeOptions
@@ -38,7 +39,9 @@ object TestCmd {
             return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
-            BundleVerifier.verifyPacked(bundleFile.readBytes())
+            val _bounded = BoundedRead.readOrReport(bundleFile, "test", out)
+            ?: return ExitCodes.ADMISSION_ERROR
+            BundleVerifier.verifyPacked(_bounded)
         } catch (e: Exception) {
             out("test: bundle refused: ${e.message}")
             return ExitCodes.ADMISSION_ERROR
@@ -94,8 +97,19 @@ object TestCmd {
             "csv" -> com.pipelinek.policy.decoders.csv.CsvResourceDecoder()
             else -> return FixtureEvaluation.Refused("unsupported fixture format .${fixture.extension}")
         }
+        /**
+         * Read under the resource budget first. An oversized fixture is refused
+         * before decoding: without this the fixture would be slurped whole and
+         * only afterwards rejected by the evaluator's row budget, which is a
+         * different failure with a different meaning.
+         */
+        val fixtureBytes = when (val read = BoundedRead.read(fixture, BoundedRead.DEFAULT_RESOURCE_BUDGET)) {
+            is BoundedRead.ReadResult.Ok -> read.bytes
+            is BoundedRead.ReadResult.Refused ->
+                return FixtureEvaluation.Refused("fixture refused: ${read.refusal}")
+        }
         val decoded = try {
-            decoder.decode(fixture.readBytes(), DecodeOptions())
+            decoder.decode(fixtureBytes, DecodeOptions())
         } catch (e: Exception) {
             return FixtureEvaluation.Refused(e.message ?: "fixture could not be decoded")
         }

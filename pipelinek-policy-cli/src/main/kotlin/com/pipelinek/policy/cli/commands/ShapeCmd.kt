@@ -2,6 +2,7 @@ package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.cli.CliArgs
+import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.ExitCodes
 import java.io.File
 
@@ -23,7 +24,9 @@ object ShapeCmd {
             return ExitCodes.ADMISSION_ERROR
         }
         val verified = try {
-            BundleVerifier.verifyPacked(file.readBytes())
+            val _bounded = BoundedRead.readOrReport(file, "shape", out)
+            ?: return ExitCodes.ADMISSION_ERROR
+            BundleVerifier.verifyPacked(_bounded)
         } catch (e: Exception) {
             out("shape: bundle refused: ${e.message}")
             return ExitCodes.ADMISSION_ERROR
