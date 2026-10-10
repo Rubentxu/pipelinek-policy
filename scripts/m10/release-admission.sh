@@ -180,7 +180,12 @@ log "· checksums: $(wc -l < "$SUMS") entries"
 # reports, not invented. That is a weaker guarantee than a full component
 # scanner and the receipt says so explicitly rather than implying more.
 SBOM="$OUT_DIR/pipelinek-policy-$VERSION.sbom.spdx.json"
-RESOLVED="$(grep -oE '^\- \*\*resolved dependency coordinates\*\*:[[:space:]]*[0-9]+' docs/history/B6_CERTIFICATION.md | grep -oE '[0-9]+' | head -1 || echo 0)"
+# The `\-` in the previous form was a trailing-backslash escape, which GNU grep
+# accepts but warns about ("warning: \ sobrante después de -"). It worked, but a
+# release gate should not print warnings that look like they could be failures, so
+# the dash is matched as a plain `-` at the start of the line, where it needs no
+# escape. Verified: same extraction (622), no warning.
+RESOLVED="$(grep -oE '^- \*\*resolved dependency coordinates\*\*:[[:space:]]*[0-9]+' docs/history/B6_CERTIFICATION.md | grep -oE '[0-9]+' | head -1 || echo 0)"
 
 {
   printf '{\n'
