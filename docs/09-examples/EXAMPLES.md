@@ -119,6 +119,22 @@ policy-cli check acme.pkpolicy corpus/ --format jsonl
 # bundle verify (integridad), --json-help (autodescubrimiento para agentes)
 ```
 
-Exit codes estables: `0` OK, `1` violaciones, `2` error de uso/entrada,
-`3` error interno. Los comandos citados existen en el `CommandRegistry`
+Exit codes estables, congelados por ADR-0012 y verificados contra `ExitCodes.kt`:
+`0` OK, `1` error de uso/invocación, `2` violaciones (o diff de política no vacío),
+`3` error de evaluación/configuración/presupuesto, `4` rechazo de admisión o
+decodificación, `5` error de compilación del IR canónico.
+
+```kotlin
+// pipelinek-policy-cli/src/main/kotlin/com/pipelinek/policy/cli/ExitCodes.kt
+OK = 0; USAGE = 1; VIOLATIONS = 2
+EVALUATION_ERROR = 3; ADMISSION_ERROR = 4; COMPILER_ERROR = 5
+```
+
+> Corregido el 2026-10-10 (B6.9): esta sección decía `0/1/2/3` con
+> `1` = violaciones y `2` = uso, lo que está **invertido** respecto a ADR-0012 y
+> al código. Un agente que ramificara sobre ella habría tratado una violación
+> como error de invocación. No había test que lo detectara: los exit codes sí
+> están fijados por tests, pero la documentación no estaba atada a ellos.
+
+Los comandos citados existen en el `CommandRegistry`
 (verificado por cross-check en `HelpAndExitCodesTest` 05b).

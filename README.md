@@ -67,40 +67,70 @@ La idea central es deliberadamente distinta de «OPA escrito en Kotlin» y de «
 - Los receipts/evidencias se crearán durante la implementación y se moverán a `docs/history/` al quedar superados.
 - El estado operativo de SDDK no se guarda en el repo; vive en el directorio de usuario por proyecto.
 
-## Quickstart (M0 — parcial)
+## Quickstart
 
-Estado: **M0 INCOMPLETE · BLOCKED-fixture-license** (ver `ROADMAP.md`).
-
-El repositorio contiene ya un esqueleto Gradle Kotlin/JVM mínimo ejecutable. No hay
-código de producto en M0 (la base de tipos de policy vive en M1).
+Estado: **v0.3.0-alpha.1** en el código. H1 está funcionalmente cerrado pero el
+release sigue **BLOQUEADO por B6.10**; ver `ROADMAP.md` para el estado real por
+hito. Esta sección se corrigió el 2026-10-10: antes describía el quickstart de
+M0 («1 test class», «sin tipos de dominio») cuando el proyecto ya evaluaba
+políticas de verdad. Era la misma clase de deriva que un ancla sin comparar.
 
 Requisitos:
 
-- JDK 21 (cualquier distribución estándar: Temurin, Zulu, Liberica). El toolchain se
-  resuelve automáticamente via Gradle toolchain auto-detection; no se commitea path
-  absoluto de usuario.
-- Gradle 8.14.5 vía wrapper (`./gradlew`). El wrapper JAR está versionado en
-  `gradle/wrapper/gradle-wrapper.jar` (SHA256 verificado contra el oficial publicado
-  en <https://gradle.org/release-checksums/>).
-- Red disponible para resolver Maven Central en la primera compilación.
+- JDK 21. El toolchain se resuelve vía Gradle; no se commitea path absoluto de
+  usuario. El shell puede estar en otro JDK: el build forkea 21 y los receipts
+  siguen al build, no al shell.
+- Gradle 8.14.5 vía wrapper (`./gradlew`), cuyo JAR está versionado en
+  `gradle/wrapper/gradle-wrapper.jar` (SHA256 verificado contra el oficial
+  publicado en <https://gradle.org/release-checksums/>).
+- Red para resolver Maven Central en la primera compilación.
+- El módulo `pipelinek-policy-plugin` además necesita el SDK de PipelineK
+  `0.47.0` instalado en `mavenLocal`. **Verifica su sha256 antes de usarlo:**
+  `scripts/m6/uat-external-distribution.sh` lo comprueba y falla si el SDK no es
+  el identificado (B6.7).
 
-Construir y ejecutar la suite (1 test class genérico, sin tipos de dominio):
+Construir y ejecutar la suite completa:
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null || echo "$JAVA_HOME") ./gradlew check
+./gradlew check
 ```
 
-El comando debe terminar con `BUILD SUCCESSFUL` y `BootstrapSmokeTest` PASSED para:
+Certificar y medir (ambos desde árbol limpio, ambos con receipts):
 
-- `JVM runtime is JDK 21` (`Runtime.version().feature() == 21`)
-- `Kotlin runtime matches declared 2_4_20` (`KotlinVersion.CURRENT.toString() == "2.4.20"`)
+```bash
+./scripts/m6/certify.sh         # suite completa + recibo en docs/history/B6_CERTIFICATION.md
+./scripts/m6/mutation-gate.sh   # mutantes semánticos; falla si alguno sobrevive
+```
 
-**Guard automático**: el task `architectureFitnessGuard` corre como parte de `check`
-y rechaza cualquier dependencia que no esté en la allowlist de producción
-(`org.jetbrains.kotlin:kotlin-stdlib`, `org.jetbrains:annotations`), cualquier
-directorio `pipelinek-policy-plugin/` presente en la raíz, y cualquier coordenada
-reservada (`com.pipelinek:*`, `io.pipelinek:*`, `dev.pipelinek:*`,
-`com.pipelinek.app:*`, `com.pipelinek.plugin:*`).
+`certify.sh` no solo ejecuta: escribe `docs/history/B6_CERTIFICATION.md` con el
+SHA del árbol, los digests de los artefactos, los del SDK de integración, la
+versión del toolchain y el número de tests **realmente ejecutados**. Ese número
+está anclado en `cert/SHA.txt` y una ejecución más corta que la certificada
+hace fallar el gate.
+
+### Contrato CLI
+
+`CommandRegistry` es la **única** fuente del contrato. Nueve comandos:
+
+| Comando | Qué hace | Posicionales |
+|---|---|---|
+| `compile` | Compila fuente de política a un bundle reproducible | `policy` `out` |
+| `check` | Evalúa recursos contra un bundle | `policy` `format` |
+| `test` | Ejecuta fixtures allow/deny | `policy` `fixtures` `format` |
+| `diff` | Diferencia dos bundles (opcionalmente sobre un corpus) | `a` `b` `corpus` |
+| `explain` | Explica la evaluación de una regla | `policy` `rule` `resource` |
+| `inspect` | Vuelca el IR canónico | `policy` |
+| `shape` | Resumen estructural del bundle | `policy` |
+| `bundle` | Operaciones de bundle (`verify`) | `verify` |
+| `stream` | Aplica el bundle sobre un dataset csv/jsonl con tope de filas | `policy` `row-budget` `format-out` |
+
+`--json-help` se despacha desde el registro, así que la tabla de arriba y la
+salida de `--json-help` no pueden divergir sin que un test lo note.
+
+`stream` es la superficie donde los límites son parte del contrato: un dataset
+que excede `--row-budget` **se detiene y lo reporta** con el tope y lo consumido,
+marcando como incompletas las reglas cuyo plegado quedó cortado. No lanza
+excepción ni devuelve un informe limpio de una ejecución truncada (B6.6).
 
 Para regenerar solo el wrapper (no necesario normalmente):
 
@@ -108,7 +138,8 @@ Para regenerar solo el wrapper (no necesario normalmente):
 JAVA_HOME=<jdk-21> gradle wrapper --gradle-version 8.14.5 --distribution-type bin
 ```
 
-Para inspeccionar receipts y caracterización del M0:
+Recibts e historial:
 
+- `docs/history/B6_CERTIFICATION.md` — certificación vigente (se regenera)
 - `docs/history/M0_BOOTSTRAP_RECEIPT.md` — SHA baseline, comandos, hashes
 - `docs/history/M0_CHARACTERIZATION.md` — notas de investigación DOCUMENTED
