@@ -1,16 +1,17 @@
 package com.pipelinek.policy.plugin
 
-import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.bundle.IrRuntimeAdapter
 import com.pipelinek.policy.decoder.DecodeResult
 import com.pipelinek.policy.decoder.ResourceDecoder
-import com.pipelinek.policy.decoder.ResourceFormat
 import com.pipelinek.policy.decoders.csv.CsvResourceDecoder
 import com.pipelinek.policy.decoders.json.JsonResourceDecoder
 import com.pipelinek.policy.decoders.map.MapAdapterDecoder
 import com.pipelinek.policy.decoders.yaml.YamlResourceDecoder
 import com.pipelinek.policy.kernel.governance.EnforcementInterpreter
 import com.pipelinek.policy.kernel.governance.GovernanceTally
+import com.pipelinek.policy.kernel.governance.PolicyCheckPlan
+import com.pipelinek.policy.kernel.governance.PolicyCheckPlanRefusal
+import com.pipelinek.policy.kernel.governance.PolicyCheckPlanRequest
 import com.pipelinek.policy.kernel.policy.RuleEvaluation
 import dev.rubentxu.pipeline.v2.domain.ExecutionLocation
 import dev.rubentxu.pipeline.v2.domain.PluginStepId
@@ -25,7 +26,6 @@ import dev.rubentxu.pipeline.v2.domain.step.StepHandler
 import dev.rubentxu.pipeline.v2.events.registry.PLUGIN_EVENT_EMISSION_CAPABILITY
 import dev.rubentxu.pipeline.v2.events.registry.PluginEventEmission
 import kotlinx.serialization.json.Json
-import java.util.Base64
 
 /** REQ-02 · symmetric codecs over canonical JSON, same shape as the SDK examples. */
 object PolicyCheckInputCodec : StepCodec<PolicyCheckInput> {
@@ -112,47 +112,54 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
         output
     }
 
-    /** Pure evaluation pipeline, reusable in tests without a runtime context. */
+    /**
+     * Pure evaluation pipeline, reusable in tests without a runtime context.
+     *
+     * B4.6 / ADR-0016: admission is no longer decided HERE. This adapter
+     * computes the plan through the kernel and then performs the ONE act the
+     * plan obliges it to perform — decoding the admitted bytes as the admitted
+     * format. It selects a decoder, which architectural law 6 forbids the core
+     * from doing, and it does nothing else in that role.
+     */
     fun evaluate(input: PolicyCheckInput): PolicyCheckOutput {
-        val resourceBytes = try {
-            Base64.getDecoder().decode(input.resourceBase64)
-        } catch (e: IllegalArgumentException) {
-            return PolicyCheckOutput.refused("resource is not valid Base64")
+        val plan = PolicyCheckPlan.compute(
+            PolicyCheckPlanRequest(
+                resourceBase64 = input.resourceBase64,
+                packedBundleBase64 = input.packedBundleBase64,
+                declaredFormat = input.resourceFormat,
+                availableDecoderFormats = decoders.map { it.descriptor.format }.toSet(),
+            ),
+        )
+        val ready = when (plan) {
+            is PolicyCheckPlan.PlanRefused ->
+                return PolicyCheckOutput.refused(plan.refusal.render())
+            is PolicyCheckPlan.PlanReady -> plan
         }
-        val packedBundle = try {
-            Base64.getDecoder().decode(input.packedBundleBase64)
-        } catch (e: IllegalArgumentException) {
-            return PolicyCheckOutput.refused("packed bundle is not valid Base64")
-        }
 
-        val format = runCatching { ResourceFormat.valueOf(input.resourceFormat.uppercase()) }
-            .getOrElse {
-                return PolicyCheckOutput.refused("unknown resource format '${input.resourceFormat}'")
-            }
+        val decoder = decoders.firstOrNull { it.descriptor.format == ready.decodeFormat }
+            ?: return PolicyCheckOutput.refused(
+                PolicyCheckPlanRefusal.NO_DECODER_FOR_FORMAT.render(),
+            )
 
-        val decoder = decoders.firstOrNull { it.descriptor.format == format }
-            ?: return PolicyCheckOutput.refused("no decoder for format $format")
-
-        val tree = when (val decoded = decoder.decode(resourceBytes)) {
+        val tree = when (val decoded = decoder.decode(ready.resourceBytes)) {
             is DecodeResult.Ok -> decoded.documents.singleOrNull()?.root
                 ?: return PolicyCheckOutput.refused(
-                    "expected exactly one resource document, got ${decoded.documents.size}",
+                    // The vocabulary is closed (law 9): the count is a
+                    // diagnostic, not a second vocabulary. A literal count in
+                    // the wire string would be exactly that.
+                    PolicyCheckPlanRefusal.MULTI_DOCUMENT_RESOURCE.render() +
+                        ": expected exactly one document, got " + decoded.documents.size,
                 )
+            // The plan cannot know this: it is the decoder's answer, and it
+            // arrives after the plan is computed (ADR-0016).
             is DecodeResult.Refused ->
-                return PolicyCheckOutput.refused("decode refused: ${decoded.refusal.code.name}")
+                return PolicyCheckOutput.refused(
+                    PolicyCheckPlanRefusal.RESOURCE_DECODE_REFUSED.render() + ": " +
+                        decoded.refusal.code.name,
+                )
         }
 
-        val verified = try {
-            BundleVerifier.verifyPacked(packedBundle)
-        } catch (e: IllegalArgumentException) {
-            return PolicyCheckOutput.refused("bundle refused: ${e.message}")
-        } catch (e: Exception) {
-            // B0.2: ANY bundle admission failure refuses; a generic
-            // engine/adapter crash must not leak as PASSED.
-            return PolicyCheckOutput.refused("bundle refused: ${e::class.simpleName}: ${e.message}")
-        }
-
-        val report = IrRuntimeAdapter.evaluate(verified, tree).report
+        val report = IrRuntimeAdapter.evaluate(ready.verifiedBundle, tree).report
         val summaries = report.results.entries
             .sortedBy { it.key.value }
             .map { (key, ev) ->

@@ -6,6 +6,7 @@ import com.pipelinek.policy.kernel.expression.Expression
 import com.pipelinek.policy.kernel.expression.Expression.Comparison
 import com.pipelinek.policy.kernel.expression.Expression.FieldRef
 import com.pipelinek.policy.kernel.expression.Expression.Literal
+import com.pipelinek.policy.kernel.governance.PolicyCheckPlanRefusal
 import com.pipelinek.policy.kernel.path.DocumentPath
 import com.pipelinek.policy.kernel.policy.Policy
 import com.pipelinek.policy.kernel.policy.PolicySet
@@ -147,5 +148,62 @@ class PolicyCheckHandlerTest {
             ),
         )
         assertEquals(PolicyCheckVerdict.REFUSED, out.verdict)
+    }
+
+    /**
+     * B4.6: the wire REFUSAL values are enum names. Asserting the verdict
+     * alone (as the test above does) would pass under ANY string, including a
+     * regression back to the old prose vocabulary. This asserts the string.
+     */
+    @Test
+    fun `refusal reasons reach the wire as enum names, not prose`() {
+        val bundle = packedBundle(replicasRule())
+        val b64 = Base64.getEncoder()
+
+        fun reasonOf(input: PolicyCheckInput): String? = PolicyCheckStepDefinition
+            .evaluate(input).refusalReason
+
+        assertEquals(
+            PolicyCheckPlanRefusal.RESOURCE_NOT_BASE64.render(),
+            reasonOf(
+                PolicyCheckInput("!!!", "JSON", b64.encodeToString(bundle)),
+            ),
+        )
+        assertEquals(
+            PolicyCheckPlanRefusal.BUNDLE_NOT_BASE64.render(),
+            reasonOf(
+                PolicyCheckInput(b64.encodeToString("{}".toByteArray()), "JSON", "!!!"),
+            ),
+        )
+        assertEquals(
+            PolicyCheckPlanRefusal.UNKNOWN_RESOURCE_FORMAT.render(),
+            reasonOf(
+                PolicyCheckInput(b64.encodeToString("{}".toByteArray()), "XML", b64.encodeToString(bundle)),
+            ),
+        )
+        assertEquals(
+            PolicyCheckPlanRefusal.BUNDLE_REFUSED.render(),
+            reasonOf(
+                PolicyCheckInput(
+                    b64.encodeToString("{}".toByteArray()),
+                    "JSON",
+                    b64.encodeToString(ByteArray(4)),
+                ),
+            ),
+        )
+    }
+
+    /** The decode refusal also arrives as a name, prefixed to the decoder code. */
+    @Test
+    fun `decode refusal reaches the wire as the enum name plus the decoder code`() {
+        val out = PolicyCheckStepDefinition.evaluate(
+            inputForResource("""{"spec":{"replicas":2}}""", packedBundle(replicasRule()))
+                .copy(resourceBase64 = Base64.getEncoder().encodeToString("{not json".toByteArray())),
+        )
+        assertEquals(PolicyCheckVerdict.REFUSED, out.verdict)
+        assertTrue(
+            out.refusalReason!!.startsWith(PolicyCheckPlanRefusal.RESOURCE_DECODE_REFUSED.render()),
+            "expected the enum name as the wire prefix, got '${out.refusalReason}'",
+        )
     }
 }
