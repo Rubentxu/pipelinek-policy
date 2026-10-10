@@ -108,10 +108,22 @@ class HelpAndExitCodesTest {
 
     @Test
     fun `exit codes and machine help match the CLI specification`() {
+        // These MUST be literals, not the constants themselves. Every
+        // behavioural assertion in the suite compares a command's exit code to
+        // ExitCodes.X, so moving a constant moves both sides of that
+        // comparison together and the behavioural tests stay green. The
+        // literal is the ONLY thing that pins the wire value, so it is the only
+        // thing a mutation of a constant can be caught by.
+        //
+        // Observed: L1/L2/L3 SURVIVED when 0/1/2/3 were pinned this way and
+        // 4/5 were not pinned at all. The matrix was half-anchored, which
+        // looked covered and was not.
         assertEquals(0, ExitCodes.OK)
         assertEquals(1, ExitCodes.USAGE)
         assertEquals(2, ExitCodes.VIOLATIONS)
         assertEquals(3, ExitCodes.EVALUATION_ERROR)
+        assertEquals(4, ExitCodes.ADMISSION_ERROR)
+        assertEquals(5, ExitCodes.COMPILER_ERROR)
 
         val help = run("--json-help").second
         assertTrue(help.contains("\"1\": \"usage or invocation error\""), help)
