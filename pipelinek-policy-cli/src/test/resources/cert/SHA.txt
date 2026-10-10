@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 83289c59c36133dd9b3edd116d704800b8716388
+certified-sha: 44a5d89c93a633f765f70b0a193f7a44b8bb0d89
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -31,4 +31,9 @@ baseline-suites: 42
 # first attempt at that test was symmetric and SURVIVED the C2 mutant).
 # Raised deliberately after a fresh `./gradle-jdk21.sh test --rerun-tasks`
 # pass reported 508 executed, 0 failures, 0 errors, 0 skipped.
-baseline-tests: 508
+# H1.1 moved baseline-tests 508 → 513 and certified-sha to 44a5d89c...: the five
+# new PolicyIrSeverityRoundTripTest tests are exactly what moved the tree. 4 of
+# them were observed RED before the fix (severity round-tripped to null, CRITICAL
+# and INFO encoded to identical bytes), and they stay because they are the only
+# thing standing between a CRITICAL rule and a report that understates it.
+baseline-tests: 513

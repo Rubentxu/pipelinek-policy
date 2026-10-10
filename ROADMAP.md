@@ -589,7 +589,7 @@ aceptarla, y `DONE` documental no acredita cumplimiento.
 
 | Línea | Estado medido | Evidencia en el árbol |
 |---|---|---|
-| H1.1 `severity` en PolicyIR | **DEFECTO VIVO** | `Rule.severity` existe (`PolicySet.kt`), pero `PolicyIrDocument` (`ir/PolicyIrDocument.kt:9-17`) declara `policySet/functions/parameters/shapes/sourceRefs/irVersion/languageVersion` y **ningún** campo de severidad. `grep severity` en `src/main/.../ir/` no devuelve nada. La severidad no sobrevive a `pack → verifyPacked → evaluate`. |
+| H1.1 `severity` en PolicyIR | **CERRADO (H1.1)** | El defecto era en el codec, no en `PolicyIrDocument`: el `Rule.severity` ya viajaba dentro del `PolicySet`, pero `CanonicalPolicyJsonWriter.policies()` emitía `code/expected/actual/params/supersession` y no `severity`, y el decoder no lo leía. Dos reglas que solo difieren en severidad codificaban a bytes idénticos. Fix en commit `e44a1ae`: el writer emite `severity` solo cuando está declarada (nunca por defecto, porque la ausencia es dato significante para `PolicyDiff`), y el decoder la lee como vocabulario cerrado rechazando nombres desconocidos con `IrRefusal.CorruptEncoding` en lugar de degradar a `null`. **RED observado antes del fix: 4 de 5 tests nuevos fallaban** (INFO volvía `null`, CRITICAL e INFO bytes idénticos, sin clave `severity` en el documento). GREEN con `--rerun-tasks`. Mutantes D1/D2 añadidos al gate: **9/9 muertos**. Ancla recalibrada a `44a5d89c...`, `baseline-tests` 508 → 513. |
 | H1.2 gobierno extremo a extremo | **PARCIAL** | `governance/` existe (`EnforcementInterpreter`, `PolicyCheckPlan`, `Layers`, `Waivers`). Falta verificar el servicio de aplicación puro compartido por CLI y plugin con `AuthorityRegistry` del host como entrada explícita. |
 | H1.3 semantic diff `corpus.first()` | **CERRADO (B4.5)** | `PolicyDiff.kt:163-169` emite `SEVERITY_CHANGED` condicionalmente; `:142` documenta que la emisión previa era *"permanently dead"*. No hay `corpus.first()` en la ruta de diff. |
 | H2.1 `RuleKey` en dataset planning | **DEFECTO VIVO** | `DatasetPlanner.kt:35` `val localRuleIds: List<String>`; consumido en `StreamingEvaluator.kt:73` y `:131` por `it.id in plan.localRuleIds`. Una regla LOCAL y otra AGGREGATE con el mismo texto colisionan. |
@@ -622,9 +622,9 @@ incorrecto:
 1. **B6.5 cerrado.** El gate de mutation testing está verde y falsificado en
    ambos sentidos. Era condición de todo lo demás: es la herramienta que
    certifica, y certificar sin ella es afirmar sin medir.
-2. **H1.1 antes que cualquier release.** Es un P0 semántico: una decisión
+2. **H1.1 cerrado.** Era un P0 semántico: una decisión
    `CRITICAL` que sobrevive en memoria y se pierde al serializar produce un
-   reporte que miente sobre su propia severidad.
+   reporte que miente sobre su propia severidad. Corregido en `e44a1ae`.
 3. **H2.1 antes que H3.** `localRuleIds` colisiona por identidad, y H3
    caracteriza el streaming sobre los mismos `StreamingEvaluator`; corregir la
    identidad primero evita certificar dos veces el mismo defecto.
