@@ -15,7 +15,16 @@ plugins {
     kotlin("plugin.serialization") version "2.4.10"
 }
 
-val sdkVersion = "0.47.0"
+// The ONE declared SDK version, overridable so the H4.4 compatibility matrix
+// can build the plugin against more than one SDK. It was a hardcoded literal,
+// which made the SDK axis of that matrix impossible to vary: the matrix could
+// only ever state one SDK version while claiming to describe several.
+//
+// The override is a Gradle property rather than an env var so the value that
+// was used is visible in the build invocation and in the receipt that runs it.
+// The default is unchanged, so a build that does not ask for a different SDK
+// resolves exactly what it resolved before.
+val sdkVersion: String = providers.gradleProperty("sdkVersion").getOrElse("0.47.0")
 
 // H1 release · the ONE declared version, propagated instead of repeated.
 //

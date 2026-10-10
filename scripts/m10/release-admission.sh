@@ -236,6 +236,24 @@ if command -v cosign >/dev/null 2>&1; then
 fi
 log "· provenance: $PROV_STATUS"
 
+# H4.4 state is READ, never asserted. The matrix report is the authority for
+# whether the compatibility matrix was measured; if it is absent or its verdict
+# is not PASS, the receipt must say that instead of repeating a claim that can
+# silently rot into a false statement.
+H44_REPORT="docs/history/H4_COMPATIBILITY_MATRIX.md"
+H44_LIMIT="A cell measures build+test only; it is not evidence of the plugin loading in a live PipelineK host on that SDK."
+H44_LINE="H4.4 compatibility matrix: \`NOT_MEASURED\` (no matrix report at $H44_REPORT)."
+if [ -f "$H44_REPORT" ]; then
+  H44_VERDICT=$(sed -n 's/^\*\*\(PASS\|FAIL\|PARTIAL\|NOT_MEASURED\)\(.*\)\*\*$/\1/p' "$H44_REPORT" | head -1)
+  if [ -z "$H44_VERDICT" ]; then
+    H44_LINE="H4.4 compatibility matrix: verdict unreadable in $H44_REPORT; treat as \`NOT_MEASURED\`."
+  elif [ "$H44_VERDICT" = "PASS" ]; then
+    H44_LINE="H4.4 compatibility matrix: PASS (see $H44_REPORT). $H44_LIMIT"
+  else
+    H44_LINE="H4.4 compatibility matrix: $H44_VERDICT (see $H44_REPORT)."
+  fi
+fi
+
 # ---------------------------------------------------------------- receipt
 {
   printf '# B6.10 · Release admission (local half)\n\n'
@@ -272,7 +290,7 @@ log "· provenance: $PROV_STATUS"
   printf '1. Human gate: annotated tag, push, GitHub Release.\n'
   printf '2. Signed provenance (`cosign attest-blob`) with network access.\n'
   printf '3. B6.8 replay hit/miss: `NOT_MEASURED`, decision lives outside this repo.\n'
-  printf '4. H4.4 compatibility matrix Policy x SDK x JDK: not built.\n'
+  printf '4. %s\n' "$H44_LINE"
 } > "$RECEIPT"
 
 log "· receipt: $RECEIPT"

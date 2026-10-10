@@ -164,7 +164,35 @@ DEPS="$(find ~/.gradle/caches/modules-2/files-2.1 -maxdepth 2 -mindepth 2 -type 
 # separate checkout. The 622 resolved coordinates above cannot see it, so the
 # receipt used to describe our own jars while saying nothing about the SDK they
 # were built against. Record the digests actually on disk.
-SDK_VERSION="$(sed -n 's/^val sdkVersion = "\(.*\)"/\1/p' pipelinek-policy-plugin/build.gradle.kts | head -1)"
+# The declared SDK version. `sdkVersion` became a Gradle property with an
+# unchanged default, so the old regex `val sdkVersion = "..."` silently matched
+# nothing and this receipt went out as "0 artifacts at version " with an EMPTY
+# version, which reads as if no SDK had been resolved at all. An empty string is
+# not an honest SDK version, so it is now rejected loudly rather than printed.
+#
+# -P on the command line wins, because that is what a build that overrides it uses.
+# Otherwise fall back to the property's default, so a plain run records the SDK it
+# actually built against.
+SDK_VERSION=""
+if [ -n "${SDK_VERSION_OVERRIDE:-}" ]; then
+  SDK_VERSION="$SDK_VERSION_OVERRIDE"
+else
+  # Both declared forms are accepted, because only the first is currently in the
+  # file and a matcher that handles one shape silently goes empty on the other:
+  #   val sdkVersion = "0.47.0"                                  (literal)
+  #   val sdkVersion = providers.gradleProperty(..).getOrElse(..) (property)
+  SDK_VERSION="$(sed -n \
+    -e 's/^val sdkVersion = "\([^"]*\)"$/\1/p' \
+    -e 's/^val sdkVersion.*getOrElse("\([^"]*\)").*$/\1/p' \
+    pipelinek-policy-plugin/build.gradle.kts | head -1)"
+fi
+if [ -z "$SDK_VERSION" ]; then
+  echo "FATAL: could not resolve the declared SDK version from" \
+    "pipelinek-policy-plugin/build.gradle.kts; refusing to emit a receipt with an" \
+    "empty SDK version. Set SDK_VERSION_OVERRIDE if the build was invoked with" \
+    "an override this script cannot see." >&2
+  exit 3
+fi
 SDK_GROUP_PATH="${SDK_GROUP_PATH:-$HOME/.m2/repository/dev/rubentxu/pipeline/v2}"
 SDK_DIGESTS=""
 if [ -n "$SDK_VERSION" ] && [ -d "$SDK_GROUP_PATH" ]; then
