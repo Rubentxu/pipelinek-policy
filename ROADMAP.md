@@ -603,8 +603,8 @@ aceptarla, y `DONE` documental no acredita cumplimiento.
 | H4.3 replay y memoización | **ABIERTO** | B6.8. Sin.Files de fingerprint efectivo ni hit/miss observados. |
 | H4.4 compatibilidad cruzada | **ABIERTO** | No existe matriz Policy × SDK × JDK. Versión actual declarada `0.2.0-M2` (`build.gradle.kts:16`), coherente con el destino `v0.3.0`. |
 | H5.1 certificación de fuentes | **PARCIAL** | `certified-sha` cubre `src/{main,test}/kotlin` del **módulo raíz** (84 ficheros). Un cambio en producción de un submódulo deja válida una certificación previa. |
-| H5.2 mutation testing | **CERRADO (B6.5), AMPLIABLE** | `scripts/m6/mutation-gate.sh` con **13** mutantes semánticos (A1–A3 `appliesWhen`/veredicto, B1 precisión `BigDecimal`, B2 claves duplicadas, C1 orden de mappings, C2 orden de sequences, D1/D2/D3 transporte de `severity`, E1 grant de host en supersesión, E2 subject match en waivers, E3 precedencia error sobre violación). Último run: **13 muertos, 0 sobrevividos, 0 inválidos**, restore verde. Falsificado en negativo dos veces (test mal dirigido → `SURVIVED` + exit 1; mutante que no compila → `INVALID` + exit 1). Guard añadido: aborta con exit 3 si el fichero a mutar tiene cambios sin commitear, porque su restore usa `git checkout --` y antes destruía el fix en curso. H5.2 del plan exige además admisión de bundles, Missing/Null, identidad de reglas, agregados, waivers/autoridad/shadow y códigos de salida CLI: **no medidos**. |
-| H5.3–H5.5 | **ABIERTO** | B6.6, B6.9, B6.10. |
+| H5.2 mutation testing | **CERRADO (B6.5), AMPLIABLE** | `scripts/m6/mutation-gate.sh` con **17** mutantes semánticos (A1–A3 `appliesWhen`/veredicto, B1 precisión `BigDecimal`, B2 claves duplicadas, C1 orden de mappings, C2 orden de sequences, D1/D2/D3 transporte de `severity`, E1 grant de host en supersesión, E2 subject match en waivers, E3 precedencia error sobre violación, F1 el plugin debe usar el servicio de gobierno compartido, G1–G3 los dos defectos de agregación de B6.6). Último run: **17 muertos, 0 sobrevividos, 0 inválidos**, restore verde. Falsificado en negativo dos veces (test mal dirigido → `SURVIVED` + exit 1; mutante que no compila → `INVALID` + exit 1). Guard añadido: aborta con exit 3 si el fichero a mutar tiene cambios sin commitear, porque su restore usa `git checkout --` y antes destruía el fix en curso. H5.2 del plan exige además admisión de bundles, Missing/Null, identidad de reglas, agregados, waivers/autoridad/shadow y códigos de salida CLI: **no medidos**. |
+| H5.3–H5.5 | **ABIERTO** | B6.9, B6.10. B6.6 cerrado el 2026-10-10. |
 
 **Medición transversal:** `check` incluye `detekt` (verificado con
 `./gradlew check --dry-run`). Todos los documentos referenciados por el plan
@@ -653,7 +653,7 @@ adaptadores.
 
 | Hito | Release | Estado | Bloqueante medido |
 |---|---|---|---|
-| H1 | `v0.3.0-alpha.1` | **BLOQUEADO POR B6.10** | H1.1, H1.2 y H1.3 están CERRADOS y verificados: el motor de gobierno (`LayerComposer`, `WaiverMatcher`, `AuthorityRegistry`) se ejecuta desde ambas entradas reales mediante `PolicyGovernance.decide()`, con el bypass del plugin falsificado por un mutante que muere por aserción. Las seis UAT-H1 y la AAT-H1 están `PASS` y **reverificadas** (6/6 + 12/12 + 2/2). Gates desde árbol limpio: `check` verde, `certify.sh` 550/0, mutación 14 matados / 0 sobrevividos / 0 inválidos. **Pero la fila decía antes `LISTO PARA RELEASE` y era FALSA:** razonaba por las UAT de H1, que no son la puerta de admisión. B6.10 sigue **ABIERTO** y su propio texto dice *"No promover release production-ready con defectos críticos abiertos"*. B6.6, B6.7, B6.8 y B6.9 también están abiertos. No se ha hecho push, ni tag, ni release. La versión ya está en `0.3.0-alpha.1` en las cuatro fuentes, con dos derivadas del root y la tercera fijada por test. |
+| H1 | `v0.3.0-alpha.1` | **BLOQUEADO POR B6.10** | H1.1, H1.2 y H1.3 están CERRADOS y verificados: el motor de gobierno (`LayerComposer`, `WaiverMatcher`, `AuthorityRegistry`) se ejecuta desde ambas entradas reales mediante `PolicyGovernance.decide()`, con el bypass del plugin falsificado por un mutante que muere por aserción. Las seis UAT-H1 y la AAT-H1 están `PASS` y **reverificadas** (6/6 + 12/12 + 2/2). Gates desde árbol limpio: `check` verde, `certify.sh` 550/0, mutación 14 matados / 0 sobrevividos / 0 inválidos (medición de H1; la suite ha crecido después a 563/0 y 17/0/0 al cerrar B6.6). **Pero la fila decía antes `LISTO PARA RELEASE` y era FALSA:** razonaba por las UAT de H1, que no son la puerta de admisión. B6.10 sigue **ABIERTO** y su propio texto dice *"No promover release production-ready con defectos críticos abiertos"*. B6.6 está **CERRADO** desde el 2026-10-10; B6.7, B6.8 y B6.9 siguen abiertos. No se ha hecho push, ni tag, ni release. La versión ya está en `0.3.0-alpha.1` en las cuatro fuentes, con dos derivadas del root y la tercera fijada por test. |
 | H2 | `v0.3.0-alpha.2` | ABIERTO | H2.1 colisión de identidad viva |
 | H3 | `v0.3.0-beta.1` | ABIERTO | H3.1 materializa en `ByteArray` |
 | H4 | `v0.3.0-rc.1` | ABIERTO | Procedencia del SDK sin fijar |
@@ -733,7 +733,34 @@ Descomposición:
 - B6.6 Certificación adversaria: límites de bundle, reglas, profundidad,
   selectores, entrada y agregación; ausencia de I/O oculto y de ejecución
   arbitraria. Distinguir ejecutar con éxito un caso grande de **rechazar
-  correctamente** los que exceden el límite.
+  correctamente** los que exceden el límite. **CERRADO (2026-10-10).** Dos
+  defectos reales encontrados al ejecutarlo, ambos por RED → fix → GREEN →
+  mutante:
+  1. **Predicados de colección booleanos plegados como suma.**
+     `StreamingEvaluator.accumulatorFor` enviaba todo agregado que no fuese
+     `COUNT` a `Accumulator.Sum`, que solo admite `NumberValue`. Un `ANY`
+     sobre una columna de texto se rechazaba en **cada** fila y se reportaba
+     como `Error(type_mismatch cap 10000000 reached after 0)`, con
+     `rowsRefused == rowsConsumed`. El primer arreglo intentado (devolver
+     `null` para los ops booleanos) se **rechazó**: eliminaba la regla del
+     informe, y `null !is Error` es vacuamente cierto, así que la regla
+     desaparecía en silencio. Resuelto con `Accumulator.BooleanFold`, cuya
+     semántica replica `Evaluator.evalCollectionPredicate`. 8 tests.
+  2. **`ROW_BUDGET` seguía lanzando.** B5.6 migró `COUNT`, `SUM` y
+     `TYPE_MISMATCH` a `Outcome.Refused` tipados y dejó `ROW_BUDGET` como
+     `BudgetExceededException`, de modo que una ejecución sobre presupuesto
+     descartaba todos los veredictos ya calculados. Ahora detiene, registra
+     `Cap.ROW_BUDGET` y devuelve un informe legible cuyas reglas truncadas se
+     marcan incompletas (ley 12). 5 tests. `StreamCmd` era el único consumidor
+     de las excepciones eliminadas; su contrato observable no cambia.
+
+  La lección que queda registrada: un mutante que **sobrevive** es evidencia de
+  que el test es débil, no de que el código es correcto. Dos tests de este
+  bloque sobrevivieron a su mutante antes de quedar bien, uno porque
+  `assertIs<RuleOutcome>` también lo satisface un `Passed`, y otro porque la
+  regla usada era un `Expression.Literal` que fallaba por sí mismo.
+  Gates: `certify.sh` 563/0, mutación **17 matados / 0 sobrevividos / 0
+  inválidos** (los tres nuevos G1–G3 se miden a mano antes de entrar al gate).
 - B6.7 Plugin instalado con procedencia. Nada de instalaciones antiguas ni
   mavenLocal sin identificar. Registrar SHA/digest de las dependencias de
   integración. Recorrer el Step instalado, no solo `evaluate()`.
