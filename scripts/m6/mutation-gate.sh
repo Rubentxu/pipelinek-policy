@@ -92,6 +92,7 @@ module_for_pattern() {
     *PolicyDiffTest*)      echo ":" ;;
     *PolicyIrSeverityRoundTripTest*) echo ":" ;;
     *H1SeverityBundlePathTest*) echo ":" ;;
+    *H1GovernanceBusinessCaseTest*) echo ":" ;;
     *)                     echo ":" ;;
   esac
 }
@@ -384,6 +385,52 @@ mutate \
             ?: null' \
   'D2 an unknown severity must be refused, never silently degraded to absent' \
   '*PolicyIrSeverityRoundTripTest*'
+
+# ---------------------------------------------------------------------------
+# Group E — H1 governance business cases.
+#
+# E1–E3 attack the three UAT rows that were PARTIAL/NOT_MEASURED before
+# `H1GovernanceBusinessCaseTest`. Each mutates the production decision that the
+# corresponding business case exists to hold, and each must die by assertion.
+#
+# E1 drops the `authorizes` check, so ANY non-blank authority string weakens an
+# upper-layer rule again — the exact B4-T2 defect ADR-0014 was written for. The
+# business case that dies is the ungranted weakening; the granted one must still
+# compose, which is why both directions are in that test class.
+#
+# E2 drops `subjectMatches`, so `firstOrNull` answers with the first waiver whose
+# POLICY AND RULE match. With one waiver per call nothing distinguishes that from
+# correct routing, which is precisely why every pre-existing waiver case passed a
+# single waiver. The death proves UAT-H1-04 is sensitive to the subject path.
+#
+# E3 reorders the precedence so a violation outranks an error, which under SHADOW
+# degrades "could not evaluate" into "would have passed". `EnforcementInterpreterTest`
+# asserts the hand-built tally matrix, but no test derived a tally from a REAL
+# report before, so nothing was watching that step.
+# ---------------------------------------------------------------------------
+
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/policy/Layers.kt \
+  'if (authorities.authorizes(supersession.authority, layer)) {' \
+  'if (true) {' \
+  'E1 supersession must be covered by a host grant, never self-asserted' \
+  '*H1GovernanceBusinessCaseTest*'
+
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/policy/Waivers.kt \
+  'subjectMatches(w, subjectResolver) &&' \
+  'true &&' \
+  'E2 waiver routing must select on the subject path, not on list order' \
+  '*H1GovernanceBusinessCaseTest*'
+
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/governance/EnforcementInterpreter.kt \
+  'tally.errors > 0 -> GovernanceVerdict.ERRORED
+        tally.violations > 0 -> GovernanceVerdict.VIOLATED' \
+  'tally.violations > 0 -> GovernanceVerdict.VIOLATED
+        tally.errors > 0 -> GovernanceVerdict.ERRORED' \
+  'E3 an evaluation error must outrank a violation under SHADOW' \
+  '*H1GovernanceBusinessCaseTest*'
 
 echo
 echo "== B6.5 mutation summary"
