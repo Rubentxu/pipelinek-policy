@@ -149,35 +149,32 @@ class PolicyCheckDslEnforcementTest {
     /**
      * Decode the `policy.check` input the façade registered on the scope.
      *
-     * `registryStep` records a `StepSpec` in the scope's private `steps` list;
-     * the encoded input rides on the spec's own fields, so this walks the
-     * spec's declared fields rather than assuming a fixed field name.
+     * B4-T5: this helper was rewritten twice for good reasons, and both
+     * rewrites REMOVED reflection rather than adding to it.
+     *
+     * 1. It originally read the scope's PRIVATE `steps` field. `StageScope`
+     *    exposes `steps()` as public SDK API, so the field walk was never
+     *    justified.
+     * 2. It then walked `StepSpec` fields looking for a string containing
+     *    `resourceBase64`. `registryStep` stores its payload on the typed
+     *    `StepSpec.RegistryStepSpec`, so a SHAPE match was guessing where a
+     *    TYPE was available.
+     *
+     * What survives is a real call into public SDK API and a real data class.
+     * If the SDK changes, this fails with a named message rather than silently
+     * matching some other field.
      */
     private fun registeredPolicyCheckInput(
         scope: dev.rubentxu.pipeline.v2.dsl.StageScope,
     ): PolicyCheckInput {
-        val core = scope.javaClass.superclass.superclass // StageScopeTopSteps -> StageScopeCore
-        val field = core.declaredFields.first { it.name == "steps" }
-        field.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val steps = field.get(scope) as List<Any>
-        assertTrue(steps.isNotEmpty(), "the façade must register a step on the scope")
-
-        val encoded = steps.asSequence()
-            .mapNotNull { step ->
-                generateSequence(step.javaClass) { it.superclass }
-                    .flatMap { type -> type.declaredFields.asSequence() }
-                    .map { it.apply { isAccessible = true } }
-                    .firstOrNull { candidate ->
-                        runCatching { candidate.get(step) as? String }.getOrNull()
-                            ?.contains("resourceBase64") == true
-                    }
-            }
-            .map { runCatching { it.get(steps.first()) as? String }.getOrNull() }
-            .firstOrNull { it != null }
-            ?: error("no encoded policy.check input found among ${steps.size} step(s)")
-
-        return PolicyCheckInputCodec.decode(EncodedStepValue(encoded!!))
+        val registered = scope.steps().filterIsInstance<dev.rubentxu.pipeline.v2.dsl.StepSpec.RegistryStepSpec>()
+        assertTrue(
+            registered.isNotEmpty(),
+            "the façade must register a registry step; the SDK shape changed, " +
+                "re-point this test. Registered: ${scope.steps()}",
+        )
+        val step = registered.single()
+        return PolicyCheckInputCodec.decode(step.encodedInput)
     }
 
     private fun tempFile(content: String, suffix: String): String {
