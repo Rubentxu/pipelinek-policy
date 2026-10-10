@@ -20,4 +20,4 @@ baseline-suites: 42
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
 # predated most of the suite, so it could never detect a module falling out of
 # the check. certify.sh refuses to certify when fewer than this many run.
-baseline-tests: 498
+baseline-tests: 500
