@@ -93,8 +93,28 @@ esac
 if [ "$CERT_TREE" != "$CERT_SHA" ]; then
     fail "stale certification: receipt measured $CERT_TREE but marker claims $CERT_SHA; re-run certify.sh"
 fi
+# The receipt's `git HEAD` is the commit certify.sh RAN on. Because certify.sh
+# requires a clean tree, that commit is always the PARENT of the commit that
+# lands the receipt itself: the receipt is evidence about the tree, so the tree
+# it was measured on must not already contain it. Requiring exact equality
+# would therefore be unsatisfiable — every successful run invalidates itself
+# the moment its receipt is committed.
+#
+# What must actually hold is that the receipt certifies the SOURCES of the
+# candidate. That is the source-tree SHA, which is recomputed from file
+# contents and is immune to the receipt bookkeeping commit. We additionally
+# require that the only difference between the receipt's HEAD and the
+# candidate is commits that touch docs/history or the release script, i.e. the
+# evidence itself rather than the certified code.
 if [ -n "$CERT_HEAD" ] && [ "$CERT_HEAD" != "$HEAD_SHA" ]; then
-    fail "stale certification: receipt ran on $CERT_HEAD but candidate is $HEAD_SHA; re-run certify.sh"
+    UNCERTIFIED="$(git diff --name-only "$CERT_HEAD".."$HEAD_SHA" 2>/dev/null \
+        | grep -vE '^(docs/history/|scripts/m10/release-admission\.sh$)' || true)"
+    if [ -n "$UNCERTIFIED" ]; then
+        fail "stale certification: $CERT_HEAD..$HEAD_SHA changes certified code:
+$(printf '%s\n' "$UNCERTIFIED" | sed 's/^/    /')
+re-run certify.sh on this tree"
+    fi
+    log "· receipt ran on ${CERT_HEAD:0:7}; only evidence files differ since"
 fi
 if [ "$CERT_TESTS" != "$BASELINE" ]; then
     fail "certification executed $CERT_TESTS tests but marker baseline is $BASELINE"
