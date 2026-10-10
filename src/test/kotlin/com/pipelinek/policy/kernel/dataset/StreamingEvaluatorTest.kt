@@ -1,6 +1,7 @@
 package com.pipelinek.policy.kernel.dataset
 
 import com.pipelinek.policy.kernel.evaluator.Evaluator
+import com.pipelinek.policy.kernel.evaluator.RuleKey
 import com.pipelinek.policy.kernel.expression.Expression
 import com.pipelinek.policy.kernel.path.DocumentPath
 import com.pipelinek.policy.kernel.policy.Policy
@@ -98,7 +99,7 @@ class StreamingEvaluatorTest {
         val wholeVerdict =
             wholeReport.results[com.pipelinek.policy.kernel.evaluator.RuleId.of("s", "p", "must-ok")]!!
 
-        val streamed = report.results["must-ok"]!!
+        val streamed = report.results[RuleKey.of("s", "p", "must-ok")]!!
         when (wholeVerdict) {
             is RuleEvaluation.Violated -> {
                 val v = streamed as StreamingEvaluator.RuleOutcome.Violated
@@ -118,8 +119,8 @@ class StreamingEvaluatorTest {
         )
         val plan = DatasetPlanner.plan(set, datasets) as DatasetPlan
         val report = StreamingEvaluator.evaluate(set, plan, rowsOf("ok", "ok", "ok"))
-        assertEquals(StreamingEvaluator.RuleOutcome.Passed, report.results["r1"])
-        assertEquals(StreamingEvaluator.RuleOutcome.Passed, report.results["r2"])
+        assertEquals(StreamingEvaluator.RuleOutcome.Passed, report.results[RuleKey.of("s", "p", "r1")])
+        assertEquals(StreamingEvaluator.RuleOutcome.Passed, report.results[RuleKey.of("s", "p", "r2")])
         assertEquals(3L, report.metrics.rowsConsumed)
         assertTrue(report.metrics.rowsWithinBudget)
     }
@@ -129,7 +130,7 @@ class StreamingEvaluatorTest {
         val set = PolicySet("s", listOf(Policy("p", listOf(countRule("count-all")))))
         val plan = DatasetPlanner.plan(set, datasets) as DatasetPlan
         val report = StreamingEvaluator.evaluate(set, plan, rowsOf("a", "b", "c", "d"))
-        val agg = report.results["count-all"]!! as StreamingEvaluator.RuleOutcome.Aggregate
+        val agg = report.results[RuleKey.of("s", "p", "count-all")]!! as StreamingEvaluator.RuleOutcome.Aggregate
         assertEquals(ValueNode.NumberValue(4L), agg.value)
         assertEquals(1, report.metrics.accumulatorsUsed)
     }

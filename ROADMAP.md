@@ -531,10 +531,11 @@ solo cuenta Done con implementación **y** falsificación observable.
 | B4.4 shadow | **DONE** | `PolicyCheckDsl.kt:49` `enforcement` con default `ENFORCED` |
 | B4.5 diff | **DONE** | `PolicySet.kt:83` `severity: RuleSeverity?`; `PolicyDiff.kt:143` emisión condicional |
 | B4.6 plan | **DONE** | `governance/PolicyCheckPlan.kt` calculado por el kernel |
-| B4.7 ingress | **ABIERTO** | `ResourceIngressLimits` **no existe**; `readBytes()` en 5 comandos CLI |
+| B4.7 ingress | **PARCIAL** | `ResourceIngressLimits` **existe** (`aea22a0`: 64 MiB por defecto, techo de 256 MiB, guarda O(1) antes de Base64, vocabulario de rechazo cerrado y tipado) pero **no está cableado**: `PolicyCheckPlanRequest`/`PolicyCheckPlan` no lo aceptan y los hosts CLI/plugin no usan la ruta tipada. `readBytes()` sigue sin cota en 5 comandos CLI |
 | B4.8 replay | **DONE** | `Waivers.kt:70` instante inyectado, scopes aplicados |
 | B4.9 UAT | **ABIERTO** | `uat-external-distribution.sh` no fija 20 recursos ni verifica por comportamiento |
-| B5.5 identidad | **ABIERTO** | `rule.id` como clave en 8 sitios de `kernel/dataset` |
+| B5.3 UTF-8 | **DONE** | `7fff04a`: los 5 bucles byte→char de `CsvRowSource`, `CsvResourceDecoder` y `JsonlSource` acumulan bytes y decodifican UTF-8 una vez. Falsificado revirtiendo el fix (RED 9/9 CSV, 6/7 JSONL; el único verde fue el control ASCII) |
+| B5.5 identidad | **DONE** | `StreamingReport.results` pasa a `Map<RuleKey, RuleOutcome>` y `rulesByKey` preserva el `policyId` al aplanar. Dos policies con el mismo `ruleId` ya no comparten tally, acumulador ni entrada de reporte. `DatasetPlan.localRuleIds` sigue como `List<String>`: follow-up, no degradado |
 | B5.6 acumuladores | **ABIERTO** | `Accumulator.kt:81` `BudgetExceededException` sigue lanzando |
 | B6.1–B6.10 | **ABIERTO** | `cert/SHA.txt` estático; gates que no pueden fallar |
 

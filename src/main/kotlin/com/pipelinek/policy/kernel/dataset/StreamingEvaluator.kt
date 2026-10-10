@@ -34,7 +34,11 @@ object StreamingEvaluator {
 
     data class StreamingReport(
         val policySetId: String,
-        val results: Map<String, RuleOutcome>,
+        // B5.5: keyed by RuleKey (policySetId, policyId, ruleId), matching the
+        // whole-document evaluator. A `ruleId` is unique only WITHIN its policy,
+        // so keying by the bare string silently dropped one of two same-named
+        // rules from the report with no refusal.
+        val results: Map<RuleKey, RuleOutcome>,
         val metrics: BudgetMetrics,
     )
 
@@ -63,11 +67,14 @@ object StreamingEvaluator {
         rows: RowSupplier,
     ): StreamingReport {
         require(plan.policySetId == set.id) { "plan ${plan.policySetId} does not match set ${set.id}" }
-        val localRules = set.policies.flatMap { it.rules }.filter { it.id in plan.localRuleIds }
-        val aggregateRules = set.policies.flatMap { it.rules }.filter { it.id in plan.aggregateRuleIds }
-        val localOnlySet = localOnly(set, plan, aggregateRules)
-        val tallies = localRules.associate { it.id to LocalTally() }
-        val accumulators = aggregateRules.associate { it.id to accumulatorFor(it, plan) }
+        // B5.5: flatten WHILE KEEPING the owning policy id. The previous
+        // `flatMap { it.rules }` threw the policy identity away, so every later
+        // map keyed by bare rule.id could not tell two same-named rules apart.
+        val localRules = rulesByKey(set).filter { (_, _, rule) -> rule.id in plan.localRuleIds }
+        val aggregateRules = rulesByKey(set).filter { (_, _, rule) -> rule.id in plan.aggregateRuleIds }
+        val localOnlySet = localOnly(set, plan, aggregateRules.map { it.third })
+        val tallies = localRules.associate { (key, _, _) -> key to LocalTally() }
+        val accumulators = aggregateRules.associate { (key, _, rule) -> key to accumulatorFor(rule, plan) }
 
         var consumed = 0L
         var refused = 0L
@@ -85,6 +92,16 @@ object StreamingEvaluator {
 
         return report(set, localRules, aggregateRules, tallies, accumulators, consumed, refused, plan)
     }
+
+    /**
+     * B5.5: every rule in [set] paired with its owning policy id and its full
+     * [RuleKey]. Callers filter on the triple so identity survives the whole
+     * evaluation.
+     */
+    private fun rulesByKey(set: PolicySet): List<Triple<RuleKey, String, Rule>> =
+        set.policies.flatMap { policy ->
+            policy.rules.map { rule -> Triple(RuleKey.of(set.id, policy.id, rule.id), policy.id, rule) }
+        }
 
     /** Per-row kernel only sees LOCAL rules: DatasetRef is refused there by contract. */
     private fun localOnly(
@@ -106,7 +123,7 @@ object StreamingEvaluator {
     private fun evaluateLocalRow(
         localOnlySet: PolicySet,
         row: ValueNode,
-        tallies: Map<String, LocalTally>,
+        tallies: Map<RuleKey, LocalTally>,
         rowNumber: Long,
     ) {
         val perRow = Evaluator.evaluate(localOnlySet, row)
@@ -114,8 +131,9 @@ object StreamingEvaluator {
         // lookup carries its own policy identity.
         localOnlySet.policies.forEach { policy ->
             policy.rules.forEach { rule ->
-                val outcome = perRow.results[RuleKey.of(localOnlySet.id, policy.id, rule.id)]
-                val tally = tallies[rule.id] ?: return@forEach
+                val key = RuleKey.of(localOnlySet.id, policy.id, rule.id)
+                val outcome = perRow.results[key]
+                val tally = tallies[key] ?: return@forEach
                 when (outcome) {
                     is RuleEvaluation.Violated -> {
                         tally.violations++
@@ -130,12 +148,12 @@ object StreamingEvaluator {
 
     /** Fold one row into each aggregate accumulator; returns 1 if it refused. */
     private fun foldAggregates(
-        aggregateRules: List<Rule>,
-        accumulators: Map<String, Accumulator>,
+        aggregateRules: List<Triple<RuleKey, String, Rule>>,
+        accumulators: Map<RuleKey, Accumulator>,
         row: ValueNode,
     ): Int {
-        aggregateRules.forEach { rule ->
-            val acc = accumulators[rule.id] ?: return@forEach
+        aggregateRules.forEach { (key, _, _) ->
+            val acc = accumulators[key] ?: return@forEach
             acc.accept(row)
         }
         return 0
@@ -143,27 +161,27 @@ object StreamingEvaluator {
 
     private fun report(
         set: PolicySet,
-        localRules: List<Rule>,
-        aggregateRules: List<Rule>,
-        tallies: Map<String, LocalTally>,
-        accumulators: Map<String, Accumulator>,
+        localRules: List<Triple<RuleKey, String, Rule>>,
+        aggregateRules: List<Triple<RuleKey, String, Rule>>,
+        tallies: Map<RuleKey, LocalTally>,
+        accumulators: Map<RuleKey, Accumulator>,
         consumed: Long,
         refused: Long,
         plan: DatasetPlan,
     ): StreamingReport {
-        val results = LinkedHashMap<String, RuleOutcome>()
-        localRules.forEach { rule ->
-            val t = tallies[rule.id]!!
-            results[rule.id] = when {
+        val results = LinkedHashMap<RuleKey, RuleOutcome>()
+        localRules.forEach { (key, _, rule) ->
+            val t = tallies[key]!!
+            results[key] = when {
                 t.firstErrorRow >= 0 -> RuleOutcome.Error("typed refusal at row ${t.firstErrorRow}")
                 t.violations > 0 -> RuleOutcome.Violated(t.violations, t.lastViolationRow)
                 else -> RuleOutcome.Passed
             }
         }
-        aggregateRules.forEach { rule ->
-            val acc = accumulators[rule.id]
-            results[rule.id] = acc?.let { RuleOutcome.Aggregate(it.result()) }
-                ?: RuleOutcome.Error("no accumulator for rule ${rule.id}")
+        aggregateRules.forEach { (key, _, rule) ->
+            val acc = accumulators[key]
+            results[key] = acc?.let { RuleOutcome.Aggregate(it.result()) }
+                ?: RuleOutcome.Error("no accumulator for rule ${key.ruleId}")
         }
         return StreamingReport(
             policySetId = set.id,
