@@ -161,6 +161,38 @@ class WaiversTest {
         // equality path: a pinned waiver for another resource never waives.
     }
 
+    /**
+     * The other half of the fingerprint contract, and the half with no coverage
+     * until now: every existing case pins a NON-null fingerprint, so the
+     * `violationFingerprint == null` branch of `fingerprintMatches` was never
+     * asserted by anything.
+     *
+     * An unpinned waiver is the documented escape hatch — it waives by subject
+     * and rule alone. That is a real and intended power, so it is worth pinning
+     * explicitly rather than leaving an unexamined branch in the one predicate
+     * that decides whether a violation is silenced.
+     */
+    @Test
+    fun `03f-unpinned waiver waives by subject alone without pinning a fingerprint`() {
+        val report = reportFor("payments")
+
+        val app = WaiverMatcher.apply(report, listOf(waiverFor("payments", fingerprint = null)), now, resolver)
+
+        assertEquals(1, app.waivedCount)
+        assertIs<ViolationWaiverOutcome.Waived>(app.outcomes.single())
+    }
+
+    /** An unpinned waiver must still be bound by its subject, not blanket-waive. */
+    @Test
+    fun `03f-unpinned waiver for another subject does not waive`() {
+        val report = reportFor("payments")
+
+        val app = WaiverMatcher.apply(report, listOf(waiverFor("other-team", fingerprint = null)), now, resolver)
+
+        assertEquals(0, app.waivedCount)
+        assertIs<ViolationWaiverOutcome.Active>(app.outcomes.single())
+    }
+
     // --- B4-T3: waiver scoping ---
 
     /** A report carrying an evaluation ERROR rather than a violation. */

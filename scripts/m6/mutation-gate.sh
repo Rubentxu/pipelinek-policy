@@ -86,6 +86,10 @@ module_for_pattern() {
   case "$1" in
     *PropertyFuzzTest*)    echo ":pipelinek-policy-cli:" ;;
     *JsonEscapingTest*)   echo ":pipelinek-policy-cli:" ;;
+    *PolicyBundleAdmissionFortressTest*) echo ":" ;;
+    *SelectorTest*)        echo ":" ;;
+    *HelpAndExitCodesTest*) echo ":pipelinek-policy-cli:" ;;
+    *WaiversTest*)         echo ":" ;;
     *MutationGateTest*)    echo ":" ;;
     *RuleEvaluationTest*)  echo ":" ;;
     *CanonicalDigestTest*) echo ":" ;;
@@ -547,6 +551,73 @@ mutate \
   '                else -> if (false) {' \
   'H2 C0 control characters must not be emitted raw into a JSON string' \
   '*JsonEscapingTest*'
+
+# I1: architectural law 8 -- Missing MUST stay distinct from Null. A mapping
+# lookup that answers Missing for a key that IS present but holds null collapses
+# the two, so an explicit `"gate": null` reads as an absent field. Every
+# optional-field rule in the language changes meaning, silently.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/selector/Selector.kt \
+  '        return reached?.let { finalize(it) } ?: Result.Missing(path)' \
+  '        return if (reached is ValueNode.Null) Result.Missing(path) else reached?.let { finalize(it) } ?: Result.Missing(path)' \
+  'I1 a present null must resolve to Present, never to Missing' \
+  '*SelectorTest*'
+
+# I2: the same law from the other side. Treating TypeMismatch as Present hands
+# the evaluator a node of the WRONG type instead of raising, so the rule is
+# evaluated against a value that was never admissible. SelectorTest asserts the
+# mismatch is reported rather than silently substituted.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/selector/Selector.kt \
+  '            Result.TypeMismatch(path, expected, node.type)' \
+  '            Result.Present(node)' \
+  'I2 a type mismatch must be reported, never silently passed through' \
+  '*SelectorTest*'
+
+# J1: bundle admission. Dropping the magic check admits ANY file whose bytes
+# happen to parse as a pack, which is the entire admission boundary: a truncated
+# or foreign bundle must be refused with the admission exit code, not evaluated.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/bundle/BundleVerifier.kt \
+  '            bytes.size >= MAGIC_SIZE && bytes.copyOfRange(0, MAGIC_SIZE).contentEquals(MAGIC.toByteArray()),' \
+  '            bytes.size >= MAGIC_SIZE,' \
+  'J1 a bundle with the wrong magic must be refused' \
+  '*PolicyBundleAdmissionFortressTest*'
+
+# J2: the CLI exit-code contract frozen by ADR-0012. VIOLATIONS and
+# EVALUATION_ERROR are different codes, and an agent branches on the difference:
+# 2 means "the resource broke the policy", 3 means "I could not tell". Collapsing
+# them makes a failure to evaluate indistinguishable from a clean refusal to
+# evaluate, which is the silent weakening the disjoint matrix exists to stop.
+mutate \
+  pipelinek-policy-cli/src/main/kotlin/com/pipelinek/policy/cli/ExitCodes.kt \
+  '    const val VIOLATIONS: Int = 2' \
+  '    const val VIOLATIONS: Int = 3' \
+  'J2 the violation exit code must stay distinct from the evaluation error' \
+  '*HelpAndExitCodesTest*'
+
+# K1: rule identity, the other half. `fingerprintMatches` treats a waiver with
+# no pinned fingerprint as matching anything. That is the documented escape
+# hatch, and the pre-existing suite never asserted it: every case pinned a
+# non-null fingerprint, so this whole branch was unexamined. Inverting it turns
+# "waive by subject and rule" into "an unpinned waiver never waives", which
+# would silently re-break the legacy-waiver path.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/policy/Waivers.kt \
+  '        w.violationFingerprint == null || w.violationFingerprint == fingerprint' \
+  '        w.violationFingerprint != null && w.violationFingerprint == fingerprint' \
+  'K1 an unpinned waiver must still waive by subject and rule' \
+  '*WaiversTest*'
+
+# K2: the same predicate from the pinned side. Dropping the equality check lets
+# a waiver pinned to ONE violation silence every violation of that rule, so a
+# narrow, fingerprinted waiver becomes a blanket suppression.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/policy/Waivers.kt \
+  '        w.violationFingerprint == null || w.violationFingerprint == fingerprint' \
+  '        true' \
+  'K2 a fingerprint-pinned waiver must not waive every violation' \
+  '*WaiversTest*'
 
 echo
 echo "== B6.6 mutation summary"
