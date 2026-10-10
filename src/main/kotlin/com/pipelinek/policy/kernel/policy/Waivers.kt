@@ -113,19 +113,40 @@ enum class WaiverDiagnosticCause {
 sealed interface ViolationWaiverOutcome {
     val fingerprint: ViolationFingerprint
 
+    /**
+     * H1.2 / B4-T10: the identity of the rule this violation came from.
+     *
+     * It travels WITH the outcome instead of being recomputed by each reader.
+     * Recomputing it requires rebuilding the five digest components, and three
+     * readers were already doing that independently: `WaiverMatcher` here,
+     * `PolicyDiff.indexWaivedByRule`, and the governance verdict counter. A
+     * reader that builds the digest from a slightly different component set
+     * reports a waiver as not applied while the policy engine reports it as
+     * applied — a silent identity drift that no test would catch, because each
+     * reader was self-consistent.
+     *
+     * [fingerprint] remains the exact violation identity (location included), so
+     * two locations of the same rule stay distinguishable; this is the coarser
+     * rule identity used to group outcomes.
+     */
+    val ruleKey: RuleKey
+
     data class Waived(
         override val fingerprint: ViolationFingerprint,
         val waiverId: String,
+        override val ruleKey: RuleKey,
     ) : ViolationWaiverOutcome
 
     data class Active(
         override val fingerprint: ViolationFingerprint,
+        override val ruleKey: RuleKey,
     ) : ViolationWaiverOutcome
 
     data class ActiveWithDiagnostic(
         override val fingerprint: ViolationFingerprint,
         val waiverId: String,
         val cause: WaiverDiagnosticCause,
+        override val ruleKey: RuleKey,
     ) : ViolationWaiverOutcome
 }
 
@@ -135,6 +156,21 @@ data class WaiverApplication(
 ) {
     val waivedCount: Int get() = outcomes.count { it is ViolationWaiverOutcome.Waived }
     val activeCount: Int get() = outcomes.count { it !is ViolationWaiverOutcome.Waived }
+
+    /**
+     * Rules with at least one violation silenced by a waiver.
+     *
+     * Read by grouping the outcomes the matcher already produced, so no reader
+     * has to reconstruct a fingerprint to answer "was this rule waived?".
+     */
+    val waivedRuleKeys: Set<RuleKey> = outcomes
+        .filterIsInstance<ViolationWaiverOutcome.Waived>()
+        .mapTo(mutableSetOf()) { it.ruleKey }
+
+    /** Violations NOT silenced by a waiver: the ones that still count toward a verdict. */
+    val activeFingerprints: Set<ViolationFingerprint> = outcomes
+        .filter { it !is ViolationWaiverOutcome.Waived }
+        .mapTo(mutableSetOf()) { it.fingerprint }
 }
 
 /**
@@ -191,20 +227,22 @@ object WaiverMatcher {
                     }
                 }
                 when {
-                    candidate == null -> ViolationWaiverOutcome.Active(fingerprint)
+                    candidate == null -> ViolationWaiverOutcome.Active(fingerprint, ruleId)
                     now > candidate.notAfter ->
                         ViolationWaiverOutcome.ActiveWithDiagnostic(
                             fingerprint,
                             candidate.id,
                             WaiverDiagnosticCause.WaiverExpired,
+                            ruleId,
                         )
                     now < candidate.notBefore ->
                         ViolationWaiverOutcome.ActiveWithDiagnostic(
                             fingerprint,
                             candidate.id,
                             WaiverDiagnosticCause.WaiverNotYetValid,
+                            ruleId,
                         )
-                    else -> ViolationWaiverOutcome.Waived(fingerprint, candidate.id)
+                    else -> ViolationWaiverOutcome.Waived(fingerprint, candidate.id, ruleId)
                 }
             }
         return WaiverApplication(outcomes)

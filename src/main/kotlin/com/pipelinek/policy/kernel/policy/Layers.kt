@@ -223,6 +223,28 @@ object LayerComposer {
                 }
             }
         }
+        // H1.2: a SINGLE layer is not a composition.
+        //
+        // Naming it "layered:s" told a reader that layers had been merged when
+        // nothing was merged, and it changed the id, which is part of the report
+        // digest: the same bundle over the same resource produced two different
+        // digests depending only on whether the governance path had been wired.
+        // That is not cosmetic — a digest is an identity, and a governance
+        // refactor must not restate it.
+        //
+        // The same applies to ORDER. Rules are placed into a `LinkedHashMap` keyed
+        // by (policyId, ruleId), so they emerge in INSERTION order, and
+        // `sortedBy { layer.ordinal }` reorders equal layers by nothing at all.
+        // The author wrote one policy in one order and evaluation happened in
+        // another. With a single layer the author's own set is returned untouched,
+        // because composition is not permitted to shuffle a set it did not merge.
+        //
+        // With more than one layer the merged id and authority order are kept:
+        // they say something true about where the rules came from.
+        if (ordered.size == 1) {
+            val only = ordered.single().policySet
+            return ComposeResult.Composed(only)
+        }
         val id = ordered.joinToString("+") { it.policySet.id }
         return ComposeResult.Composed(
             PolicySet(id = "layered:$id", policies = policies.values.toList()),

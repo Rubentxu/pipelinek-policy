@@ -219,21 +219,12 @@ data class PolicyDiff(
         }
 
         private fun indexWaivedByRule(report: PolicyReport, application: WaiverApplication): Map<RuleKey, Boolean> {
-            val waivedFingerprints = application.outcomes
-                .filterIsInstance<ViolationWaiverOutcome.Waived>()
-                .map { it.fingerprint.value }
-                .toSet()
-            return report.results.mapValues { (ruleId, evaluation) ->
-                evaluation.violations.any { v ->
-                    ViolationFingerprint.of(
-                        ruleId.policySetId,
-                        ruleId.policyId,
-                        ruleId.ruleId,
-                        v.location.toString(),
-                        report.resourceFingerprint,
-                    ).value in waivedFingerprints
-                }
-            }
+            // H1.2: this used to rebuild each violation fingerprint from the
+            // report and compare against the waived ones. The matcher already
+            // resolved every (rule, violation) pair, so asking it is both
+            // cheaper and immune to a reader rebuilding the digest differently.
+            val waived = application.waivedRuleKeys
+            return report.results.mapValues { (ruleId, _) -> ruleId in waived }
         }
     }
 }
