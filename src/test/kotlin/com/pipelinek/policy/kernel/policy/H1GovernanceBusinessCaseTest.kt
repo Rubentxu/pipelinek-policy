@@ -489,19 +489,35 @@ class H1GovernanceBusinessCaseTest {
 
     /**
      * UAT-H1-06: documents A and B are the SAME policy, and C adds one more
-     * rule than either. The diff `A → C` must name that rule and only that rule.
+     * rule than either. The diff `B → C` must name that rule and only that rule,
+     * while `A → B` must be empty.
      *
      * The gap this closes is not "PolicyDiff works": `PolicyDiffTest` covers A/B
-     * thoroughly. It is that every existing case has exactly TWO documents. A
-     * diff implementation that leaked state across calls, or that compared the
-     * union of all documents ever seen, would answer every A/B case correctly and
-     * still misreport a third document. Two-sided diffs cannot detect that class
-     * of bug; a third document can.
+     * thoroughly. It is that every existing case has exactly TWO documents, so
+     * the suite has never had to say what a third one contributes.
      *
      * The middle document is what makes this a real check: comparing A straight
      * to C would also produce exactly one NEW_VIOLATION, and would pass an
      * implementation that simply ignored B. Going A → B → C in sequence and
      * asserting B is empty is what pins that B contributed nothing.
+     *
+     * SCOPE, corrected after measurement — this KDoc previously claimed the
+     * test detects a diff that leaks state across calls. It does not. Three
+     * mutants were built and run against this suite and `PolicyDiffTest`:
+     *
+     *  - `union → intersect` over the RuleKey sets: this suite dies, but so do
+     *    three of the six `PolicyDiffTest` cases. A/B already covers it, so the
+     *    third document adds nothing.
+     *  - a cross-call state leak, `of()` accumulating entries in a mutable
+     *    companion field: four `PolicyDiffTest` cases die and this suite stays
+     *    GREEN. This is the exact bug the old KDoc claimed to hold, and it is
+     *    not held here.
+     *  - `union.sortedBy { it.value }`: SURVIVES both suites. Nothing observes
+     *    iteration order over the union. Not a delivery defect, because
+     *    `diffDigest` sorts entries canonically before hashing.
+     *
+     * So what this class actually contributes is the A/B/C identity case and
+     * order-independence below, not third-document detection on its own.
      */
     @Test
     fun `UAT-H1-06 three documents detect a difference exclusive to the third`() {

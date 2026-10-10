@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 0d4d904e285dbf5c63a3edbc7b4c4dad90b5cc1f
+certified-sha: 404c980cfd336d806af6588b2d2668e8a5c424d2
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -74,4 +74,11 @@ baseline-suites: 42
 # GovernanceJourneyParityTest failed 3 of 5. The pre-existing parity suite was
 # blind to the bypass it was supposed to exclude, which is the reason this
 # milestone needed new tests rather than more assertions.
+# Anchor moved to 404c980c... with baseline-tests unchanged at 543: the only
+# change since 0d4d904e... is the UAT-H1-06 KDoc in
+# H1GovernanceBusinessCaseTest, corrected because it claimed cross-call
+# state-leak coverage that three measured mutants showed it does not have.
+# A documentation change still moves the anchor, because the anchor's whole
+# job is to detect ANY drift in the certified sources, not only behavioural
+# drift. Test count is unchanged, so baseline-tests deliberately did not move.
 baseline-tests: 543
