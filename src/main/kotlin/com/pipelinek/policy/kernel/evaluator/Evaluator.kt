@@ -14,6 +14,7 @@ import java.math.BigDecimal
 import java.math.BigInteger
 import com.pipelinek.policy.kernel.policy.Rule
 import com.pipelinek.policy.kernel.policy.RuleEvaluation
+import com.pipelinek.policy.kernel.policy.RuleSeverity
 import com.pipelinek.policy.kernel.policy.ViolationCode
 import com.pipelinek.policy.kernel.selector.Selector
 import com.pipelinek.policy.kernel.value.ValueDigest
@@ -56,6 +57,17 @@ object Evaluator {
             policySetId = set.id,
             resourceFingerprint = canonicalFingerprint(tree),
             results = results,
+            // B4.5 / ADR-0015: the report is the only thing `PolicyDiff` gets,
+            // so the author-declared severity has to travel with it. A missing
+            // entry means "that rule declared no severity", NOT "INFO".
+            severities = set.policies
+                .flatMap { policy -> policy.rules.map { rule -> policy.id to rule } }
+                .mapNotNull { (policyId, rule) ->
+                    rule.severity?.let { severity ->
+                        RuleKey.of(set.id, policyId, rule.id) to severity
+                    }
+                }
+                .toMap(),
         )
     }
 
@@ -715,6 +727,15 @@ data class PolicyReport(
     val policySetId: String,
     val resourceFingerprint: String,
     val results: Map<RuleKey, RuleEvaluation>,
+    /**
+     * B4.5 / ADR-0015 — author-declared severity per rule.
+     *
+     * Only rules that DECLARED a severity appear here. An absent key is a
+     * meaningful "not declared" and must never be read as a default, least of
+     * all as `INFO`: `PolicyDiff` emits `SEVERITY_CHANGED` only when both
+     * sides carry a value and they differ.
+     */
+    val severities: Map<RuleKey, RuleSeverity> = emptyMap(),
 ) {
 
     /** Combined hex-encoded SHA-256 over length-prefixed identity, corpus, and sorted results. */

@@ -49,6 +49,26 @@ data class Policy(
     val rules: List<Rule>,
 )
 
+/**
+ * B4.5 / ADR-0015 — author-declared severity.
+ *
+ * Normative set, taken verbatim from EVALUATION_SEMANTICS.md §8 and
+ * KOTLIN_POLICY_DSL.md §9 (`severity = Severity.ERROR`): INFO | WARNING |
+ * ERROR | CRITICAL. This enum is that list and nothing else.
+ *
+ * It is deliberately NOT derived from a [PolicyViolation.code], NOT inferred
+ * from the rule message, and NOT defaulted from the enforcement mode. A rule
+ * with no declared severity has `severity == null` and the absence is
+ * meaningful: `PolicyDiff` will not report a severity change unless BOTH
+ * sides declare one.
+ */
+enum class RuleSeverity {
+    INFO,
+    WARNING,
+    ERROR,
+    CRITICAL,
+}
+
 data class Rule(
     val id: String,
     val message: String,
@@ -59,6 +79,8 @@ data class Rule(
     val actual: String? = null,
     val params: Map<String, ParamValue> = emptyMap(),
     val supersession: Supersession? = null,
+    /** Author-declared severity. Absent (null) means "not declared", not "INFO". */
+    val severity: RuleSeverity? = null,
 )
 
 /**

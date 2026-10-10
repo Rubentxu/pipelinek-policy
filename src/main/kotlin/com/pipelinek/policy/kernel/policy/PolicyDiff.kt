@@ -135,7 +135,14 @@ data class PolicyDiff(
             val ruleIds = a.results.keys.union(b.results.keys)
             val entries = ruleIds.flatMap { ruleId ->
                 val (sa, sb) = states(ruleId)
-                if (sa == sb) return@flatMap emptyList()
+                // B4.5 / ADR-0015 — a severity change is a change even when
+                // the verdict is untouched, so it has to be decided BEFORE the
+                // `sa == sb` short-circuit below. Otherwise the one and only
+                // thing this slice exists to report is swallowed by the state
+                // comparison and `SEVERITY_CHANGED` stays permanently dead.
+                val severityChanged = severityOf(a, ruleId) != null &&
+                    severityOf(a, ruleId) != severityOf(b, ruleId)
+                if (sa == sb && !severityChanged) return@flatMap emptyList()
                 val fp = fingerprintOf(if (a.results.containsKey(ruleId)) a else b, ruleId)
                 val category = when {
                     sa is RuleState.Errored && sb !is RuleState.Errored -> DiffCategory.ERROR_RESOLVED
@@ -149,19 +156,34 @@ data class PolicyDiff(
                         DiffCategory.RESOLVED_VIOLATION
                     }
                     sa !is RuleState.Violated && sb is RuleState.Violated -> DiffCategory.NEW_VIOLATION
-                    else -> when {
-                        sa is RuleState.NotApplicable && sb !is RuleState.NotApplicable ->
-                            DiffCategory.APPLICABILITY_CHANGED
-                        sa !is RuleState.NotApplicable && sb is RuleState.NotApplicable ->
-                            DiffCategory.APPLICABILITY_CHANGED
-                        else -> DiffCategory.SEVERITY_CHANGED
-                    }
+                    sa is RuleState.NotApplicable && sb !is RuleState.NotApplicable ->
+                        DiffCategory.APPLICABILITY_CHANGED
+                    sa !is RuleState.NotApplicable && sb is RuleState.NotApplicable ->
+                        DiffCategory.APPLICABILITY_CHANGED
+                    // B4.5 / ADR-0015 — SEVERITY_CHANGED is no longer a blind
+                    // `else`. It is emitted ONLY when both bundles declare a
+                    // severity for this rule and the two differ. A one-sided
+                    // declaration is not a severity change: the author of the
+                    // side that stayed silent never claimed one, so there is
+                    // no second value to have changed from.
+                    severityChanged -> DiffCategory.SEVERITY_CHANGED
+                    // Every state transition is now named above. Anything
+                    // reaching here is genuinely not a change and must produce
+                    // NO entry rather than be filed under an invented category.
+                    else -> return@flatMap emptyList()
                 }
                 val expansion = category == DiffCategory.RESOLVED_VIOLATION
                 listOf(DiffEntry(category, ruleId, fp.value, expansion))
             }
             return PolicyDiff(entries)
         }
+
+        /**
+         * B4.5 / ADR-0015 — declared severity for a rule, or null when the
+         * bundle's author declared none. Never defaults to a value.
+         */
+        private fun severityOf(report: PolicyReport, ruleId: RuleKey): RuleSeverity? =
+            report.severities[ruleId]
 
         private sealed interface RuleState {
             data object Violated : RuleState
