@@ -201,4 +201,25 @@ baseline-suites: 42
 #     COUNT rule is Violated for a reason unrelated to counting.
 # Falsified by two new mutants, M1 (drop the match test) and M2 (invert it, so
 # non-matching rows consume the cap). Both die by assertion.
-baseline-tests: 588
+# H3.1 raised baseline-tests 588 -> 596 with certified-sha UNCHANGED at
+# 2d43f5bb: the six new tests are in policy-decoders-csv, outside the
+# root-module scope this anchor hashes, so the tree digest did not move for the
+# same reason the H4.1 escaping fix did not move it. The floor still rises
+# because it counts executed tests across all modules, and 596 is a floor rather
+# than a claim about what this change added -- the fresh certify.sh run reported
+# 605 executed.
+#   - CsvRowStreamSourceTest (5): the streamed cursor must pull a bounded prefix
+#     rather than the whole document, must still yield every row in order and
+#     consume the stream exactly, must decode a cell LARGER than the read window,
+#     must handle quoted cells and multibyte text across a two-byte-per-pull
+#     dribble stream, and must agree row-for-row with the materializing cursor.
+#   - CsvRowSourceTest.06b was REPLACED, not kept. The old version allocated its
+#     payload before taking its Runtime baseline, so the document was never
+#     inside the measured window: a source retaining all 150_000 rows measured
+#     -531040 bytes against a 64 MiB ceiling and passed. Measured, not inferred.
+#     The replacement counts bytes pulled off the stream, which is deterministic.
+# Falsified by N1 (open materializes via readBytes) and N2 (the window never
+# slides and silently truncates the document). N2 survived its first version
+# because every fixture fit inside one 8 KiB window, so the slide path never
+# ran; raising the fixture to 100_000 rows killed it.
+baseline-tests: 596
