@@ -631,7 +631,7 @@ mutate \
   '    const val ADMISSION_ERROR: Int = 4' \
   '    const val ADMISSION_ERROR: Int = 1' \
   'L1 an admission refusal must not be reported as a usage error' \
-  '*CompileBundleTestTest*'
+  '*HelpAndExitCodesTest*'
 
 # L2: COMPILER_ERROR. 5 is the only code that tells an author their policy
 # SOURCE is wrong, as opposed to their bundle or their resource. Collapsing it
@@ -652,7 +652,7 @@ mutate \
   '    const val OK: Int = 0' \
   '    const val OK: Int = 1' \
   'L3 success must never be reported as a usage error' \
-  '*CheckCmdTest*'
+  '*HelpAndExitCodesTest*'
 
 echo
 echo "== B6.6 mutation summary"
