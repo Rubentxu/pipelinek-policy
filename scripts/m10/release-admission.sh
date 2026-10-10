@@ -116,10 +116,16 @@ re-run certify.sh on this tree"
     fi
     log "· receipt ran on ${CERT_HEAD:0:7}; only evidence files differ since"
 fi
-if [ "$CERT_TESTS" != "$BASELINE" ]; then
-    fail "certification executed $CERT_TESTS tests but marker baseline is $BASELINE"
+# The baseline is a FLOOR, not an equality. certify.sh fails only when fewer
+# tests run than were certified, because a drop means a suite fell out of the
+# check; running MORE tests than the baseline is the normal consequence of
+# adding tests and moving the anchor deliberately in a later step. Requiring
+# equality here would reject every legitimate addition between anchor updates,
+# which is the same unsatisfiable-gate mistake as the HEAD comparison.
+if [ "$CERT_TESTS" -lt "$BASELINE" ]; then
+    fail "certification executed $CERT_TESTS tests but certifies $BASELINE; a suite fell out of the check"
 fi
-log "· certification: $CERT_TESTS tests, green, measured on this candidate"
+log "· certification: $CERT_TESTS tests, green (baseline floor $BASELINE)"
 
 # ---------------------------------------------------------------- collect artifacts
 ARTIFACTS=()
