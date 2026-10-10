@@ -1,5 +1,6 @@
 package com.pipelinek.policy.cli.commands
 
+import com.pipelinek.policy.cli.JsonString
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.CliArgs
@@ -190,6 +191,6 @@ object StreamCmd {
     }
 
     private fun msg(json: Boolean, kind: String, message: String): String =
-        if (json) "{\"kind\":\"$kind\",\"message\":\"${message.replace("\"", "\\\"")}\"}"
+        if (json) "{\"kind\":${JsonString.str(kind)},\"message\":${JsonString.str(message)}}"
         else "stream: $kind: $message"
 }

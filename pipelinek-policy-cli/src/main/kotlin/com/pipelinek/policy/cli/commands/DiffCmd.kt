@@ -1,5 +1,6 @@
 package com.pipelinek.policy.cli.commands
 
+import com.pipelinek.policy.cli.JsonString
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.bundle.IrRuntimeAdapter
 import com.pipelinek.policy.bundle.VerifiedBundle
@@ -69,13 +70,13 @@ object DiffCmd {
 
     internal fun diffJson(diff: PolicyDiff): String {
         val entries = diff.entries.joinToString(",\n") { e ->
-            "  {\"category\": \"${e.category.name}\", \"policySetId\": \"${e.policySetId}\", " +
-                "\"policyId\": \"${e.policyId}\", " +
-                "\"ruleId\": \"${e.ruleId}\", " +
-                "\"fingerprint\": \"${e.fingerprint}\", \"privilegeExpansion\": ${e.privilegeExpansion}}"
+            "  {\"category\": ${JsonString.str(e.category.name)}, \"policySetId\": ${JsonString.str(e.policySetId)}, " +
+                "\"policyId\": ${JsonString.str(e.policyId)}, " +
+                "\"ruleId\": ${JsonString.str(e.ruleId)}, " +
+                "\"fingerprint\": ${JsonString.str(e.fingerprint)}, \"privilegeExpansion\": ${e.privilegeExpansion}}"
         }
         return "{\n  \"summary\": {\"entries\": ${diff.entries.size}},\n" +
-            "  \"digest\": \"${diff.diffDigest}\",\n  \"entries\": [\n$entries\n  ]\n}"
+            "  \"digest\": ${JsonString.str(diff.diffDigest)},\n  \"entries\": [\n$entries\n  ]\n}"
     }
 
     private fun decodeOne(resource: String, out: (String) -> Unit): ResourceDocument? {

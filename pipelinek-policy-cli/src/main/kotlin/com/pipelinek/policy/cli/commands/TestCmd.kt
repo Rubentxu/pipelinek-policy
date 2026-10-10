@@ -1,5 +1,6 @@
 package com.pipelinek.policy.cli.commands
 
+import com.pipelinek.policy.cli.JsonString
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.bundle.IrRuntimeAdapter
 import com.pipelinek.policy.cli.BoundedRead
@@ -59,20 +60,20 @@ object TestCmd {
             val expectation = if (".allow." in fixture.name) "allow" else "deny"
             when (val result = evaluate(verified, fixture)) {
                 is FixtureEvaluation.Refused -> {
-                    out("{\"fixture\": \"${fixture.name}\", \"status\": \"refused\", " +
-                        "\"message\": \"${result.message}\"}")
+                    out("{\"fixture\": ${JsonString.str(fixture.name)}, \"status\": \"refused\", " +
+                        "\"message\": ${JsonString.str(result.message)}}")
                     exitCode = maxOf(exitCode, ExitCodes.ADMISSION_ERROR)
                 }
                 is FixtureEvaluation.Error -> {
-                    out("{\"fixture\": \"${fixture.name}\", \"status\": \"error\", " +
-                        "\"message\": \"${result.message}\"}")
+                    out("{\"fixture\": ${JsonString.str(fixture.name)}, \"status\": \"error\", " +
+                        "\"message\": ${JsonString.str(result.message)}}")
                     exitCode = maxOf(exitCode, ExitCodes.EVALUATION_ERROR)
                 }
                 is FixtureEvaluation.Evaluated -> {
                     val ok = if (expectation == "allow") result.violations == 0 else result.violations > 0
                     if (!ok) exitCode = maxOf(exitCode, ExitCodes.VIOLATIONS)
                     out(
-                        "{\"fixture\": \"${fixture.name}\", \"expectation\": \"$expectation\", " +
+                        "{\"fixture\": ${JsonString.str(fixture.name)}, \"expectation\": \"$expectation\", " +
                             "\"violations\": ${result.violations}, \"status\": \"${if (ok) "pass" else "FAIL"}\"}",
                     )
                 }

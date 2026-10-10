@@ -1,5 +1,6 @@
 package com.pipelinek.policy.cli.commands
 
+import com.pipelinek.policy.cli.JsonString
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.BoundedRead
@@ -27,7 +28,7 @@ object BundleCmd {
         for (path in targets) {
             val file = File(path)
             if (!file.isFile) {
-                out("{\"path\": \"$path\", \"verified\": false, \"reason\": \"not found\"}")
+                out("{\"path\": ${JsonString.str(path)}, \"verified\": false, \"reason\": \"not found\"}")
                 failed = true
                 continue
             }
@@ -44,7 +45,7 @@ object BundleCmd {
                         "\"policySetId\": \"${verified.bundle.document.policySet.id}\"}",
                 )
             } catch (e: Exception) {
-                out("{\"path\": \"$path\", \"verified\": false, \"reason\": \"${e.message}\"}")
+                out("{\"path\": ${JsonString.str(path)}, \"verified\": false, \"reason\": ${JsonString.str(e.message ?: "")}}")
                 failed = true
             }
         }

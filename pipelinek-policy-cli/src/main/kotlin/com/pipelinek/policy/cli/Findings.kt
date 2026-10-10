@@ -209,24 +209,12 @@ fun List<Finding>.dedup(): List<Finding> =
  */
 object FindingsEmitter {
 
-    private fun String.esc(): String = buildString(length) {
-        for (char in this@esc) {
-            when (char) {
-                '\\' -> append("\\\\")
-                '"' -> append("\\\"")
-                '\b' -> append("\\b")
-                '\u000C' -> append("\\f")
-                '\n' -> append("\\n")
-                '\r' -> append("\\r")
-                '\t' -> append("\\t")
-                else -> if (char.code < 0x20) {
-                    append("\\u").append(char.code.toString(16).padStart(4, '0'))
-                } else {
-                    append(char)
-                }
-            }
-        }
-    }
+    /**
+     * H4.1: the CLI has exactly one JSON escaper. This used to be a private
+     * copy; it now delegates to [JsonString] so the escape rules cannot
+     * drift between emitters.
+     */
+    private fun String.esc(): String = JsonString.escape(this)
 
     fun text(findings: List<Finding>): String = buildString {
         if (findings.isEmpty()) appendLine("no findings")

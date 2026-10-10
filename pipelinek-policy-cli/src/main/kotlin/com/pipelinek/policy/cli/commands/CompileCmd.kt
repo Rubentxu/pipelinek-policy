@@ -1,5 +1,6 @@
 package com.pipelinek.policy.cli.commands
 
+import com.pipelinek.policy.cli.JsonString
 import com.pipelinek.policy.bundle.PolicyBundle
 import com.pipelinek.policy.cli.BoundedRead
 import com.pipelinek.policy.cli.CliArgs
@@ -44,7 +45,7 @@ object CompileCmd {
         File(dst).writeBytes(bytes)
         val digest = java.security.MessageDigest.getInstance("SHA-256")
             .digest(bytes).joinToString("") { "%02x".format(it) }
-        out("{\"out\": \"$dst\", \"bundleSha256\": \"$digest\", \"bytes\": ${bytes.size}}")
+        out("{\"out\": ${JsonString.str(dst)}, \"bundleSha256\": \"$digest\", \"bytes\": ${bytes.size}}")
         return ExitCodes.OK
     }
 }

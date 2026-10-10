@@ -1,5 +1,6 @@
 package com.pipelinek.policy.cli.commands
 
+import com.pipelinek.policy.cli.JsonString
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.bundle.IrRuntimeAdapter
 import com.pipelinek.policy.cli.BoundedRead
@@ -86,16 +87,16 @@ object ExplainCmd {
         out(
             buildString {
                 appendLine("{")
-                appendLine("  \"policySetId\": \"${policy.id}\",")
-                appendLine("  \"ruleId\": \"${r.id}\",")
-                appendLine("  \"policyId\": \"${owningPolicy.id}\",")
-                appendLine("  \"owningPolicy\": \"${owningPolicy.id}\",")
-                appendLine("  \"state\": \"${state.lowercase()}\",")
+                appendLine("  \"policySetId\": ${JsonString.str(policy.id)},")
+                appendLine("  \"ruleId\": ${JsonString.str(r.id)},")
+                appendLine("  \"policyId\": ${JsonString.str(owningPolicy.id)},")
+                appendLine("  \"owningPolicy\": ${JsonString.str(owningPolicy.id)},")
+                appendLine("  \"state\": ${JsonString.str(state.lowercase())},")
                 appendLine("  \"expression\": ${renderExpression(r.expression)},")
                 r.appliesWhen?.let { aw ->
                     appendLine("  \"appliesWhen\": ${renderExpression(aw)},")
                 }
-                appendLine("  \"violations\": [${violations.joinToString(",") { "\"$it\"" }}]")
+                appendLine("  \"violations\": [${violations.joinToString(",") { JsonString.str(it) }}]")
                 append("}")
             },
         )
@@ -105,21 +106,21 @@ object ExplainCmd {
     /** Structural rendering of the expression tree (hand JSON, no deps). */
     private fun renderExpression(e: Expression): String = when (e) {
         is Expression.Literal ->
-            "{\"kind\": \"literal\", \"value\": \"${e.value}\"}"
+            "{\"kind\": \"literal\", \"value\": ${JsonString.str(e.value.toString())}}"
         is Expression.FieldRef ->
-            "{\"kind\": \"fieldRef\", \"path\": \"${e.path}\", " +
+            "{\"kind\": \"fieldRef\", \"path\": ${JsonString.str(e.path.toString())}, " +
                 "\"optional\": ${e.optional}}"
         is Expression.Comparison ->
-            "{\"kind\": \"comparison\", \"op\": \"${e.op}\", " +
+            "{\"kind\": \"comparison\", \"op\": ${JsonString.str(e.op.name)}, " +
                 "\"left\": ${renderExpression(e.left)}, \"right\": ${renderExpression(e.right)}}"
         is Expression.Reference ->
-            "{\"kind\": \"reference\", \"name\": \"${e.name}\"}"
+            "{\"kind\": \"reference\", \"name\": ${JsonString.str(e.name)}}"
         is Expression.DatasetRef ->
-            "{\"kind\": \"datasetRef\", \"name\": \"${e.name}\"}"
+            "{\"kind\": \"datasetRef\", \"name\": ${JsonString.str(e.name)}}"
         is Expression.Not ->
             "{\"kind\": \"not\", \"body\": ${renderExpression(e.body)}}"
         is Expression.CollectionPredicate ->
-            "{\"kind\": \"collectionPredicate\", \"op\": \"${e.op}\", \"predicate\": \"${e.predicate}\", " +
+            "{\"kind\": \"collectionPredicate\", \"op\": ${JsonString.str(e.op.name)}, \"predicate\": ${JsonString.str(e.predicate.toString())}, " +
                 "\"source\": ${renderExpression(e.source)}}"
     }
 

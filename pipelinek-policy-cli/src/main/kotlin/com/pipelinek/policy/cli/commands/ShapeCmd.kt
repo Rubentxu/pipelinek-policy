@@ -1,5 +1,6 @@
 package com.pipelinek.policy.cli.commands
 
+import com.pipelinek.policy.cli.JsonString
 import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.BoundedRead
@@ -37,7 +38,7 @@ object ShapeCmd {
         val withParams = rules.count { it.params.isNotEmpty() }
         out(
             "{\n" +
-                "  \"policySetId\": \"${doc.policySet.id}\",\n" +
+                "  \"policySetId\": ${JsonString.str(doc.policySet.id)},\n" +
                 "  \"policies\": ${policies.size},\n" +
                 "  \"rules\": ${rules.size},\n" +
                 "  \"rulesWithParams\": $withParams,\n" +

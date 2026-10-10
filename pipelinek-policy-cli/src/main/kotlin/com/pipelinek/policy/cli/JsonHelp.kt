@@ -7,13 +7,13 @@ package com.pipelinek.policy.cli
  */
 object JsonHelp {
 
-    private fun String.jsonEscape(): String =
-        replace("\\", "\\\\").replace("\"", "\\\"")
+    /** H4.1: one escaper for the whole CLI; this used to escape only `\\` and `"`. */
+    private fun String.jsonEscape(): String = JsonString.escape(this)
 
     fun rootJson(): String {
         val cmds = CommandRegistry.commands.joinToString(",\n") { c ->
             "    {\"name\": \"${c.name}\", \"description\": \"${c.description.jsonEscape()}\", " +
-                "\"flags\": [${c.flags.joinToString(",") { "\"$it\"" }}]}"
+                "\"flags\": [${c.flags.joinToString(",") { JsonString.str(it) }}]}"
         }
         return "{\n" +
             "  \"binary\": \"pipelinek-policy\",\n" +
@@ -32,7 +32,7 @@ object JsonHelp {
         "{\n" +
             "  \"command\": \"${spec.name}\",\n" +
             "  \"description\": \"${spec.description.jsonEscape()}\",\n" +
-            "  \"flags\": [${spec.flags.joinToString(",") { "\"$it\"" }}],\n" +
+            "  \"flags\": [${spec.flags.joinToString(",") { JsonString.str(it) }}],\n" +
             "  \"exit_codes\": {\"0\": \"success or permit\", " +
             "\"1\": \"usage or invocation error\", " +
             "\"2\": \"policy violation\", " +
