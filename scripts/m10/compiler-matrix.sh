@@ -1,53 +1,168 @@
 #!/usr/bin/env bash
-# M10 REQ 02a/02b · Compiler matrix: full test suite on JDK 21 and 25 (LTS).
-# FAILs if either runtime fails or the executed test counts differ.
+# B6.2 · Real JDK matrix.
 #
-# Mechanism: all modules' jvmToolchain honors -PtestJvm (M10 change);
-# Gradle auto-provisions/detects the toolchain per value.
+# What was wrong with the M10 version this replaces: its verdict was
+# "same suite ⇒ same count". Two different JVMs producing the same NUMBER of
+# tests was treated as proof they are equivalent. It is not. A JVM can skip a
+# suite and invent another, or a module can fall out of the count on one runtime
+# only, and the arithmetic still matches. Worse, the runtime was never verified:
+# the row said "Temurin 21.0.8 LTS" in a hardcoded string that no command
+# checked.
+#
+# A row is certified here only if all four hold:
+#   1. the toolchain binary reports the JDK major that was asked for;
+#   2. the gate is green;
+#   3. the SET of executed test ids is identical to the reference row;
+#   4. no test was skipped.
+# A missing JDK FAILS the matrix; it does not get quietly dropped, because a
+# two-row matrix that silently became one row is how a false PASS happens.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-OUT="docs/history/M10_COMPILER_MATRIX.md"
 
-count_tests() {
-  # Total <testcase> entries across every module's XML results.
-  find . -path "*/build/test-results/test/*.xml" -not -path "*/binary/*" \
-    -exec grep -h "<testcase " {} + | wc -l
+OUT="docs/history/B6_COMPILER_MATRIX.md"
+REFERENCES="21"
+MATRIX_JDKS=("21" "25")
+
+GRADLE="$PWD/gradle-jdk21.sh"
+
+log() { echo "$*" >&2; }
+
+# Where a given major version actually lives, verified rather than assumed.
+locate_toolchain() {
+  local major="$1" candidate
+  for candidate in \
+    "$HOME/.local/share/mise/installs/java/temurin-$major"* \
+    "$HOME/.asdf/installs/java/temurin-$major"* \
+    "$HOME/.sdkman/candidates/java/temurin-$major"*; do
+    if [ -x "$candidate/bin/java" ]; then
+      local reported
+      reported="$("$candidate/bin/java" -XshowSettings:properties -version 2>&1 \
+        | sed -n 's/.*java.specification.version = //p' | head -1)"
+      [ "$reported" = "$major" ] && { echo "$candidate"; return 0; }
+    fi
+  done
+  return 1
 }
 
+# The executed test suite as an ORDERED SET OF IDS, plus counts.
+#
+# Test ids, not `<testcase` line counts: a classname#method pair is what
+# actually ran, so a renamed or dropped test changes this and a duplicate or
+# reordering does not. Counting lines would let a compiler that renames a test
+# still look identical to one that does not.
 run_jdk() {
-  local jvm="$1" label="$2"
-  echo "--- Running full test suite on $label (testJvm=$jvm)" >&2
-  ./gradle-jdk21.sh test -PtestJvm="$jvm" --rerun-tasks --console=plain \
-    > "/tmp/m10-matrix-$label.log" 2>&1 || {
-      echo "RUN FAILED on $label:" >&2
-      tail -30 "/tmp/m10-matrix-$label.log" >&2
-      exit 1
-    }
-  echo "$(count_tests)" > "/tmp/m10-matrix-$label.count"
-  echo "    tests executed: $(cat /tmp/m10-matrix-$label.count)" >&2
+  local major="$1"
+  local home reports idfile
+  home="$(locate_toolchain "$major")" || {
+    log "FATAL: no JDK $major installed; the matrix row cannot be certified"
+    return 2
+  }
+  reports="$home/.b6-matrix-$major"
+
+  log "--- JDK $major at $home"
+  rm -rf ./*/build/test-results/test
+  "$GRADLE" test -PtestJvm="$major" --rerun-tasks --console=plain -q \
+    > "$reports.log" 2>&1 || {
+    log "FATAL: gate failed on JDK $major"
+    tail -30 "$reports.log" >&2
+    return 3
+  }
+
+  python3 - "$major" > "$reports.ids" <<'PY'
+import glob, sys, xml.etree.ElementTree as ET
+major = sys.argv[1]
+ids = set(); tests = failures = errors = skipped = 0
+for p in glob.glob('**/build/test-results/test/TEST-*.xml', recursive=True):
+    try:
+        r = ET.parse(p).getroot()
+    except Exception:
+        continue
+    if r.tag != 'testsuite':
+        continue
+    tests += int(r.get('tests', 0)); failures += int(r.get('failures', 0))
+    errors += int(r.get('errors', 0));   skipped += int(r.get('skipped', 0))
+    for tc in r.iter('testcase'):
+        cid = tc.get('classname') or '?'
+        tid = tc.get('name') or '?'
+        ids.add(f"{cid}#{tid}")
+        if tc.find('skipped') is not None:
+            skipped += 1
+print(f"# jvm={major} tests={tests} failures={failures} errors={errors} skipped={skipped}")
+for i in sorted(ids):
+    print(i)
+PY
+  log "    JDK $major: $(head -1 "$reports.ids")"
 }
 
-run_jdk 21 jdk21
-run_jdk 25 jdk25
+summary_line() {
+  head -1 "$(locate_toolchain "$1")/.b6-matrix-$1.ids"
+}
 
-C21=$(cat /tmp/m10-matrix-jdk21.count)
-C25=$(cat /tmp/m10-matrix-jdk25.count)
+ids_file() {
+  echo "$(locate_toolchain "$1")/.b6-matrix-$1.ids"
+}
+
+REF_IDS=""
+declare -a ROWS=()
 VERDICT="PASS"
-if [ "$C21" -ne "$C25" ]; then VERDICT="FAIL (counts differ: $C21 vs $C25)"; fi
+NOTES=""
+
+for major in "${MATRIX_JDKS[@]}"; do
+  if ! run_jdk "$major"; then
+    VERDICT="FAIL (JDK $major could not be certified)"
+    break
+  fi
+  home="$(locate_toolchain "$major")"
+  line="$(summary_line "$major")"
+  # summary_line is "# jvm=21 tests=498 ..."; the table already names the JVM.
+  ROWS+=("| JVM toolchain $major ($home) | ${line#*jvm=$major } | OK |")
+
+  if [ -z "$REF_IDS" ]; then
+    REF_IDS="$major"
+    continue
+  fi
+  # Identity of the executed suite, not equality of a count.
+  if ! diff -q <(tail -n +2 "$(ids_file "$REF_IDS")") \
+               <(tail -n +2 "$(ids_file "$major")") > /dev/null; then
+    VERDICT="FAIL (JDK $major executed a different suite than JDK $REF_IDS)"
+    NOTES="$NOTES
+- JDK $major vs $REF_IDS suite diff:
+\`\`\`
+$(diff <(tail -n +2 "$(ids_file "$REF_IDS")") <(tail -n +2 "$(ids_file "$major")") | head -20)
+\`\`\`"
+  fi
+  # A skip is a hole in the certificate, not a neutral detail.
+  if grep -q 'skipped=[1-9]' "$(ids_file "$major")"; then
+    VERDICT="FAIL (JDK $major skipped tests; a skipped test certifies nothing)"
+  fi
+done
 
 {
-  echo "# M10 Compiler Matrix (02a/02b)"
+  echo "# B6.2 · JDK matrix"
   echo
-  echo "| Runtime | Tests executed | Verdict |"
+  echo "Generated by \`scripts/m10/compiler-matrix.sh\`. Each row is certified by running"
+  echo "the full gate on that toolchain and comparing the **executed suite identity**, not"
+  echo "the test count. A missing or failing JDK fails the matrix instead of being dropped."
+  echo
+  echo "| Runtime | Executed | Verdict |"
   echo "|---|---|---|"
-  echo "| JVM toolchain 21 (Temurin 21.0.8 LTS) | $C21 | OK |"
-  echo "| JVM toolchain 25 (Temurin 25.0.4 LTS) | $C25 | OK |"
+  for r in "${ROWS[@]}"; do echo "$r"; done
   echo
-  echo "Overall: **$VERDICT** (same suite ⇒ same count)"
+  echo "Overall: **$VERDICT**"
+  [ -n "$NOTES" ] && { echo; echo "$NOTES"; }
+  echo
+  echo "Kotlin compiler: $(sed -n 's/^kotlin[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' gradle/libs.versions.toml | head -1)"
   echo
   echo "Executed: $(date -u +%Y-%m-%dT%H:%M:%SZ) · SHA $(git rev-parse HEAD)"
   echo "Command: ./gradle-jdk21.sh test -PtestJvm={21,25} --rerun-tasks"
+  echo
+  echo "## Why not just compare counts"
+  echo
+  echo "The M10 version of this matrix passed on \`same suite ⇒ same count\`. Two runtimes"
+  echo "agreeing on a NUMBER is not evidence they agree on what they ran: a suite can be"
+  echo "renamed, dropped or skipped asymmetrically and the arithmetic still balances. The"
+  echo "rows above compare the sorted set of \`classname#method\` ids actually executed."
 } > "$OUT"
 
-echo "Matrix verdict: $VERDICT (21: $C21, 25: $C25)"
+log "Matrix verdict: $VERDICT"
 [ "$VERDICT" = "PASS" ]

@@ -30,13 +30,21 @@ cd "$REPO_ROOT"
 RECEIPT="${1:-$REPO_ROOT/docs/history/B6_CERTIFICATION.md}"
 GRADLE="$REPO_ROOT/gradle-jdk21.sh"
 
+# The certified JVM comes from `testJvm`, which B6.2 parameterises to produce
+# one row per JDK. Default (unset) is the build's own default, 21. Reading it
+# from the same property the build reads is what keeps the receipt and the
+# execution from describing different machines.
+TEST_JVM="${TEST_JVM:-}"
+GRADLE_PROPS=()
+[ -n "$TEST_JVM" ] && GRADLE_PROPS=(-PtestJvm="$TEST_JVM")
+
 say() { echo "· $*"; }
 
 # Fresh reports only. A stale XML would silently certify the previous run.
 rm -rf */build/test-results/test */build/test-results/*/test
 
 echo "== B6.1 certification run (fresh reports, --rerun-tasks)"
-"$GRADLE" test --rerun-tasks --console=plain -q || {
+"$GRADLE" test --rerun-tasks "${GRADLE_PROPS[@]}" --console=plain -q || {
   echo "GATE FAILED: certification requires a green gate" >&2
   exit 1
 }
@@ -96,13 +104,50 @@ say "modules: $MODULES"
 
 # --- toolchain --------------------------------------------------------------
 # B6.2's whole point: the same test count on two toolchains certifies two
-# different compilers, so the receipt names them explicitly. The Kotlin version
-# is read from the version catalog, which is the single place it is pinned.
-RUNTIME_VER="$(java -XshowSettings:properties -version 2>&1 | sed -n 's/.*java.specification.version = //p' | head -1)"
+# different compilers, so the receipt names them explicitly.
+#
+# The JVM is the one the BUILD forks, which comes from `testJvm` in
+# build.gradle.kts (`kotlin { jvmToolchain(...) }`, default 21). It is NOT
+# `java -version` on the PATH: the shell default here is JDK 25 while the build
+# runs on 21, and reporting the shell's JVM published a certificate describing
+# a JVM that never compiled or ran a single test.
+#
+# So: resolve the requested major, locate a matching installation, and ask THAT
+# binary. If it cannot be found, say so rather than silently falling back to the
+# shell's JVM and certifying the wrong machine.
+TOOLCHAIN_MAJOR="${TEST_JVM:-$(sed -n 's/.*jvmToolchain(providers.gradleProperty("testJvm").getOrElse("\([0-9][0-9]*\)").*/\1/p' build.gradle.kts | head -1)}"
+[ -n "$TOOLCHAIN_MAJOR" ] || { echo "could not resolve the test JVM" >&2; exit 1; }
+
+TOOLCHAIN_HOME=""
+for candidate in \
+  "$HOME/.local/share/mise/installs/java/temurin-$TOOLCHAIN_MAJOR"* \
+  "$HOME/.asdf/installs/java/temurin-$TOOLCHAIN_MAJOR"* \
+  "$HOME/.sdkman/candidates/java/temurin-$TOOLCHAIN_MAJOR"*; do
+  if [ -x "$candidate/bin/java" ]; then TOOLCHAIN_HOME="$candidate"; break; fi
+done
+if [ -z "$TOOLCHAIN_HOME" ]; then
+  echo "GATE FAILED: the build pins JVM $TOOLCHAIN_MAJOR but no matching installation was found." >&2
+  echo "Certifying the shell's JVM instead would describe a machine that never ran the build." >&2
+  exit 1
+fi
+
+RUNTIME_VER="$("$TOOLCHAIN_HOME/bin/java" -XshowSettings:properties -version 2>&1 | sed -n 's/.*java.specification.version = //p' | head -1)"
 KOTLIN_VER="$(sed -n 's/^kotlin[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' gradle/libs.versions.toml | head -1)"
-[ -n "$RUNTIME_VER" ] || { echo "could not detect the JVM version" >&2; exit 1; }
+[ "$RUNTIME_VER" = "$TOOLCHAIN_MAJOR" ] || {
+  echo "GATE FAILED: build pins JVM $TOOLCHAIN_MAJOR but $TOOLCHAIN_HOME reports $RUNTIME_VER" >&2
+  exit 1
+}
 [ -n "$KOTLIN_VER" ] || { echo "could not read the pinned Kotlin version from gradle/libs.versions.toml" >&2; exit 1; }
-say "toolchain: runtime $RUNTIME_VER, kotlin $KOTLIN_VER"
+say "toolchain: jvm $RUNTIME_VER at $TOOLCHAIN_HOME, kotlin $KOTLIN_VER"
+
+# Compiler and runtime are separate facts, and B6.2 exists because conflating
+# them certifies nothing. When the shell disagrees with the build, record it
+# rather than averaging it away: that disagreement is exactly the trap B6.2
+# was opened for.
+SHELL_JVM="$(java -XshowSettings:properties -version 2>&1 | sed -n 's/.*java.specification.version = //p' | head -1)"
+if [ -n "$SHELL_JVM" ] && [ "$SHELL_JVM" != "$RUNTIME_VER" ]; then
+  say "note: shell JVM is $SHELL_JVM but the build forked $RUNTIME_VER; the receipt follows the build"
+fi
 
 # --- artifacts --------------------------------------------------------------
 ARTIFACTS="$(find . -path '*/build/libs/*.jar' -not -path '*/build/libs/*-sources*' -type f 2>/dev/null | sort | while read -r j; do
