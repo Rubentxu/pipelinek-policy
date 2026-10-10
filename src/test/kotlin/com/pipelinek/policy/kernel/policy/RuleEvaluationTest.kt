@@ -135,6 +135,43 @@ class RuleEvaluationTest {
         assertEquals(RuleEvaluation.NotApplicable, ev)
     }
 
+    /**
+     * B6.5 · A guard that itself refuses must surface as `Error`, never as
+     * `NotApplicable`.
+     *
+     * Added because the A2 mutant (mapping `TypedRefusal` to `NotApplicable`)
+     * SURVIVED the whole suite. The existing tests here cover a falsy literal
+     * guard and a missing-field guard, but none covers a guard that *refuses* —
+     * for example comparing TEXT to a NUMBER, which architectural law 9 forbids
+     * coercing. Swallowing that into `NotApplicable` is the worst possible
+     * outcome: the author's broken predicate looks like the rule simply did not
+     * apply, and the document silently passes.
+     */
+    @Test
+    fun `appliesWhen typed refusal yields Error, not NotApplicable`() {
+        val rule = Rule(
+            id = "broken-guard",
+            message = "guard compares incompatible types",
+            expression = Literal(BooleanValue(true)),
+            appliesWhen = Comparison(
+                op = Operator.GTE,
+                // TEXT vs NUMBER: the kernel must refuse rather than coerce.
+                left = FieldRef(DocumentPath.ROOT.child("metadata").child("team"), ValueNode.Type.TEXT),
+                right = Literal(NumberValue(3)),
+            ),
+        )
+        val set = PolicySet(id = "s", policies = listOf(Policy(id = "p", rules = listOf(rule))))
+        val tree = MappingValue(
+            linkedMapOf("metadata" to MappingValue(linkedMapOf("team" to TextValue("platform")))),
+        )
+        val report = Evaluator.evaluate(set, tree)
+        val ev = report.results[RuleId.of("s", "p", rule.id)]
+        assertTrue(
+            ev is RuleEvaluation.Error,
+            "a refusing appliesWhen must be Error so the author sees it, got $ev",
+        )
+    }
+
     @Test
     fun `Rule carries typed metadata fields`() {
         val rule = Rule(

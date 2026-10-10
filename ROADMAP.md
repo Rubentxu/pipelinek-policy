@@ -576,6 +576,59 @@ de host sin cota. Cerrado en dos commits: el cableado del kernel
 3. ~~**B5.5 `RuleKey`**~~ — **cerrado** en `2980c48`.
 4. **B4.9 + B6.1** — UAT real y certificación del SHA exacto. *Siguiente.*
 
+## H0 — Plan de entrega `v0.3.0` (continuación correctiva de B0–B6)
+
+**Base auditada:** `main` @ `6df518d` (2026-10-10), `HEAD == origin/main`, árbol
+limpio salvo trabajo en curso de B6.5.
+
+**Regla de integración:** los cinco hitos siguientes se planifican **aquí**, no
+en un segundo roadmap. Cada línea se clasifica contra el código antes de
+aceptarla, y `DONE` documental no acredita cumplimiento.
+
+### Estado medido por línea (auditado contra el árbol, no contra el plan)
+
+| Línea | Estado medido | Evidencia en el árbol |
+|---|---|---|
+| H1.1 `severity` en PolicyIR | **DEFECTO VIVO** | `Rule.severity` existe (`PolicySet.kt`), pero `PolicyIrDocument` (`ir/PolicyIrDocument.kt:9-17`) declara `policySet/functions/parameters/shapes/sourceRefs/irVersion/languageVersion` y **ningún** campo de severidad. `grep severity` en `src/main/.../ir/` no devuelve nada. La severidad no sobrevive a `pack → verifyPacked → evaluate`. |
+| H1.2 gobierno extremo a extremo | **PARCIAL** | `governance/` existe (`EnforcementInterpreter`, `PolicyCheckPlan`, `Layers`, `Waivers`). Falta verificar el servicio de aplicación puro compartido por CLI y plugin con `AuthorityRegistry` del host como entrada explícita. |
+| H1.3 semantic diff `corpus.first()` | **CERRADO (B4.5)** | `PolicyDiff.kt:163-169` emite `SEVERITY_CHANGED` condicionalmente; `:142` documenta que la emisión previa era *"permanently dead"*. No hay `corpus.first()` en la ruta de diff. |
+| H2.1 `RuleKey` en dataset planning | **DEFECTO VIVO** | `DatasetPlanner.kt:35` `val localRuleIds: List<String>`; consumido en `StreamingEvaluator.kt:73` y `:131` por `it.id in plan.localRuleIds`. Una regla LOCAL y otra AGGREGATE con el mismo texto colisionan. |
+| H2.2 resultado de planificación sellado | **ABIERTO** | Requiere inspección de `DatasetShapeAnalyzer`/`IndexPlan` en su bloque. |
+| H2.3 agregados | **PARCIAL** | `Accumulator.Sum` ya acumula en `BigDecimal` (`Accumulator.kt:90,111`) y `Outcome` es tipado con vocabulario cerrado COUNT/SUM/ROW_BUDGET/TYPE_MISMATCH (B5.6). Pendiente: COUNT debe contar **coincidencias**, no filas. |
+| H2.4 GLOBAL | **ABIERTO** | Rechazo tipado o patrón de índice limitado; sin optimizador genérico. |
+| H3.1 lectura incremental | **PARCIAL** | `cli/BoundedRead.kt` lee por chunks con tope, pero devuelve `ReadResult.Ok(bytes: ByteArray)` (`:55`) y `readCapped` materializa en `ByteArrayOutputStream` (`:117-130`). Falta el cursor de filas incremental sobre `InputStream`. |
+| H3.2 presupuestos | **CERRADO (B4.7)** | `ResourceIngressLimits` en el kernel, admisión antes de decodificar, `BUNDLE_TOO_LARGE`/`RESOURCE_TOO_LARGE` distintos de `NOT_BASE64` (ley 8). |
+| H4.1 CLI agent-first | **PARCIAL** | `--json-help` existe y se despacha desde `PolicyCli.kt:18,37` con `CommandRegistry` como única fuente. Falta verificar el escape seguro en `check/test/diff/explain/inspect/stream`. |
+| H4.2 plugin externo | **PARCIAL** | `uat-external-distribution.sh` ejecuta el Step instalado vía `--plugin-jar` (B4.9). Falta procedencia del SDK publicado (B6.7). |
+| H4.3 replay y memoización | **ABIERTO** | B6.8. Sin.Files de fingerprint efectivo ni hit/miss observados. |
+| H4.4 compatibilidad cruzada | **ABIERTO** | No existe matriz Policy × SDK × JDK. Versión actual declarada `0.2.0-M2` (`build.gradle.kts:16`), coherente con el destino `v0.3.0`. |
+| H5.1 certificación de fuentes | **PARCIAL** | `certified-sha` cubre `src/{main,test}/kotlin` del **módulo raíz** (81 ficheros). Un cambio en producción de un submódulo deja válida una certificación previa. |
+| H5.2 mutation testing | **CERRADO (B6.5)** | `scripts/m6/mutation-gate.sh` con 7 mutantes semánticos (A1–A3 `appliesWhen`/veredicto, B1 precisión `BigDecimal`, B2 claves duplicadas, C1 orden de mappings, C2 orden de sequences). Último run: **7 muertos, 0 sobrevividos, 0 inválidos**, restore verde. Falsificado en negativo dos veces (test mal dirigido → `SURVIVED` + exit 1; mutante que no compila → `INVALID` + exit 1). Dos tests dirigidos añadidos durante el cierre: rechazo de `TypedRefusal` en `appliesWhen`, y orden canónico de sequences con aserción asimétrica. |
+| H5.3–H5.5 | **ABIERTO** | B6.6, B6.9, B6.10. |
+
+**Medición transversal:** `check` incluye `detekt` (verificado con
+`./gradlew check --dry-run`). Todos los documentos referenciados por el plan
+existen (`docs/03-specifications/POLICY_IR.md`, ADR-0015,
+`docs/07-performance/PERFORMANCE_AND_SCALE.md`, `docs/history/M6_UAT_EVIDENCE.md`,
+`docs/history/M10_CSV_1GIB_RECEIPT.md`, `docs/06-testing/*`). `gradle-jdk21.sh`
+existe. **Cero tags** en el repositorio: ningún release ha sido publicado.
+
+### Orden de ejecución derivado de la medición
+
+El plan declara H1→H5, pero el estado medido obliga a un orden distinto en dos
+puntos, porque H5 sin H1 produce una certificación de un producto semánticamente
+incorrecto:
+
+1. **B6.5 cerrado.** El gate de mutation testing está verde y falsificado en
+   ambos sentidos. Era condición de todo lo demás: es la herramienta que
+   certifica, y certificar sin ella es afirmar sin medir.
+2. **H1.1 antes que cualquier release.** Es un P0 semántico: una decisión
+   `CRITICAL` que sobrevive en memoria y se pierde al serializar produce un
+   reporte que miente sobre su propia severidad.
+3. **H2.1 antes que H3.** `localRuleIds` colisiona por identidad, y H3
+   caracteriza el streaming sobre los mismos `StreamingEvaluator`; corregir la
+   identidad primero evita certificar dos veces el mismo defecto.
+
 ## B5 — Streaming real, datasets y presupuestos (P1) — PARCIAL (M8 WU-1..6)
 
 Descomposición:
