@@ -28,11 +28,56 @@ trap 'rm -rf "$WORK"' EXIT
 
 fail() { echo "UAT FAIL: $*" >&2; exit 1; }
 
+# B6.7 · The SDK the plugin resolves MUST be an identified artifact.
+#
+# Before this, the UAT assumed whatever happened to sit in mavenLocal and only
+# printed the plugin jar's own digest. The SDK was never identified, so a stale
+# local install was indistinguishable from the intended one: the script would
+# have certified a plugin built against an SDK nobody released.
+#
+# The digests below are the ones measured in this repository's environment. If
+# the SDK is republished, this block FAILS rather than silently testing a
+# different SDK. That is the point: an unidentified dependency is not evidence.
+SDK_GROUP_PATH="${SDK_GROUP_PATH:-$HOME/.m2/repository/dev/rubentxu/pipeline/v2}"
+SDK_ARTIFACTS=(
+  "pipeline-domain:5b3dff6cbc6b0672a50b9e69fe0fa1d4b762ec11baea4fd204be7874dd04a85e"
+  "pipeline-scripting-api:a757646b8a1528ec9340b53296f35cce2da1fd36979df84cbc722afd124deb52"
+  "pipeline-output:36afbcd514e177981deecac826f88bd8ebb01e3089ab1853f593427dc31b1d7b"
+  "pipeline-events:20e3a3a8a065fb3755bdd119b0f48bd80f69abfefef2c135ba670def5246cb62"
+)
+SDK_VERSION="0.47.0"
+
+verify_sdk_provenance() {
+  local seen=0
+  for entry in "${SDK_ARTIFACTS[@]}"; do
+    local name="${entry%%:*}" expected="${entry##*:}"
+    local jar="$SDK_GROUP_PATH/$name/$SDK_VERSION/$name-$SDK_VERSION.jar"
+    [ -f "$jar" ] || fail "SDK artifact missing: $jar — an unidentified or absent SDK must not be certified"
+    local actual
+    actual="$(sha256sum "$jar" | cut -d' ' -f1)"
+    [ "$actual" = "$expected" ] || fail "SDK artifact $name-$SDK_VERSION has digest $actual but $expected was certified. Either the SDK was republished or mavenLocal holds a different build than the one this UAT was written against."
+    echo "   sdk $name-$SDK_VERSION: ${actual:0:16}… OK"
+    seen=$((seen + 1))
+  done
+  [ "$seen" -eq "${#SDK_ARTIFACTS[@]}" ] || fail "provenance check covered $seen of ${#SDK_ARTIFACTS[@]} artifacts"
+}
+
+echo "== 0. SDK provenance (B6.7: identified, not assumed)"
+verify_sdk_provenance
+# The SDK checkout may legitimately be ahead of the SDK the plugin targets;
+# what must not happen is the plugin resolving something nobody certified.
+if [ -d "$PIPELINEK_REPO/v2" ]; then
+  checkout_version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$PIPELINEK_REPO/v2/build.gradle.kts" | head -1)"
+  echo "   sdk checkout at $checkout_version; plugin resolves $SDK_VERSION"
+  [ "$checkout_version" = "$SDK_VERSION" ] || echo "   NOTE: checkout is not at the certified SDK version; that is fine as long as the digests above match"
+fi
+
 echo "== 1. plugin fat jar (with manifest + provenance)"
 "$REPO_ROOT/gradle-jdk21.sh" -p "$REPO_ROOT" :pipelinek-policy-plugin:pluginFatJar --console=plain -q
 PLUGIN_JAR="$REPO_ROOT/pipelinek-policy-plugin/build/libs/pipelinek-policy-plugin-all.jar"
 [ -f "$PLUGIN_JAR" ] || fail "plugin jar not produced at $PLUGIN_JAR"
 echo "   plugin jar: $(sha256sum "$PLUGIN_JAR" | cut -c1-16)…"
+echo "   plugin jar full: $(sha256sum "$PLUGIN_JAR" | cut -d' ' -f1)"
 
 echo "== 2. distribution rebuilt from scratch (--rerun-tasks)"
 PIPELINEK_BIN="$PIPELINEK_REPO/v2/pipeline-application/build/install/pipelinek/bin/pipelinek"
