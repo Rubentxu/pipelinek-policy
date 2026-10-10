@@ -82,7 +82,7 @@ if [ ! -f docs/history/B6_CERTIFICATION.md ]; then
 fi
 CERT_TESTS="$(grep -oE '\*\*tests actually executed\*\*:[[:space:]]*[0-9]+' docs/history/B6_CERTIFICATION.md | grep -oE '[0-9]+' | head -1 || true)"
 CERT_FAILS="$(grep -oE '\*\*tests actually executed\*\*:[[:space:]]*[0-9]+[^)]*' docs/history/B6_CERTIFICATION.md | head -1 || true)"
-CERT_TREE="$(grep -oE '\*\*source tree SHA\*\*:[[:space:]]*`[0-9a-f]{40}`' docs/history/B6_CERTIFICATION.md | grep -oE '[0-9a]{40}' | head -1 || true)"
+CERT_TREE="$(grep -oE '\*\*source tree SHA\*\*:[[:space:]]*`[0-9a-f]{40}`' docs/history/B6_CERTIFICATION.md | grep -oE '[0-9a-f]{40}' | head -1 || true)"
 CERT_HEAD="$(grep -oE '\*\*git HEAD\*\*:[[:space:]]*`[0-9a-f]{40}`' docs/history/B6_CERTIFICATION.md | grep -oE '[0-9a-f]{40}' | head -1 || true)"
 [ -n "$CERT_TESTS" ] || fail "certification receipt does not report executed tests"
 [ -n "$CERT_TREE" ]  || fail "certification receipt does not report a source tree SHA"
