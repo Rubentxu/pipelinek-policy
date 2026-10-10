@@ -85,6 +85,7 @@ assert_mutable_files_are_committed() {
 module_for_pattern() {
   case "$1" in
     *PropertyFuzzTest*)    echo ":pipelinek-policy-cli:" ;;
+    *JsonEscapingTest*)   echo ":pipelinek-policy-cli:" ;;
     *MutationGateTest*)    echo ":" ;;
     *RuleEvaluationTest*)  echo ":" ;;
     *CanonicalDigestTest*) echo ":" ;;
@@ -521,6 +522,31 @@ mutate \
   'if (consumed > plan.rowBudget) {' \
   'G3 the row budget boundary must be inclusive' \
   '*RowBudgetOutcomeTest*'
+
+# H1: make `str` bypass the escaper. This still compiles and the escaper itself
+# is untouched, so any test that only exercises JsonString.escape in isolation
+# keeps passing. But every emitter reaches its author-controlled strings
+# through `str`, so this restores the original H4.1 injection exactly: a
+# filename or policy id containing a quote escapes its own value slot and
+# forges a sibling key the code never emitted, which parses cleanly and is
+# believed by whatever agent reads it.
+mutate \
+  pipelinek-policy-cli/src/main/kotlin/com/pipelinek/policy/cli/JsonString.kt \
+  '    fun str(value: String): String = "\"" + escape(value) + "\""' \
+  '    fun str(value: String): String = "\"" + value + "\""' \
+  'H1 every emitted string must go through the escaper' \
+  '*JsonEscapingTest*'
+
+# H2: the control-character arm. The short escapes stay, so newlines and tabs
+# still work and the output still looks right in a terminal, while every other
+# C0 control is emitted raw and produces invalid JSON. This is the drift that
+# let StreamCmd and JsonHelp disagree with FindingsEmitter in the first place.
+mutate \
+  pipelinek-policy-cli/src/main/kotlin/com/pipelinek/policy/cli/JsonString.kt \
+  '                else -> if (char.code < 0x20) {' \
+  '                else -> if (false) {' \
+  'H2 C0 control characters must not be emitted raw into a JSON string' \
+  '*JsonEscapingTest*'
 
 echo
 echo "== B6.6 mutation summary"
