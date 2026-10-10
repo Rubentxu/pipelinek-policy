@@ -536,7 +536,7 @@ solo cuenta Done con implementación **y** falsificación observable.
 | B4.9 UAT | **ABIERTO** | `uat-external-distribution.sh` no fija 20 recursos ni verifica por comportamiento |
 | B5.3 UTF-8 | **DONE** | `7fff04a`: los 5 bucles byte→char de `CsvRowSource`, `CsvResourceDecoder` y `JsonlSource` acumulan bytes y decodifican UTF-8 una vez. Falsificado revirtiendo el fix (RED 9/9 CSV, 6/7 JSONL; el único verde fue el control ASCII) |
 | B5.5 identidad | **DONE** | `StreamingReport.results` pasa a `Map<RuleKey, RuleOutcome>` y `rulesByKey` preserva el `policyId` al aplanar. Dos policies con el mismo `ruleId` ya no comparten tally, acumulador ni entrada de reporte. `DatasetPlan.localRuleIds` sigue como `List<String>`: follow-up, no degradado |
-| B5.6 acumuladores | **ABIERTO** | `Accumulator.kt:81` `BudgetExceededException` sigue lanzando |
+| B5.6 acumuladores | **DONE** | `Accumulator.Outcome` tipado (`Accepted` / `Refused(cap, consumed, limit)` con vocabulario cerrado COUNT/SUM/ROW_BUDGET/TYPE_MISMATCH); `Sum` acumula en `BigDecimal` en vez de `Double`, y el `exact: Long` que se calculaba y se descartaba desapareció. Falsificado con dos mutaciones: reintroducir `Double` mata 3/3 exactitud, reintroducir la excepción mata 4/4 budget |
 | B6.1–B6.10 | **ABIERTO** | `cert/SHA.txt` estático; gates que no pueden fallar |
 
 **Guardarraíl de pureza (B4): CERRADO.** `DomainIoPurityTest` ya usa

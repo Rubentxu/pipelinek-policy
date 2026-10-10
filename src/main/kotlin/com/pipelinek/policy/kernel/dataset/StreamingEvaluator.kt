@@ -79,6 +79,10 @@ object StreamingEvaluator {
         var consumed = 0L
         var refused = 0L
         var rowNumber = 0L
+        // B5.6: per-run, never object state — law 10 forbids a global or
+        // cross-run mutable registry, and a leaked map would leak refusals
+        // between evaluations.
+        val aggregateRefusals = mutableMapOf<RuleKey, Accumulator.Outcome.Refused>()
         while (true) {
             val row = rows.next() ?: break
             rowNumber++
@@ -87,10 +91,20 @@ object StreamingEvaluator {
                 throw BudgetExceededException("row budget ${plan.rowBudget} exceeded at row $rowNumber")
             }
             evaluateLocalRow(localOnlySet, row, tallies, rowNumber)
-            refused += foldAggregates(aggregateRules, accumulators, row)
+            refused += foldAggregates(aggregateRules, accumulators, row, aggregateRefusals)
         }
 
-        return report(set, localRules, aggregateRules, tallies, accumulators, consumed, refused, plan)
+        return report(
+            set,
+            localRules,
+            aggregateRules,
+            tallies,
+            accumulators,
+            consumed,
+            refused,
+            plan,
+            aggregateRefusals,
+        )
     }
 
     /**
@@ -146,17 +160,30 @@ object StreamingEvaluator {
         }
     }
 
-    /** Fold one row into each aggregate accumulator; returns 1 if it refused. */
+    /**
+     * Fold one row into each aggregate accumulator; returns the count of
+     * accumulators that REFUSED the row.
+     *
+     * B5.6: a refusal is now a value, so the caller can record which rule
+     * refused and why. The old code returned 0 unconditionally and let an
+     * exception escape from inside the fold.
+     */
     private fun foldAggregates(
         aggregateRules: List<Triple<RuleKey, String, Rule>>,
         accumulators: Map<RuleKey, Accumulator>,
         row: ValueNode,
+        aggregateRefusals: MutableMap<RuleKey, Accumulator.Outcome.Refused>,
     ): Int {
+        var refused = 0
         aggregateRules.forEach { (key, _, _) ->
             val acc = accumulators[key] ?: return@forEach
-            acc.accept(row)
+            val outcome = acc.accept(row)
+            if (outcome is Accumulator.Outcome.Refused) {
+                refused++
+                aggregateRefusals[key] = outcome
+            }
         }
-        return 0
+        return refused
     }
 
     private fun report(
@@ -168,9 +195,10 @@ object StreamingEvaluator {
         consumed: Long,
         refused: Long,
         plan: DatasetPlan,
+        aggregateRefusals: Map<RuleKey, Accumulator.Outcome.Refused>,
     ): StreamingReport {
         val results = LinkedHashMap<RuleKey, RuleOutcome>()
-        localRules.forEach { (key, _, rule) ->
+        localRules.forEach { (key, _, _) ->
             val t = tallies[key]!!
             results[key] = when {
                 t.firstErrorRow >= 0 -> RuleOutcome.Error("typed refusal at row ${t.firstErrorRow}")
@@ -178,10 +206,18 @@ object StreamingEvaluator {
                 else -> RuleOutcome.Passed
             }
         }
-        aggregateRules.forEach { (key, _, rule) ->
-            val acc = accumulators[key]
-            results[key] = acc?.let { RuleOutcome.Aggregate(it.result()) }
-                ?: RuleOutcome.Error("no accumulator for rule ${key.ruleId}")
+        aggregateRules.forEach { (key, _, _) ->
+            val refusal = aggregateRefusals[key]
+            results[key] = when {
+                // B5.6: a refusal names the cap and the numbers. The previous
+                // code reported a bare Aggregate over a silently truncated
+                // fold, so a budget stop looked like a successful aggregate.
+                refusal != null -> RuleOutcome.Error(
+                    "${refusal.cap.name.lowercase()} cap ${refusal.limit} reached after ${refusal.consumed}",
+                )
+                else -> accumulators[key]?.let { RuleOutcome.Aggregate(it.result()) }
+                    ?: RuleOutcome.Error("no accumulator for rule ${key.ruleId}")
+            }
         }
         return StreamingReport(
             policySetId = set.id,

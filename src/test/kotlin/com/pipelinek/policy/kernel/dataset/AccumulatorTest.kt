@@ -4,6 +4,7 @@ import com.pipelinek.policy.kernel.value.ValueNode
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -24,7 +25,10 @@ class AccumulatorTest {
         acc.accept(ValueNode.NumberValue(1))
         acc.accept(ValueNode.NumberValue(2.5))
         acc.accept(ValueNode.NumberValue(3))
-        assertEquals(ValueNode.NumberValue(6.5), acc.result())
+        // B5.6: the sum is now BigDecimal, so compare numerically rather than
+        // by object identity — a Double 6.5 would no longer be equal.
+        val result = assertIs<ValueNode.NumberValue>(acc.result())
+        assertEquals(0, result.number.toString().toBigDecimal().compareTo("6.5".toBigDecimal()))
     }
 
     @Test
@@ -32,8 +36,10 @@ class AccumulatorTest {
         val acc = Accumulator.Count(cap = 2)
         acc.accept(ValueNode.TextValue("a"))
         acc.accept(ValueNode.TextValue("b"))
-        val ex = assertThrows<BudgetExceededException> { acc.accept(ValueNode.TextValue("c")) }
-        assertTrue(ex.message!!.contains("cap 2"))
+        // B5.6: the cap is now a typed VALUE, not a thrown exception.
+        val refused = assertIs<Accumulator.Outcome.Refused>(acc.accept(ValueNode.TextValue("c")))
+        assertEquals(Accumulator.Outcome.Cap.COUNT, refused.cap)
+        assertEquals(2L, refused.limit)
         // State is NOT corrupted past the refusal: still 2.
         assertEquals(ValueNode.NumberValue(2L), acc.result())
     }
@@ -42,10 +48,11 @@ class AccumulatorTest {
     fun `04b - falsification - sum refuses text rows instead of coercing`() {
         val acc = Accumulator.Sum(cap = 10)
         acc.accept(ValueNode.NumberValue(1))
-        val ex = assertThrows<SumTypeMismatchException> {
-            acc.accept(ValueNode.TextValue("7"))
-        }
-        assertTrue(ex.message!!.contains("TEXT"))
+        // B5.6: the type refusal is a distinct typed outcome (law 8), not a
+        // separate exception class the caller had to know about.
+        val refused = assertIs<Accumulator.Outcome.Refused>(acc.accept(ValueNode.TextValue("7")))
+        assertEquals(Accumulator.Outcome.Cap.TYPE_MISMATCH, refused.cap)
+        assertEquals(1L, acc.rowsSeen, "the refused row must not be folded")
     }
 
     @Test
