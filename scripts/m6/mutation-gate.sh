@@ -47,6 +47,36 @@ reset_tree() {
   return 0
 }
 
+# Un gate que borra trabajo sin avisar es peor que no tener gate.
+#
+# `reset_tree` restaura con `git checkout --`, que revierte el archivo a HEAD.
+# Con un fix de producción sin commitear en ese archivo, el gate no lo muta y lo
+# lo revierte: el run muere mutando código viejo y, peor, se lleva por delante el
+# fix que el run pretendía certificar. Se observó exactamente eso con H1.1: el
+# restore de D1/D2 borró el fix de `severity` y no quedó en ningún stash.
+#
+# La condición de salida es ahora explícita: si el archivo que el gate va a
+# mutar tiene cambios sin commitear, se aborta ANTES de mutar nada.
+# The abort must not leave a half-applied mutant behind. The guard is checked
+# at the START of mutate(), but RESET is already 1 by then, so aborting in the
+# middle of a run would exit with whatever mutant was last applied still on
+# disk. Observed with A3: the guard fired on the next mutant and left
+# `if (outcome || !outcome)` in Evaluator.kt, which then went on to be staged as
+# if it were real work. The trap restores before exiting, so an abort leaves the
+# tree exactly as clean as a successful run.
+assert_mutable_files_are_committed() {
+  local file="$1" dirty
+  dirty="$(git status --porcelain -- "$file" | awk '{print $2}')"
+  if [[ -n "$dirty" ]]; then
+    echo "ABORT: $file has uncommitted changes; this gate would destroy them." >&2
+    echo "  Its restore step uses 'git checkout --', which reverts to HEAD and" >&2
+    echo "  silently discards the work. Commit first, then run the gate." >&2
+    reset_tree "$file"
+    trap - EXIT
+    exit 3
+  fi
+}
+
 # The directed tests live in different Gradle modules, and `--tests` applied to
 # the WHOLE project fails every module that does not contain the class
 # ("No tests found for given includes"). So each test pattern must be paired
@@ -60,6 +90,7 @@ module_for_pattern() {
     *CanonicalDigestTest*) echo ":" ;;
     *ValueNodeTest*)       echo ":" ;;
     *PolicyDiffTest*)      echo ":" ;;
+    *PolicyIrSeverityRoundTripTest*) echo ":" ;;
     *)                     echo ":" ;;
   esac
 }
@@ -176,6 +207,10 @@ restore_and_verify() {
 mutate() {
   local file="$1" old="$2" new="$3" label="$4" pattern="$5"
   RESET=1
+  # Never mutate a file the gate would later destroy. See the note on
+  # assert_mutable_files_are_committed: `git checkout --` reverts to HEAD and
+  # silently discards any uncommitted fix living in that same file.
+  assert_mutable_files_are_committed "$file"
   local module
   module=$(module_for_pattern "$pattern")
   echo "== mutant: $label"
@@ -302,6 +337,37 @@ mutate \
   'is ValueNode.SequenceValue -> node.elements.reversed()' \
   'C2 canonical form must preserve sequence order' \
   '*CanonicalDigestTest*'
+
+# ---------------------------------------------------------------------------
+# Group D — declared data in transit. H1.1.
+#
+# `Rule.severity` is author-declared, not derived at evaluation time. Before
+# H1.1 the canonical writer never emitted it and the decoder never read it, so
+# a CRITICAL rule evaluated in the author's process and arrived at the plugin
+# step as "not declared", with identical bytes for every severity. D1
+# reintroduces exactly that loss in the writer and D2 reintroduces it in the
+# decoder; both must die against the round-trip tests.
+# ---------------------------------------------------------------------------
+
+mutate \
+  src/main/kotlin/com/pipelinek/policy/ir/CanonicalPolicyJsonWriter.kt \
+  'rule.severity?.let {
+                    append(",\"severity\":").append(CanonicalPolicyJsonNodeWriter.quote(it.name))
+                }' \
+  'rule.let {
+                }' \
+  'D1 declared severity must be encoded, not dropped in transit' \
+  '*PolicyIrSeverityRoundTripTest*'
+
+mutate \
+  src/main/kotlin/com/pipelinek/policy/ir/CanonicalPolicyJson.kt \
+  'return RuleSeverity.entries.firstOrNull { it.name == name }
+            ?: throw IrRefusal.CorruptEncoding("unknown rule severity '"'"'$name'"'"'; expected one of " +
+                RuleSeverity.entries.joinToString(",") { it.name })' \
+  'return RuleSeverity.entries.firstOrNull { it.name == name }
+            ?: null' \
+  'D2 an unknown severity must be refused, never silently degraded to absent' \
+  '*PolicyIrSeverityRoundTripTest*'
 
 echo
 echo "== B6.5 mutation summary"

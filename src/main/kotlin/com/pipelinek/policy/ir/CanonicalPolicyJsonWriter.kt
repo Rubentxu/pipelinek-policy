@@ -73,6 +73,13 @@ private object CanonicalPolicyJsonDocumentSectionsWriter {
                 rule.supersession?.let {
                     append(",\"supersession\":").append(CanonicalPolicyJsonNodeWriter.supersession(it))
                 }
+                // H1.1 — author-declared severity. Emitted only when declared:
+                // an absent severity is meaningful data (PolicyDiff reports
+                // SEVERITY_CHANGED only when both sides declare one), so the
+                // writer must not invent a default to make the field present.
+                rule.severity?.let {
+                    append(",\"severity\":").append(CanonicalPolicyJsonNodeWriter.quote(it.name))
+                }
                 append('}')
             }
             append("]}")

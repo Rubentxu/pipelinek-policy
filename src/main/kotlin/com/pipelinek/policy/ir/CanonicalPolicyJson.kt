@@ -5,6 +5,7 @@ import com.pipelinek.policy.kernel.path.DocumentPath
 import com.pipelinek.policy.kernel.policy.Policy
 import com.pipelinek.policy.kernel.policy.PolicySet
 import com.pipelinek.policy.kernel.policy.Rule
+import com.pipelinek.policy.kernel.policy.RuleSeverity
 import com.pipelinek.policy.kernel.policy.ParamValue
 import com.pipelinek.policy.kernel.policy.PolicyLayer
 import com.pipelinek.policy.kernel.policy.RuleRef
@@ -82,6 +83,7 @@ private object PolicyIrDocumentDecoder {
                     rule["actual"]?.stringOrNull(), PolicyIrParameterDecoder.decodeRuleParameters(rule["params"]),
                     rule["supersession"]?.takeUnless { it == J.Null }?.asObject()
                         ?.let(PolicyIrParameterDecoder::decodeSupersession),
+                    decodeSeverity(rule["severity"]),
                 )
             })
         }
@@ -94,6 +96,23 @@ private object PolicyIrDocumentDecoder {
             irVersion = version,
             languageVersion = root.req("languageVersion").asString(),
         )
+    }
+
+    /**
+     * H1.1 — decode the author-declared severity as a CLOSED vocabulary.
+     *
+     * `RuleSeverity` is the normative set from EVALUATION_SEMANTICS.md §8 and
+     * KOTLIN_POLICY_DSL.md §9. A name outside it is a corrupt encoding, and
+     * refusing it here is the whole point: the alternative the fix replaced was
+     * to read nothing at all and end up with `severity == null`, which is
+     * indistinguishable from "the author never declared one". An unrecognised
+     * severity must not be able to masquerade as an absent one.
+     */
+    private fun decodeSeverity(value: J?): RuleSeverity? {
+        val name = value?.takeUnless { it == J.Null }?.asString() ?: return null
+        return RuleSeverity.entries.firstOrNull { it.name == name }
+            ?: throw IrRefusal.CorruptEncoding("unknown rule severity '$name'; expected one of " +
+                RuleSeverity.entries.joinToString(",") { it.name })
     }
 
     private fun decodeShapes(value: J?): List<ShapeConstraint> = value?.asArray()?.map { encoded ->
