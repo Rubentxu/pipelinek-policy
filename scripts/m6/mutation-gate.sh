@@ -91,6 +91,7 @@ module_for_pattern() {
     *HelpAndExitCodesTest*) echo ":pipelinek-policy-cli:" ;;
     *WaiversTest*)         echo ":" ;;
     *StreamCmdTest*)   echo ":pipelinek-policy-cli:" ;;
+    *CsvRowStreamSourceTest*) echo ":policy-decoders-csv:" ;;
     *CompileBundleTestTest*) echo ":pipelinek-policy-cli:" ;;
     *CheckCmdTest*)    echo ":pipelinek-policy-cli:" ;;
     *MutationGateTest*)    echo ":" ;;
