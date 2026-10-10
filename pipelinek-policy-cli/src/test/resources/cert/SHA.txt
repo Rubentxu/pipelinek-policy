@@ -16,4 +16,8 @@
 # claim to be a git tree hash.
 certified-sha: 3f8d8e5a2755fae612acf99ba13b95a45a978456
 baseline-suites: 42
-baseline-tests: 273
+# Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
+# scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
+# predated most of the suite, so it could never detect a module falling out of
+# the check. certify.sh refuses to certify when fewer than this many run.
+baseline-tests: 498
