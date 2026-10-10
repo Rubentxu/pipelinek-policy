@@ -1,18 +1,26 @@
 package com.pipelinek.policy.plugin
 
+import com.pipelinek.policy.bundle.BundleVerifier
 import com.pipelinek.policy.bundle.IrRuntimeAdapter
+import com.pipelinek.policy.bundle.VerifiedBundle
 import com.pipelinek.policy.decoder.DecodeResult
 import com.pipelinek.policy.decoder.ResourceDecoder
 import com.pipelinek.policy.decoders.csv.CsvResourceDecoder
 import com.pipelinek.policy.decoders.json.JsonResourceDecoder
 import com.pipelinek.policy.decoders.map.MapAdapterDecoder
 import com.pipelinek.policy.decoders.yaml.YamlResourceDecoder
-import com.pipelinek.policy.kernel.governance.EnforcementInterpreter
-import com.pipelinek.policy.kernel.governance.GovernanceTally
+import com.pipelinek.policy.kernel.governance.GovernanceContext
 import com.pipelinek.policy.kernel.governance.PolicyCheckPlan
 import com.pipelinek.policy.kernel.governance.PolicyCheckPlanRefusal
 import com.pipelinek.policy.kernel.governance.PolicyCheckPlanRequest
+import com.pipelinek.policy.kernel.governance.PolicyGovernance
+import com.pipelinek.policy.kernel.policy.LayeredPolicy
+import com.pipelinek.policy.kernel.policy.PolicyLayer
+import com.pipelinek.policy.kernel.policy.ResourceSubjectSelector
 import com.pipelinek.policy.kernel.policy.RuleEvaluation
+import com.pipelinek.policy.kernel.policy.Waiver
+import com.pipelinek.policy.kernel.policy.WaiverContext
+import com.pipelinek.policy.kernel.value.ValueNode
 import dev.rubentxu.pipeline.v2.domain.ExecutionLocation
 import dev.rubentxu.pipeline.v2.domain.PluginStepId
 import dev.rubentxu.pipeline.v2.domain.StepDescriptor
@@ -26,6 +34,8 @@ import dev.rubentxu.pipeline.v2.domain.step.StepHandler
 import dev.rubentxu.pipeline.v2.events.registry.PLUGIN_EVENT_EMISSION_CAPABILITY
 import dev.rubentxu.pipeline.v2.events.registry.PluginEventEmission
 import kotlinx.serialization.json.Json
+import java.time.Instant
+import java.util.Base64
 
 /** REQ-02 · symmetric codecs over canonical JSON, same shape as the SDK examples. */
 object PolicyCheckInputCodec : StepCodec<PolicyCheckInput> {
@@ -159,29 +169,124 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
                 )
         }
 
-        val report = IrRuntimeAdapter.evaluate(ready.verifiedBundle, tree).report
-        val summaries = report.results.entries
-            .sortedBy { it.key.value }
-            .map { (key, ev) ->
-                RuleSummary(ruleId = key.ruleId, outcome = outcomeName(ev), policyId = key.policyId)
+        // H1.2 / B4-T10: the verdict now comes back from the ONE governance
+        // service, on the SAME composed policy set the CLI evaluates.
+        //
+        // What this replaced: `IrRuntimeAdapter.evaluate(bundle, tree).report`
+        // followed by a tally counted here from `RuleEvaluation` values. The
+        // comment above this block claimed the adapter "cannot disagree with the
+        // CLI adapter" because precedence lives in the core. That was only
+        // true of precedence, and it was false of everything else: the CLI
+        // composed layers, applied waivers and checked grants, and this path did
+        // none of the three. Two adapters agreed on precedence while evaluating
+        // different policy sets — which is parity of the tally, not of the
+        // decision.
+        //
+        // The plugin now declares no rule and counts nothing. It decodes, hands
+        // the host's governance inputs to the service, and renders what comes
+        // back.
+        val governed = govern(ready.verifiedBundle, tree, input)
+        return when (governed) {
+            is PolicyGovernance.Result.Refused -> PolicyCheckOutput.refused(
+                "layer composition refused: ${governed.refusal.code}",
+            )
+            is PolicyGovernance.Result.Decided -> {
+                val outcome = governed.outcome
+                val report = outcome.report
+                val summaries = report.results.entries
+                    .sortedBy { it.key.value }
+                    .map { (key, ev) ->
+                        RuleSummary(ruleId = key.ruleId, outcome = outcomeName(ev), policyId = key.policyId)
+                    }
+                PolicyCheckOutput.of(
+                    // The CORE verdict, passed straight through: `of` owns the
+                    // rename to the step vocabulary and the wouldDeny
+                    // derivation. Mapping it here instead would re-decide
+                    // enforcement a second time in the adapter.
+                    verdict = outcome.verdict,
+                    // The POST-waiver count: a waived violation is reported in
+                    // summaries but does not count as an active one.
+                    violationsCount = outcome.activeViolations,
+                    reportDigest = report.digest,
+                    policySetId = report.policySetId,
+                    ruleSummaries = summaries,
+                    enforcement = outcome.enforcement,
+                )
             }
-        // B0.5: the precedence REFUSED > ERRORED > VIOLATED > PASSED lives in the
-        // core EnforcementInterpreter, not here. This adapter only COUNTS; it
-        // implements no rule, so it cannot disagree with the CLI adapter.
-        // Violations stay in `summaries` as evidence whatever the verdict is.
-        val verdict = EnforcementInterpreter.verdict(
-            GovernanceTally(
-                errors = report.results.values.count { it is RuleEvaluation.Error },
-                violations = report.results.values.count { it is RuleEvaluation.Violated },
+        }
+    }
+
+    /**
+     * H1.2 / B4-T10 · the plugin's whole governance contribution.
+     *
+     * Three pure mappings — wire payload to kernel grants, wire layers to
+     * [LayeredPolicy], wire waivers to [Waiver] — and one call into
+     * [PolicyGovernance]. Everything that decides anything is in the service.
+     *
+     * The PROJECT layer is always present and always LAST: it is the bundle the
+     * step was handed, and [LayerComposer] expects layers ordered from the
+     * outermost authority inward.
+     */
+    private fun govern(
+        verified: VerifiedBundle,
+        tree: ValueNode,
+        input: PolicyCheckInput,
+    ): PolicyGovernance.Result {
+        val payload = input.governance
+        val extraLayers = payload.layers.map { layer ->
+            LayeredPolicy(
+                layer.toPolicyLayer(),
+                // Each layer travels packed and is admitted through the SAME
+                // `verifyPacked` call as the main bundle: a layer gets identical
+                // terms or none. A layer that cannot be verified throws before
+                // composition, which is fail-closed.
+                BundleVerifier.verifyPacked(Base64.getDecoder().decode(layer.packedPolicyBase64))
+                    .bundle.document.policySet,
+            )
+        }
+        val waivers = payload.waivers.map { it.toWaiver() }
+
+        return PolicyGovernance.decide(
+            layers = extraLayers + LayeredPolicy(
+                PolicyLayer.PROJECT,
+                verified.bundle.document.policySet,
             ),
-        )
-        return PolicyCheckOutput.of(
-            verdict = verdict,
-            violationsCount = report.results.values.count { it is RuleEvaluation.Violated },
-            reportDigest = report.digest,
-            policySetId = report.policySetId,
-            ruleSummaries = summaries,
+            tree = tree,
+            waivers = waivers,
+            context = GovernanceContext(
+                authorities = payload.toAuthorityRegistry(),
+                now = Instant.parse(input.now),
+                subjectResolver = { it },
+                waiverContext = WaiverContext(),
+            ),
             enforcement = input.enforcement,
+            evaluate = { policySet, node ->
+                IrRuntimeAdapter.evaluateSet(policySet, verified.bundle.sourceMap, node).report
+            },
+        )
+    }
+
+    /**
+     * Wire waiver to kernel waiver.
+     *
+     * A malformed instant or an empty identity is a REFUSAL that surfaces as a
+     * thrown [IllegalArgumentException] from the payload type before this runs:
+     * a waiver that silently stopped applying would be an unnoticed exemption,
+     * which is the one failure this whole path exists to prevent.
+     */
+    private fun WaiverPayload.toWaiver(): Waiver {
+        val (from, to) = validity()
+        return Waiver(
+            id = id,
+            policyId = policyId,
+            ruleId = ruleId,
+            subject = ResourceSubjectSelector(subjectPath, subjectEquals),
+            datasetScope = datasetScope,
+            projectScope = projectScope,
+            reason = reason,
+            issuer = issuer,
+            notBefore = from,
+            notAfter = to,
         )
     }
 
