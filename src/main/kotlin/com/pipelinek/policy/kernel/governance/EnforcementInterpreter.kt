@@ -65,24 +65,20 @@ object EnforcementInterpreter {
     }
 
     /**
-     * True iff this verdict *would* deny the operation under ENFORCED.
-     *
-     * SHADOW never denies on a policy verdict, and NEVER denies on an
-     * operational failure either: `REFUSED` and `ERRORED` are failures in both
-     * modes. "Could not evaluate" must never read as "compliant".
-     */
-    fun wouldDeny(verdict: GovernanceVerdict, enforcement: EnforcementMode): Boolean = when (verdict) {
-        GovernanceVerdict.REFUSED, GovernanceVerdict.ERRORED -> true
-        GovernanceVerdict.VIOLATED -> enforcement == EnforcementMode.ENFORCED
-        GovernanceVerdict.PASSED -> false
-    }
-
-    /**
      * True iff the operation must be denied NOW.
      *
      * An operational failure denies in BOTH modes: "could not evaluate" is not
      * a policy result and is never shadowed. A genuine violation denies only
      * under ENFORCED; under SHADOW it becomes would-deny evidence instead.
+     *
+     * B4-T5: this function was previously duplicated, byte for byte, by a
+     * sibling named `wouldDeny` that had zero callers, zero tests and zero
+     * normative text behind it. Two names for one fact is how the kernel ended
+     * up with a public predicate whose name contradicted its body: returning
+     * `true` for `ERRORED` under SHADOW describes what DID happen, not what
+     * WOULD have. It was deleted rather than given counterfactual semantics
+     * because no consumer needs the mode-independent question; if one appears,
+     * it arrives with a real caller and a real requirement.
      */
     fun denies(verdict: GovernanceVerdict, enforcement: EnforcementMode): Boolean = when (verdict) {
         GovernanceVerdict.REFUSED, GovernanceVerdict.ERRORED -> true
