@@ -35,17 +35,22 @@ class JsonlSource(private val bytes: ByteArray) {
     }
 
     private fun nextNonBlankLine(): String? {
-        val sb = StringBuilder()
+        // B5.3 / P1-08: accumulate raw BYTES and decode the line as UTF-8 once.
+        // `bytes[pos++].toInt().toChar()` mapped each byte to one char, so any
+        // multibyte character was silently corrupted: "€" became three
+        // halfwidth-katakana characters and the JSON parser then evaluated a
+        // value the author never wrote.
+        val raw = java.io.ByteArrayOutputStream()
         while (pos < bytes.size) {
-            val c = bytes[pos++].toInt().toChar()
-            if (c == '\n') {
-                if (sb.isNotEmpty()) return sb.toString()
-                sb.setLength(0) // skip blank line
-            } else if (c != '\r') {
-                sb.append(c)
+            val b = bytes[pos++]
+            if (b == '\n'.code.toByte()) {
+                if (raw.size() > 0) return raw.toString(Charsets.UTF_8)
+                raw.reset() // skip blank line
+            } else if (b != '\r'.code.toByte()) {
+                raw.write(b.toInt())
             }
         }
-        return if (sb.isNotEmpty()) sb.toString() else null
+        return if (raw.size() > 0) raw.toString(Charsets.UTF_8) else null
     }
 
     private fun parseRow(line: String): ValueNode.MappingValue {

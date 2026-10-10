@@ -99,32 +99,39 @@ class CsvRowSource(private val bytes: ByteArray) {
         if (i < bytes.size && bytes[i] == '"'.code.toByte()) {
             return readQuotedCell()
         }
-        val sb = StringBuilder()
+        // B5.3 / P1-08: collect the raw BYTES of the field and decode them as
+        // UTF-8 once, instead of mapping each byte to a char. The previous
+        // `c.toInt().toChar()` turned the 5 bytes of "café" into 5 chars
+        // reading "cafÃ©", silently corrupting every non-ASCII value.
+        val start = i
         while (i < bytes.size) {
             val c = bytes[i]
             if (c == ','.code.toByte() || c == '\n'.code.toByte() || c == '\r'.code.toByte()) break
-            sb.append(c.toInt().toChar())
             i++
         }
-        return sb.toString()
+        return String(bytes, start, i - start, Charsets.UTF_8)
     }
 
     private fun readQuotedCell(): String {
         i++ // consume opening quote
-        val sb = StringBuilder()
+        // B5.3 / P1-08: the quoted-cell loop is a SEPARATE copy of the
+        // byte-to-char defect. It accumulates raw BYTES and decodes once.
+        // Decoding one byte at a time would replace every byte of a multibyte
+        // sequence with U+FFFD, which is corruption of a different kind.
+        val raw = java.io.ByteArrayOutputStream()
         while (i < bytes.size) {
             val c = bytes[i]
             if (c == '"'.code.toByte()) {
                 if (i + 1 < bytes.size && bytes[i + 1] == '"'.code.toByte()) {
-                    sb.append('"')
+                    raw.write('"'.code)
                     i += 2
                 } else {
                     i++
-                    return sb.toString()
+                    return raw.toString(Charsets.UTF_8)
                 }
             } else {
                 if (c == '\n'.code.toByte()) line++
-                sb.append(c.toInt().toChar())
+                raw.write(c.toInt())
                 i++
             }
         }

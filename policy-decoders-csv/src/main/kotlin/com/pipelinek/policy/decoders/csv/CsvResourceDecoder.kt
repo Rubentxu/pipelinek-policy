@@ -283,35 +283,41 @@ class CsvResourceDecoder : ResourceDecoder {
             if (i < bytes.size && bytes[i] == '"'.code.toByte()) {
                 return readQuotedCell()
             }
-            val sb = StringBuilder()
+            // B5.3 / P1-08: collect raw BYTES and decode once as UTF-8. The
+            // materialised tokenizer and the streaming source are separate
+            // copies of this loop; fixing only one would leave the other
+            // silently corrupting every non-ASCII value.
+            val start = i
             while (i < bytes.size) {
                 val c = bytes[i]
                 if (c == ','.code.toByte() || c == '\n'.code.toByte() || c == '\r'.code.toByte()) break
-                sb.append(c.toInt().toChar())
                 i++
             }
-            return sb.toString()
+            return String(bytes, start, i - start, Charsets.UTF_8)
         }
 
         private fun readQuotedCell(): String {
             // Consume opening quote.
             i++
-            val sb = StringBuilder()
+            // B5.3 / P1-08: same byte-to-char defect as [readCell]. Accumulate
+            // bytes; decoding one at a time would turn each byte of a multibyte
+            // sequence into U+FFFD.
+            val raw = java.io.ByteArrayOutputStream()
             while (i < bytes.size) {
                 val c = bytes[i]
                 if (c == '"'.code.toByte()) {
                     if (i + 1 < bytes.size && bytes[i + 1] == '"'.code.toByte()) {
                         // Escaped quote
-                        sb.append('"')
+                        raw.write('"'.code)
                         i += 2
                     } else {
                         // Closing quote
                         i++
-                        return sb.toString()
+                        return raw.toString(Charsets.UTF_8)
                     }
                 } else {
                     if (c == '\n'.code.toByte()) line++
-                    sb.append(c.toInt().toChar())
+                    raw.write(c.toInt())
                     i++
                 }
             }
