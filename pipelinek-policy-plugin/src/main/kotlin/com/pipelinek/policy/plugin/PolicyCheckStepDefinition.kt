@@ -72,7 +72,20 @@ object PolicyCheckOutputCodec : StepCodec<PolicyCheckOutput> {
 object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckOutput> {
 
     const val PLUGIN_ID: String = "com.pipelinek.policy"
-    const val PLUGIN_VERSION: String = "0.1.0"
+
+    /**
+     * The step descriptor's `pluginVersion` — the version the RUNTIME reports
+     * for this step, which is NOT the same field as the manifest's measured
+     * release provenance in [PolicyPluginDeclaration].
+     *
+     * Both used to be hand-typed ("0.1.0" here, "0.2.0-M2" in the root build),
+     * so a published artifact could describe itself with two different
+     * identities. This constant is still a compile-time literal because the
+     * descriptor is a static `StepContract` built before any resource is
+     * readable; it is now pinned against the manifest provenance by
+     * `PluginVersionAgreementTest`, which fails if the two ever diverge again.
+     */
+    const val PLUGIN_VERSION: String = "0.3.0-alpha.1"
 
     val KEY = PluginStepId("policy.check")
 

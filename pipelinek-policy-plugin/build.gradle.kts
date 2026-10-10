@@ -17,6 +17,28 @@ plugins {
 
 val sdkVersion = "0.47.0"
 
+// H1 release · the ONE declared version, propagated instead of repeated.
+//
+// Before this, the plugin declared its release identity twice by hand, as
+// "0.1.0", while the root project declared "0.2.0-M2" and SDDK's
+// version-source declared a third value. The manifest provenance is measured
+// at build time and was already correct in shape; what was wrong was the
+// literal it measured FROM, and the constant that feeds the runtime step
+// descriptor. Two hand-typed copies of a release number drift the moment
+// anyone bumps one of them, and the artifact then reports an identity nobody
+// released. Deriving both from the root version removes the class of defect.
+val policyReleaseVersion: String = rootProject.version.toString()
+
+// A release version must be a SemVer triple with an optional prerelease tag.
+// `parseSemVer` in PolicyPluginDeclaration splits on "-" and requires three
+// numeric components, so an unparseable version here would only surface as a
+// runtime admission failure, long after the artifact shipped. Fail at
+// configuration time instead.
+require(Regex("""^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$""").matches(policyReleaseVersion)) {
+    "policy release version '$policyReleaseVersion' is not a SemVer; " +
+        "the manifest's parseSemVer would reject it at admission time"
+}
+
 dependencies {
     // Published PipelineK SDK contracts, pinned by the BOM (resolution only).
     implementation(platform("dev.rubentxu.pipeline.v2:pipeline-sdk-bom:$sdkVersion"))
@@ -62,7 +84,7 @@ val pluginFatJar by tasks.registering(Jar::class) {
     archiveClassifier.set("all")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
-        attributes("Implementation-Title" to "pipelinek-policy-plugin", "Implementation-Version" to "0.1.0")
+        attributes("Implementation-Title" to "pipelinek-policy-plugin", "Implementation-Version" to policyReleaseVersion)
     }
     from(sourceSets.main.get().output)
     from({
@@ -102,7 +124,7 @@ val computePolicyRelease = tasks.register("computePolicyRelease") {
     description = "Measure the plugin artifact's SHA-256 and write its release provenance."
 
     val propsFile = policyReleaseProps
-    val releaseVersion = "0.1.0"
+    val releaseVersion = policyReleaseVersion
 
     dependsOn("compileKotlin", "processResources")
     outputs.file(propsFile)

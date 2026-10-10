@@ -38,6 +38,22 @@ object PolicyPluginDeclaration {
 
     val PLUGIN_REF = ResourceRefs.plugin("pipelinek-policy", "policy")
 
+    /**
+     * The plugin declares its release identity, and the SDK's `SemVer` has
+     * NO prerelease field (major/minor/patch only, verified against
+     * pipeline-domain 0.47.0). So a `-alpha.1` tag is DROPPED here and the
+     * manifest publishes `0.3.0` for an artifact built from `0.3.0-alpha.1`.
+     *
+     * That is not a bug in this file, it is a limit of the manifest format,
+     * and it is silent: an alpha build would be admitted as if it were the
+     * final release. The exact string is preserved in three other places a
+     * consumer can read — the release properties, the jar manifest and the
+     * step descriptor — so the prerelease is not lost, only unrepresentable
+     * in `SemVer`.
+     *
+     * `ManifestVersionPrereleaseTest` pins this behaviour so a change in the
+     * SDK or in this parser cannot quietly start claiming the opposite.
+     */
     private fun parseSemVer(raw: String): SemVer {
         val parts = raw.split("-")[0].split(".")
         require(parts.size == 3) { "SemVer must have 3 numeric components (got '$raw')" }

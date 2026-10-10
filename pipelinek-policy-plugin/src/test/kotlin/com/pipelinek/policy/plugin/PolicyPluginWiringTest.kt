@@ -20,9 +20,14 @@ class PolicyPluginWiringTest {
      * somewhere. In the artifact they come from the build-measured release
      * properties; here the system-property override is the sanctioned path
      * (same resolution order as [PolicyPluginDeclaration.release]).
+     *
+     * The value mirrors the shipped release rather than inventing one, so a
+     * reader comparing it against the real provenance is not misled into
+     * thinking two versions coexist. `PluginVersionAgreementTest` is what
+     * actually pins agreement with the measured value.
      */
     @kotlin.test.BeforeTest fun setUpProvenance() {
-        System.setProperty("pipelinek.policy.release.version", "0.1.0")
+        System.setProperty("pipelinek.policy.release.version", PolicyCheckStepDefinition.PLUGIN_VERSION)
         System.setProperty("pipelinek.policy.release.digest", "sha256:" + "0".repeat(64))
     }
 

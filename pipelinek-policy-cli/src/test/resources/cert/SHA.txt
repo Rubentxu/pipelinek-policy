@@ -81,4 +81,17 @@ baseline-suites: 42
 # A documentation change still moves the anchor, because the anchor's whole
 # job is to detect ANY drift in the certified sources, not only behavioural
 # drift. Test count is unchanged, so baseline-tests deliberately did not move.
-baseline-tests: 543
+# H1 release moved baseline-tests 543 → 550 with certified-sha UNCHANGED at
+# 404c980c...: the seven new tests all live in pipelinek-policy-plugin, which is
+# outside the root-module scope the anchor hashes. The version bump touched
+# build.gradle.kts and the plugin module, neither of which is in that scope,
+# which is exactly why the anchor did not move. Raised deliberately after a
+# fresh certify.sh run reported 550 executed, 0 failures, 0 errors, 0 skipped.
+# The seven: PluginVersionAgreementTest (3) pins the step descriptor's
+# PLUGIN_VERSION against the build-measured provenance, after RED was observed
+# by setting the constant back to the divergent "0.1.0"; and
+# ManifestVersionPrereleaseTest (4) pins that the SDK's SemVer has no prerelease
+# field, so v0.3.0-alpha.1 publishes as 0.3.0 in the manifest. The audit's P1 was
+# real: the plugin declared "0.1.0" while the root declared "0.2.0-M2", so a
+# published artifact carried two identities.
+baseline-tests: 550
