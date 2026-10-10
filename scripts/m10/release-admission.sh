@@ -129,12 +129,24 @@ log "· certification: $CERT_TESTS tests, green (baseline floor $BASELINE)"
 
 # ---------------------------------------------------------------- collect artifacts
 ARTIFACTS=()
+# Only jars belonging to the current version are publishable. A stale jar from
+# a previous version can survive in build/libs because Gradle does not prune it,
+# and shipping it alongside the real artifact is how a release ends up
+# advertising two versions of itself. Matching on the version string keeps the
+# versionless (module) jars, which are what the modules publish.
 while IFS= read -r a; do ARTIFACTS+=("$a"); done < <(
     find build/libs pipelinek-policy-*/build/libs policy-decoders-*/build/libs \
-        -name '*.jar' -type f 2>/dev/null | sort
+        -name '*.jar' -type f 2>/dev/null \
+    | grep -vE '/[^/]*-[0-9][^/]*\.jar$' | grep -v "$VERSION" || true
 )
-[ "${#ARTIFACTS[@]}" -gt 0 ] || fail "no jars found; run a build first"
-log "· artifacts: ${#ARTIFACTS[@]} jars"
+[ "${#ARTIFACTS[@]}" -gt 0 ] || fail "no jars found for version $VERSION; run a build first"
+STALE="$(find build/libs pipelinek-policy-*/build/libs policy-decoders-*/build/libs \
+    -name '*.jar' -type f 2>/dev/null | grep -vE '/[^/]*-[0-9][^/]*\.jar$' || true)"
+if [ -n "$STALE" ]; then
+    log "· note: ignoring superseded version jars present in build output:"
+    printf '%s\n' "$STALE" | sed 's/^/    /'
+fi
+log "· artifacts: ${#ARTIFACTS[@]} jars for $VERSION"
 
 # ---------------------------------------------------------------- checksums
 SUMS="$OUT_DIR/SHA256SUMS"
@@ -188,8 +200,12 @@ log "· SBOM: $(basename "$SBOM") (valid JSON, $RESOLVED coordinates reported by
 PROV_STATUS="NOT_ATTESTED"
 PROV_ERR=""
 if command -v cosign >/dev/null 2>&1; then
+    # Keyless attestation writes an OCI bundle to disk; without --bundle and
+    # --new-bundle-format cosign fails before it ever touches the network, so
+    # a missing bundle path is a local usage error, not a provenance failure.
     if cosign attest-blob --predicate "$SBOM" --type spdxjson \
-        --yes "$SUMS" >"$OUT_DIR/provenance.log" 2>&1; then
+        --yes --bundle "$OUT_DIR/provenance.bundle.json" --new-bundle-format \
+        "$SUMS" >"$OUT_DIR/provenance.log" 2>&1; then
         PROV_STATUS="ATTESTED"
     else
         PROV_ERR="$(tail -3 "$OUT_DIR/provenance.log" | tr '\n' ' ')"
