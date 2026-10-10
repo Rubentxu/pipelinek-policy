@@ -159,6 +159,23 @@ say "artifacts: $ART_COUNT jars"
 # --- dependencies -----------------------------------------------------------
 DEPS="$(find ~/.gradle/caches/modules-2/files-2.1 -maxdepth 2 -mindepth 2 -type d 2>/dev/null | sed 's|.*/files-2.1/||' | sort -u | wc -l)"
 
+# B6.7 · The SDK the plugin resolves is an INTEGRATION dependency, and it does
+# not come from the Gradle cache: it is installed into mavenLocal from a
+# separate checkout. The 622 resolved coordinates above cannot see it, so the
+# receipt used to describe our own jars while saying nothing about the SDK they
+# were built against. Record the digests actually on disk.
+SDK_VERSION="$(sed -n 's/^val sdkVersion = "\(.*\)"/\1/p' pipelinek-policy-plugin/build.gradle.kts | head -1)"
+SDK_GROUP_PATH="${SDK_GROUP_PATH:-$HOME/.m2/repository/dev/rubentxu/pipeline/v2}"
+SDK_DIGESTS=""
+if [ -n "$SDK_VERSION" ] && [ -d "$SDK_GROUP_PATH" ]; then
+  SDK_DIGESTS="$(for jar in "$SDK_GROUP_PATH"/*/"$SDK_VERSION"/*-"$SDK_VERSION".jar; do
+    [ -f "$jar" ] || continue
+    printf '%s  %s\n' "$(sha256sum "$jar" | cut -c1-16)" "${jar#$SDK_GROUP_PATH/}"
+  done | sort)"
+fi
+SDK_COUNT="$(printf '%s\n' "$SDK_DIGESTS" | grep -c . || true)"
+say "sdk: $SDK_COUNT artifacts at $SDK_VERSION (integration dependency, from mavenLocal)"
+
 GIT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 GIT_TREE_STATE="$(git status --porcelain | wc -l) changed paths"
 
@@ -197,12 +214,28 @@ that produced this file. Nothing is carried over from a previous run.
 - **toolchain**: JVM $RUNTIME_VER, Kotlin $KOTLIN_VER
 - **resolved dependency coordinates**: $DEPS
 - **artifacts**: $ART_COUNT jars
+- **integration SDK**: $SDK_COUNT artifacts at version $SDK_VERSION
 
 ## Artifact digests
 
 \`\`\`
 $ARTIFACTS
 \`\`\`
+
+## Integration SDK digests (B6.7)
+
+These are NOT in the Gradle cache and NOT covered by the $DEPS resolved
+coordinates above: the plugin resolves them from \`mavenLocal\`, installed from a
+separate PipelineK checkout. Without this section the receipt described our own
+jars while saying nothing about the SDK they were built against.
+
+\`\`\`
+$SDK_DIGESTS
+\`\`\`
+
+\`scripts/m6/uat-external-distribution.sh\` asserts the FULL sha256 of these same
+artifacts before walking the installed Step, so a republished or stale SDK fails
+the UAT instead of being silently certified.
 
 ## How to read this
 
