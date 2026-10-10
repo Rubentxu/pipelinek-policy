@@ -19,7 +19,9 @@ import com.pipelinek.policy.kernel.value.ValueNode
  *
  * The driver consumes rows from an injected supplier (decoders provide the
  * cursors); the kernel package performs NO I/O (law 5). Budgets are enforced:
- * exceeding [DatasetPlan.rowBudget] refuses with [BudgetExceededException].
+ * exceeding [DatasetPlan.rowBudget] stops the run and is reported as a typed
+ * `Accumulator.Outcome.Cap.ROW_BUDGET` refusal inside the returned report, so
+ * the verdicts computed before the stop are still readable (B6.6).
  *
  * Output shape: per-row verdicts for LOCAL rules (only violation counters are
  * retained, not per-row data) and a final [StreamingReport] with per-rule
@@ -89,15 +91,28 @@ object StreamingEvaluator {
         // cross-run mutable registry, and a leaked map would leak refusals
         // between evaluations.
         val aggregateRefusals = mutableMapOf<RuleKey, Accumulator.Outcome.Refused>()
-        while (true) {
+        // B6.6: the row budget is an OUTCOME, not an exception. B5.6 migrated
+        // the per-accumulator caps to typed values and left this one behind, so
+        // an over-budget run used to throw and discard every verdict it had
+        // already computed. The stop is recorded instead, and the run still
+        // returns a readable report.
+        var budgetStop: Accumulator.Outcome.Refused? = null
+        while (budgetStop == null) {
             val row = rows.next() ?: break
-            rowNumber++
-            if (++consumed > plan.rowBudget) {
-                refused++
-                throw BudgetExceededException("row budget ${plan.rowBudget} exceeded at row $rowNumber")
+            // The row that would exceed the budget is NOT consumed: counting it
+            // would claim a row was folded that never was.
+            if (consumed >= plan.rowBudget) {
+                budgetStop = Accumulator.Outcome.Refused(
+                    Accumulator.Outcome.Cap.ROW_BUDGET,
+                    consumed,
+                    plan.rowBudget,
+                ).also { refused++ }
+            } else {
+                rowNumber++
+                consumed++
+                evaluateLocalRow(localOnlySet, row, tallies, rowNumber)
+                refused += foldAggregates(aggregateRules, accumulators, row, aggregateRefusals)
             }
-            evaluateLocalRow(localOnlySet, row, tallies, rowNumber)
-            refused += foldAggregates(aggregateRules, accumulators, row, aggregateRefusals)
         }
 
         return report(
@@ -110,6 +125,7 @@ object StreamingEvaluator {
             refused,
             plan,
             aggregateRefusals,
+            budgetStop,
         )
     }
 
@@ -207,6 +223,7 @@ object StreamingEvaluator {
         refused: Long,
         plan: DatasetPlan,
         aggregateRefusals: Map<RuleKey, Accumulator.Outcome.Refused>,
+        budgetStop: Accumulator.Outcome.Refused?,
     ): StreamingReport {
         val results = LinkedHashMap<RuleKey, RuleOutcome>()
         localRules.forEach { (key, _, _) ->
@@ -241,6 +258,22 @@ object StreamingEvaluator {
                     } else {
                         RuleOutcome.Aggregate(value)
                     }
+                }
+            }
+        }
+        // B6.6: when the budget stopped the run, every rule that was still
+        // being folded is INCOMPLETE, not passing. Reporting the partial
+        // tallies as verdicts would turn a truncated run into a clean one,
+        // which is the silent weakening law 12 forbids. The refusal stays a
+        // distinct Cap so a caller can tell a budget stop from a type refusal
+        // (law 8).
+        if (budgetStop != null) {
+            results.keys.toList().forEach { key ->
+                val existing = results[key]
+                if (existing !is RuleOutcome.Error) {
+                    results[key] = RuleOutcome.Error(
+                        "row_budget cap ${budgetStop.limit} reached after ${budgetStop.consumed}",
+                    )
                 }
             }
         }

@@ -9,12 +9,10 @@ import com.pipelinek.policy.decoders.csv.CsvRowSource
 import com.pipelinek.policy.decoders.json.JsonlRefusal
 import com.pipelinek.policy.decoders.json.JsonlSource
 import com.pipelinek.policy.kernel.dataset.Accumulator
-import com.pipelinek.policy.kernel.dataset.BudgetExceededException
 import com.pipelinek.policy.kernel.dataset.DatasetPlanner
 import com.pipelinek.policy.kernel.dataset.DatasetSpec
 import com.pipelinek.policy.kernel.dataset.PlanRefusal
 import com.pipelinek.policy.kernel.dataset.StreamingEvaluator
-import com.pipelinek.policy.kernel.dataset.SumTypeMismatchException
 import java.io.File
 
 /**
@@ -107,6 +105,19 @@ object StreamCmd {
                         return ExitCodes.ADMISSION_ERROR
                     }
                 val report = StreamingEvaluator.evaluate(policySet, plan, rows)
+                // B6.6: the row budget is now a typed outcome in the report, not
+                // a thrown BudgetExceededException. The CLI still refuses with
+                // `budget-exceeded` and EVALUATION_ERROR, but it reads the
+                // refusal from the report instead of from a catch block, so a
+                // truncated run keeps the verdicts it did manage to compute.
+                report.results.values
+                    .filterIsInstance<StreamingEvaluator.RuleOutcome.Error>()
+                    .map { it.message }
+                    .firstOrNull { it.startsWith("row_budget") }
+                    ?.let { refusal ->
+                        out(msg(jsonOut, "budget-exceeded", refusal))
+                        return ExitCodes.EVALUATION_ERROR
+                    }
                 report.results.forEach { (ruleId, outcome) ->
                     when (outcome) {
                         is StreamingEvaluator.RuleOutcome.Violated -> {
@@ -123,12 +134,6 @@ object StreamCmd {
                     }
                 }
             }
-        } catch (budget: BudgetExceededException) {
-            out(msg(jsonOut, "budget-exceeded", budget.message ?: "budget exceeded"))
-            return ExitCodes.EVALUATION_ERROR
-        } catch (mismatch: SumTypeMismatchException) {
-            out(msg(jsonOut, "type-mismatch", mismatch.message ?: "type mismatch"))
-            return ExitCodes.EVALUATION_ERROR
         } catch (csv: CsvRowRefusal) {
             out(msg(jsonOut, "decode-refusal", "csv refused: ${csv.anchor}"))
             return ExitCodes.ADMISSION_ERROR

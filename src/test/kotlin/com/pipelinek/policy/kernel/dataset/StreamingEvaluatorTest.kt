@@ -135,15 +135,28 @@ class StreamingEvaluatorTest {
         assertEquals(1, report.metrics.accumulatorsUsed)
     }
 
+    /**
+     * B6.6: the budget now refuses with a typed OUTCOME and returns a report.
+     * This test used to assert `BudgetExceededException`, which pinned the
+     * half-finished B5.6 migration: it threw away every verdict the run had
+     * already computed. The refusal is still mandatory — the run must stop —
+     * but it is now observable in the report instead of only in a catch block.
+     */
     @Test
     fun `05c - falsification - row budget refuses instead of running forever`() {
         val set = PolicySet("s", listOf(Policy("p", listOf(textRule("r", "ok")))))
         val plan = (DatasetPlanner.plan(set, datasets) as DatasetPlan).copy(rowBudget = 3)
         val endless = StreamingEvaluator.RowSupplier { ValueNode.MappingValue(linkedMapOf()) }
-        val ex = assertThrows<BudgetExceededException> {
-            StreamingEvaluator.evaluate(set, plan, endless)
-        }
-        assertTrue(ex.message!!.contains("row budget 3"))
+        val report = StreamingEvaluator.evaluate(set, plan, endless)
+
+        assertEquals(3L, report.metrics.rowsConsumed, "the run stops at the budget")
+        val messages = report.results.values
+            .filterIsInstance<StreamingEvaluator.RuleOutcome.Error>()
+            .map { it.message }
+        assertTrue(
+            messages.isNotEmpty() && messages.all { it.contains("row_budget cap 3") },
+            "a truncated run must report the row_budget refusal, got $messages",
+        )
     }
 
     @Test

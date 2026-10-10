@@ -486,7 +486,44 @@ mutate \
   '*GovernanceJourneyParityTest*'
 
 echo
-echo "== B6.5 mutation summary"
+# --- B6.6 · the two streaming aggregate defects this cycle closed -----------
+#
+# These three were measured by hand before being added here, and each one
+# killed the targeted test on the first attempt. The gate records them so the
+# fixes cannot be undone silently by a later refactor.
+
+# G1: a boolean collection predicate's verdict IS the rule's result. Mapping
+# `true` to Violated inverts every ALL/ANY/NONE rule in the language.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/StreamingEvaluator.kt \
+  'if (value.boolean) RuleOutcome.Passed else RuleOutcome.Violated(1L, -1L)' \
+  'if (value.boolean) RuleOutcome.Violated(1L, -1L) else RuleOutcome.Passed' \
+  'G1 a boolean predicate verdict must not be inverted' \
+  '*BooleanCollectionPredicateStreamingTest*'
+
+# G2: without the truncation marking, a run stopped by the row budget reports
+# the partial tallies of the rows it did fold as FINAL verdicts. This is the
+# silent weakening the row-budget outcome exists to prevent, and it survived an
+# earlier version of RowBudgetOutcomeTest that only asserted assertIs<RuleOutcome>
+# over a rule which errored on its own.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/StreamingEvaluator.kt \
+  'if (existing !is RuleOutcome.Error) {' \
+  'if (existing is RuleOutcome.Error) {' \
+  'G2 a truncated run must be marked incomplete, not passed' \
+  '*RowBudgetOutcomeTest*'
+
+# G3: the budget boundary itself. `>` instead of `>=` folds one row past the
+# limit the caller explicitly asked for.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/StreamingEvaluator.kt \
+  'if (consumed >= plan.rowBudget) {' \
+  'if (consumed > plan.rowBudget) {' \
+  'G3 the row budget boundary must be inclusive' \
+  '*RowBudgetOutcomeTest*'
+
+echo
+echo "== B6.6 mutation summary"
 echo "   killed:     $KILLS"
 echo "   survived:   $SURVIVED"
 echo "   invalid:    $INVALID"

@@ -238,12 +238,6 @@ sealed interface Accumulator {
     }
 }
 
-/** Budget refusal vocabulary, retained for the row-budget path (law 8: distinct from type). */
-class BudgetExceededException(message: String) : RuntimeException(message)
-
-/** Type refusal inside SUM. Maps to TYPE_MISMATCH (no silent coercion). */
-class SumTypeMismatchException(message: String) : RuntimeException(message)
-
 /**
  * Budget accounting for one streaming evaluation run. Pure data; the
  * StreamingEvaluator fills it, callers read it. No clock, no I/O.

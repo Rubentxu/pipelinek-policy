@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 404c980cfd336d806af6588b2d2668e8a5c424d2
+certified-sha: 44c6fb71d860b27d8327387b6793f62680002897
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -94,4 +94,31 @@ baseline-suites: 42
 # field, so v0.3.0-alpha.1 publishes as 0.3.0 in the manifest. The audit's P1 was
 # real: the plugin declared "0.1.0" while the root declared "0.2.0-M2", so a
 # published artifact carried two identities.
-baseline-tests: 550
+# B6.6 moved certified-sha 404c980c... -> 44c6fb71... and baseline-tests
+# 550 -> 563: thirteen new tests close the two defects that the B6.6 audit
+# found in the streaming aggregate path.
+#   - BooleanCollectionPredicateStreamingTest (8): ALL/ANY/NONE were being
+#     folded through Accumulator.Sum, which admits only NumberValue, so a
+#     boolean predicate over a TEXT column was refused on EVERY row and
+#     reported as Error(type_mismatch cap ... reached after 0). The first
+#     fix attempted here (return null for non-COUNT aggregates) was itself
+#     rejected: it removed the rule from the report entirely, and a
+#     `null !is Error` assertion is vacuously true, so the rule silently
+#     disappeared instead. Accumulator.BooleanFold performs the real fold.
+#   - RowBudgetOutcomeTest (5): ROW_BUDGET still threw BudgetExceededException
+#     after B5.6 had migrated every other cap to a typed Outcome.Refused, so
+#     an over-budget run discarded every verdict it had already computed. The
+#     first version of the truncation test asserted only assertIs<RuleOutcome>
+#     and a mutant that skips the incomplete-marking SURVIVED it; the rule it
+#     used was also a bare Expression.Literal that errored on its own, which
+#     made that mutant a no-op. Both are corrected and the mutant now dies.
+#   - StreamingEvaluatorTest.05c was rewritten: it asserted
+#     assertThrows<BudgetExceededException>, pinning the half-finished
+#     migration as if it were the contract.
+# Two mutants rejected as INVALID rather than counted: removing the truncation
+# guard with `if (false)` and inverting it both fail to compile, because the
+# smart cast on the nullable budgetStop is what makes the body legal.
+# The CLI lost its two catch clauses for these exceptions and now reads the
+# refusal out of the report; StreamCmdTest.07d still pins budget-exceeded
+# plus exit 3, so the observable CLI contract did not change.
+baseline-tests: 563
