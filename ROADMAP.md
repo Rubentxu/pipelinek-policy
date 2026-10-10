@@ -413,12 +413,20 @@ de B0/B1/B2/B4 sin resolver.
 - B0.2 Resultados tipados de evaluación/refusal en plugin y CLI (DONE); el wrapper genérico de error adapter/engine queda como D-B0-1 P2 en B4.3, sin rebajar un defecto P0/P1
 - B0.3 Regression fortress (8 escenarios del plugin + falsificación CLI de Error/Violation/refusal) DONE
 - Gate B0: PASS; gate global fresco en `docs/history/B0_RECEIPT.md` (337 tests, 0 failures/errors/skips; architecture fitness y detekt verdes)
-- **B0.5 REABIERTO (auditoría 2026-10-10):** Error + Violated en SHADOW termina en
-  `StepOutcome.Success` porque `PolicyCheckStepDefinition` comprueba `violations`
-  antes que `errors`, y `PolicyCheckOutput` mapea `VIOLATED + SHADOW` a `Success`.
-  El comentario del código declara la precedencia correcta; la implementación no la
-  sigue. Estado de B0: **PASS con reserva** hasta que el caso mixto ENFORCED/SHADOW
-  esté en la fortress y falle antes / pase después.
+- **B0.5 CERRADO (verificado 2026-10-10):** Error + Violated en SHADOW terminaba en
+  `StepOutcome.Success` porque `PolicyCheckStepDefinition` comprobaba `violations`
+  antes que `errors`, y `PolicyCheckOutput` mapeaba `VIOLATED + SHADOW` a `Success`.
+  El comentario del código declaraba la precedencia correcta; la implementación no la
+  seguía. **El defecto ya estaba corregido en `fa6c017`**, y la corrección además movió
+  la precedencia al core compartido (`EnforcementInterpreter.verdict`) para que el
+  adaptador del plugin no pueda discrepar del de la CLI.
+  `EnforcementPrecedenceTest` cubre la matriz completa por `evaluate` público
+  (8 casos: Error+Passed, Error+Violated, Passed+Violated+Error, SHADOW+Error,
+  SHADOW+Violation sin Error, refusal bajo SHADOW, evidencia bajo ERRORED,
+  ENFORCED+Violation sin Error).
+  **Falsificado**: rankear VIOLATED por encima de ERRORED en el core → **RED 3/14**
+  (`passed plus violated plus error`, `violated plus error`,
+  `an ERRORED verdict still carries the violations as evidence`). Estado de B0: **DONE**.
 
 ## B1 — Cierre semántico kernel/DSL (P0/P1) — DONE (2026-10-09)
 RuleKey contextual; numérico exacto (sin Double); forbid/negación declarativa;
@@ -435,14 +443,21 @@ versionada (fixture IR v1 y digest fijo; pack PKB1 verificado por la API públic
 
 Evidencia trazable por requisito y gates: `docs/history/B2_RECEIPT.md`.
 
-- **B2.9 REABIERTO (auditoría 2026-10-10):** `BundleIrCanonicality.identify` calcula
+- **B2.9 CERRADO (verificado 2026-10-10):** `BundleIrCanonicality.identify` calcula
   la codificación legacy **antes** de probar CURRENT, y `LegacyPolicyIrJsonV1.encode`
   devuelve `null` ante `Expression.CollectionPredicate`. Resultado: un bundle del
   formato vigente con predicado de colección se rechaza en `verifyPacked()`.
-  35 referencias a `CollectionPredicate` en tests y **ningún fixture de bundle** que
-  lo cubra. El codec y el round-trip no están en cuestión: el fallo es de orden en
-  un punto de admisión. Estado de B2: **PASS con reserva** hasta que
-  `pack → verifyPacked → evaluate` con predicado de colección pase por la API pública.
+  **El defecto ya estaba corregido en `157c830`** y el ROADMAP quedó obsoleto. La
+  aceptación del propio roadmap (`pack → verifyPacked → evaluate` por API pública)
+  existe y pasa en `CurrentEncodingAdmissionTest`.
+  **Falsifiqué el orden dos veces y las dos quedó VERDE**: la mutación
+  legacy-first es un equivalente observational. La razón, medida con un probe
+  desechable: los dos escritores son **disjuntos** — un literal produce 200/200 bytes
+  idénticos, una comparison produce 322/316 distintos — así que a lo sumo una
+  comparación puede tener éxito y el orden no puede cambiar el resultado. El test
+  que ata la propiedad real es `the two encodings are disjoint`, y muere (RED 1/3)
+  al mutar CURRENT para que devuelva LEGACY cuando ambos escriben el documento.
+  Estado de B2: **DONE**.
 
 ## B3 — Fidelidad de recursos, source maps y CLI (P1) — DONE (2026-10-09)
 Identidad estructural de nodos; JSON/YAML/CSV con spans reales; finding
