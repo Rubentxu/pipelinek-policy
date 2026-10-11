@@ -1,6 +1,7 @@
 package com.pipelinek.policy.kernel.dataset
 
 import com.pipelinek.policy.kernel.expression.Expression
+import com.pipelinek.policy.kernel.evaluator.RuleKey
 import com.pipelinek.policy.kernel.policy.PolicySet
 import com.pipelinek.policy.kernel.policy.Rule
 
@@ -60,20 +61,40 @@ data class DatasetSpec(
  */
 object DatasetShapeAnalyzer {
 
-    data class Result(val shapesByRule: Map<String, DatasetShape>) {
+    /**
+     * H2.1 · Keyed by [RuleKey], not by bare rule id.
+     *
+     * A rule id is unique only WITHIN its policy, so `Map<String, DatasetShape>`
+     * silently merged two rules that happened to share a name. The merge was not
+     * a benign deduplication: the later rule overwrote the earlier shape, so a
+     * set containing a LOCAL `check` in one policy and an AGGREGATE `check` in
+     * another was planned from whichever came last.
+     *
+     * Observed before the fix, with the AGGREGATE rule declared second:
+     * `plan.localRuleIds=[] aggregateRuleIds=[check]`, so the aggregate was
+     * classified LOCAL, was never folded, and the run drained the whole row
+     * budget and reported `row_budget cap 10000000 reached after 10000000`
+     * instead of a count. With the order reversed the same set planned
+     * correctly, which is what makes this a correctness defect rather than a
+     * limitation.
+     */
+    data class Result(val shapesByRule: Map<RuleKey, DatasetShape>) {
         val worst: DatasetShape
             get() = when {
                 DatasetShape.GLOBAL in shapesByRule.values -> DatasetShape.GLOBAL
                 DatasetShape.AGGREGATE in shapesByRule.values -> DatasetShape.AGGREGATE
                 else -> DatasetShape.LOCAL
             }
+
+        /** The shape of one rule, or LOCAL when it is not in this set. */
+        fun shapeOf(key: RuleKey): DatasetShape = shapesByRule[key] ?: DatasetShape.LOCAL
     }
 
     fun analyze(set: PolicySet): Result {
-        val shapes = linkedMapOf<String, DatasetShape>()
+        val shapes = linkedMapOf<RuleKey, DatasetShape>()
         for (policy in set.policies) {
             for (rule in policy.rules) {
-                shapes[rule.id] = ruleShape(rule)
+                shapes[RuleKey.of(set.id, policy.id, rule.id)] = ruleShape(rule)
             }
         }
         return Result(shapes)

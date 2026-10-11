@@ -1,5 +1,6 @@
 package com.pipelinek.policy.kernel.dataset
 
+import com.pipelinek.policy.kernel.evaluator.RuleKey
 import com.pipelinek.policy.kernel.policy.PolicySet
 
 /**
@@ -9,7 +10,14 @@ import com.pipelinek.policy.kernel.policy.PolicySet
  */
 data class PlanRefusal(
     val reason: String,
-    val offendingRules: List<String>,
+    /**
+     * H2.1 · The offending rules by identity, not by name.
+     *
+     * This was `List<String>` of rule ids, so a refusal could not say WHICH rule
+     * offended when two policies shared a name, and the CLI printed the bare id
+     * with no way for an author to act on it. [RuleKey] names the policy too.
+     */
+    val offendingRules: List<RuleKey>,
 )
 
 /** Whether an aggregate over a dataset needs an index or a plain pass. */
@@ -32,8 +40,17 @@ sealed interface IndexPlan {
  */
 data class DatasetPlan(
     val policySetId: String,
-    val localRuleIds: List<String>,
-    val aggregateRuleIds: List<String>,
+    /**
+     * H2.1 · Keys, not ids.
+     *
+     * These were `List<String>` of bare rule ids, and rule ids are unique only
+     * within a policy, so two policies could each declare `check` and the plan
+     * could not say which one it meant. Keyed by [RuleKey], identity survives
+     * the whole evaluation and the two classification lists can no longer
+     * overlap by accident.
+     */
+    val localRuleKeys: Set<RuleKey>,
+    val aggregateRuleKeys: Set<RuleKey>,
     val indexPlan: IndexPlan,
     val rowBudget: Long,
     val accumulatorCap: Long,
@@ -60,8 +77,8 @@ object DatasetPlanner {
                 offendingRules = global,
             )
         }
-        val aggregate = analysis.shapesByRule.filterValues { it == DatasetShape.AGGREGATE }.keys.toList()
-        val local = analysis.shapesByRule.filterValues { it == DatasetShape.LOCAL }.keys.toList()
+        val aggregate = analysis.shapesByRule.filterValues { it == DatasetShape.AGGREGATE }.keys.toSet()
+        val local = analysis.shapesByRule.filterValues { it == DatasetShape.LOCAL }.keys.toSet()
 
         // Aggregates are single-pass folds; an index is only materialized when
         // a dataset explicitly declares requiresGlobalIndex (the GLOBAL access
@@ -75,8 +92,8 @@ object DatasetPlanner {
             }
         return DatasetPlan(
             policySetId = set.id,
-            localRuleIds = local,
-            aggregateRuleIds = aggregate,
+            localRuleKeys = local,
+            aggregateRuleKeys = aggregate,
             indexPlan = indexPlan,
             rowBudget = rowBudget,
             accumulatorCap = accumulatorCap,

@@ -67,7 +67,7 @@ class StreamingEvaluatorTest {
         val set = PolicySet("s", listOf(Policy("p", listOf(globalRule))))
         val plan = DatasetPlanner.plan(set, datasets)
         assertTrue(plan is PlanRefusal)
-        assertEquals(listOf("cross-row"), plan.offendingRules)
+        assertEquals(listOf(RuleKey.of("s", "p", "cross-row")), plan.offendingRules)
         assertTrue(plan.reason.contains("law 12"))
     }
 
@@ -79,8 +79,8 @@ class StreamingEvaluatorTest {
         )
         val plan = DatasetPlanner.plan(set, datasets)
         assertTrue(plan is DatasetPlan)
-        assertEquals(listOf("local-1"), plan.localRuleIds)
-        assertEquals(listOf("count-all"), plan.aggregateRuleIds)
+        assertEquals(setOf(RuleKey.of("s", "p", "local-1")), plan.localRuleKeys)
+        assertEquals(setOf(RuleKey.of("s", "p", "count-all")), plan.aggregateRuleKeys)
     }
 
     @Test

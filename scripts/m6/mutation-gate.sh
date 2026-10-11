@@ -709,6 +709,42 @@ mutate \
   'N2 a full window must slide instead of truncating the document' \
   '*CsvRowStreamSourceTest*'
 
+# R1: the LOCAL/AGGREGATE split must key on IDENTITY, not on a name.
+#
+# `DatasetShape.Result` was `Map<String, DatasetShape>` keyed by the bare rule id,
+# and the planner and the streaming consumer selected rules by bare id as well.
+# Two policies that each declare a rule called `check` shared one map slot, and
+# the rule declared last won: declaring the aggregate second planned it as LOCAL,
+# declaring it first planned it as AGGREGATE. The measured pre-fix failure was an
+# empty local set plus `row_budget cap 10000000 reached after 10000000` -- a
+# silently unfolded aggregate rather than a fold.
+#
+# The mutation re-collapses the key to the rule id, the smallest edit that
+# reproduces the collision with every type intact. The tests that kill it assert
+# one direction of the plan, BOTH declaration orders agreeing, and two same-named
+# LOCAL rules both reaching the report.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/DatasetShape.kt \
+  '                shapes[RuleKey.of(set.id, policy.id, rule.id)] = ruleShape(rule)' \
+  '                shapes[RuleKey.of(set.id, "", rule.id)] = ruleShape(rule)' \
+  'R1 rule identity must include the policy, not just the rule id' \
+  '*DatasetRuleIdentityProbeTest*'
+
+# R2: the same collision on the consumption side.
+#
+# `localOnly` rebuilds the per-row policy set from the plan's keys. If it keys
+# that lookup by rule id alone, the plan is correct while the evaluation that
+# consumes it silently drops rules -- the defect moves from classification to
+# consumption, which is exactly the shape of bug H2.1 describes. This mutation
+# drops the policy from the lookup key; the same-named-LOCAL test dies because
+# the report comes back with no `check` verdict at all instead of two.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/StreamingEvaluator.kt \
+  '                        .map { RuleKey.of(set.id, policy.id, it.id) }' \
+  '                        .map { RuleKey.of(set.id, "", it.id) }' \
+  'R2 the LOCAL subset must be rebuilt with the full rule key' \
+  '*DatasetRuleIdentityProbeTest*'
+
 echo
 echo "== B6.6 mutation summary"
 echo "   killed:     $KILLS"
