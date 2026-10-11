@@ -177,8 +177,12 @@ object StreamCmd {
      * the window bound is the property that keeps memory flat, and a refusal
      * for a racing writer costs more than it protects.
      *
-     * JSONL keeps the materializing read; its cursor has no windowed
-     * implementation yet, so it is left honest rather than pretended.
+     * H3.1 (JSONL): same change as CSV. The JSONL branch used to read the
+     * whole file before yielding a single row; it now opens the file as a
+     * stream through an 8 KiB sliding window. The growth-guard trade-off
+     * above is identical. `JsonlSource.open(file.inputStream())` is the
+     * streaming constructor; the array-backed one is still in the API for
+     * the small fixtures and the in-memory tests.
      */
     private fun rowSupplierFor(file: File, out: (String) -> Unit): StreamingEvaluator.RowSupplier? = when (
         file.extension.lowercase()
@@ -206,14 +210,18 @@ object StreamCmd {
             }
         }
         "jsonl", "ndjson" -> {
-            val bytes = BoundedRead.readOrReport(
-                file,
-                "stream source",
-                out,
-                BoundedRead.DEFAULT_RESOURCE_BUDGET,
-            ) ?: return null
-            val source = JsonlSource(bytes)
-            StreamingEvaluator.RowSupplier { source.next() }
+            // H3.1 · The JSONL cursor now opens a stream through a sliding
+            // window, so the file is no longer materialized before the first
+            // row is yielded. `checkLength` is the cheap stat (no read), same
+            // as the CSV path.
+            val refusal = BoundedRead.checkLength(file, "stream source", out, BoundedRead.DEFAULT_RESOURCE_BUDGET)
+            if (refusal != null) return null
+            val cursor = JsonlSource.open(file.inputStream())
+            StreamingEvaluator.RowSupplier {
+                val row = cursor.next()
+                if (row == null) cursor.closeQuietly()
+                row
+            }
         }
         else -> null
     }
