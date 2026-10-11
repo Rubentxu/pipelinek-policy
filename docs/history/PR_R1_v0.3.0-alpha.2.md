@@ -1,6 +1,6 @@
 # Pull Request: R1 v0.3.0-alpha.2 reconciliation
 
-> **Status:** `READY_FOR_HUMAN_REVIEW` · **Branch:** `integration/r1-alpha.2` (local, NOT pushed) · **Base:** `origin/main` at `c906988582ea16085bb6ec0154559e5a30c770c6` · **Compare:** `bf9d70987abb7a8d2f75de529b7fd7cf4b3d205c`
+> **Status:** `READY_FOR_HUMAN_REVIEW` · **Branch:** `integration/r1-alpha.2` (local, NOT pushed) · **Base:** `origin/main` at `c906988582ea16085bb6ec0154559e5a30c770c6` · **Compare:** `7cd8b3fdce39d076bea4fef8c0c6e4a49c891f00` (67 commits ahead, includes R1 + R2.1 + R3.1)
 
 ## Resumen
 
@@ -52,9 +52,9 @@ Integra 63 commits de trabajo local que cierran los gaps H1–H5 del reviewer y 
 
 1. **Cert anchor scope es root-only** — la falsificación R1.3.2 demostró que el SHA certificado no captura cambios en el módulo plugin. Decidido: NO extender en R1 (alpha.2); R4.2 extenderá el cert a todos los módulos distribuidos. **No se afirma cobertura completa de fuentes en este alpha.**
 2. **Provenance `NOT_ATTESTED`** — la firma cosign/Sigstore OIDC no se ha emitido; requiere login interactivo del propietario. Marcada como R3.4.
-3. **Compatibilidad SDK 0.48.0 `NOT_MEASURED`** — la matriz acredita compilación contra 0.48.0 pero no carga en host vivo. R3.1 ejecutará esta ruta.
+3. **Compatibilidad SDK 0.48.0 — R3.1 PASS, MEDIDO en host vivo** — el plugin, compilado contra SDK 0.48.0, (1) `gradle assemble -PsdkVersion=0.48.0` BUILD SUCCESSFUL en 12s, (2) `dependencies --configuration runtimeClasspath` resuelve los 4 módulos del BOM a 0.48.0, (3) probe binario contra SDK 0.48.0 + plugin-all.jar descubre `PolicyCheckContributor` vía ServiceLoader (`Found 1 contributors.`), (4) `plugin-manifest.json` declara `apiRange: [0.47.0, 0.49.0)` que cubre 0.48.0 por contrato. Detalles en `docs/history/R3_1_SDK_0_48_0_LIVE_HOST.md`. Limitaciones honestas: probe vive en /tmp (R3.1.1 lo promoverá a `src/test/`); no se ejecutó un `policy.check` real contra bundle+dataset+emitters (R3.2/R3.3); cert anchor sigue root-only por diseño (R4.2 lo extenderá).
 4. **Replay hit/miss `NOT_MEASURED`** — la decisión ocurre en `DurableInvocationResolver` (fuera del repo). El fingerprint se verificó, pero el comportamiento real del host no. Marcado como R3.2.
-5. **H2.4 design fork (GLOBAL execution path) — PARKED** — la decisión A/B sobre cómo extender el soporte GLOBAL no es técnica, es de producto. 14 sitios afectados, 1 de ellos en producción (`CanonicalPolicyJson:147`). El planner actual rechaza GLOBAL explícitamente (ley 12). R2.1 recuperará la propuesta original desde `M8_SPECIFICATION.md` / `POLICY_IR.md` para presentar la comparación al propietario del producto.
+5. **H2.4 design fork (GLOBAL execution path) — RESUELTO, alternativa C** — `docs/history/R2_1_H24_DESIGN_FORK.md` recuperó 3 alternativas (A coarse, B per-rule, C refusal tipado). `docs/04-adrs/ADR-0017-h2.4-global-annotation.md` adopta C: GLOBAL queda como anotación forward-compat en el IR, `DatasetSpec.requiresGlobalIndex: Boolean` se preserva como DECLARACIÓN, el planner sigue rechazando GLOBAL con `PlanRefusal(GLOBAL_WITHOUT_INDEX)` (ley 12), el `StreamingEvaluator` no implementa la ruta GLOBAL. **Cero código tocado.** El seam `DatasetPlanner.plan() @Suppress("UnusedParameter") datasets` queda preservado para reabrir H2.4 si llega un caso de uso medido. La alternativa B sigue gateada en M3/M4 (FAIL documentado).
 
 ## Documentación nueva
 
