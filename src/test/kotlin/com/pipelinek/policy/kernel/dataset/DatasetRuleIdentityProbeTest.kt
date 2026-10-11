@@ -130,8 +130,16 @@ class DatasetRuleIdentityProbeTest {
         val aggregateSecond = planOf(listOf(Policy("alpha", listOf(local)), Policy("beta", listOf(aggregate))))
         val aggregateFirst = planOf(listOf(Policy("beta", listOf(aggregate)), Policy("alpha", listOf(local))))
 
-        assertEquals(aggregateFirst.localRuleKeys, aggregateSecond.localRuleKeys, "local classification depends on order")
-        assertEquals(aggregateFirst.aggregateRuleKeys, aggregateSecond.aggregateRuleKeys, "aggregate classification depends on order")
+        assertEquals(
+            aggregateFirst.localRuleKeys,
+            aggregateSecond.localRuleKeys,
+            "local classification depends on order",
+        )
+        assertEquals(
+            aggregateFirst.aggregateRuleKeys,
+            aggregateSecond.aggregateRuleKeys,
+            "aggregate classification depends on order",
+        )
         assertEquals(setOf(RuleKey.of("s", "alpha", "check")), aggregateSecond.localRuleKeys)
         assertEquals(setOf(RuleKey.of("s", "beta", "check")), aggregateSecond.aggregateRuleKeys)
     }
@@ -167,7 +175,11 @@ class DatasetRuleIdentityProbeTest {
 
         val localKey = RuleKey.of("s", "alpha", "check")
         assertEquals(setOf(localKey), plan.localRuleKeys, "only the LOCAL rule belongs to the per-row set")
-        assertEquals(setOf(RuleKey.of("s", "beta", "check")), plan.aggregateRuleKeys, "the AGGREGATE rule must not be evaluated per row")
+        assertEquals(
+            setOf(RuleKey.of("s", "beta", "check")),
+            plan.aggregateRuleKeys,
+            "the AGGREGATE rule must not be evaluated per row",
+        )
         assertTrue(
             report.results.containsKey(localKey),
             "the LOCAL rule must still be evaluated per row; got ${report.results.keys}",
