@@ -1,6 +1,6 @@
 # Pull Request: R1 v0.3.0-alpha.2 reconciliation
 
-> **Status:** `READY_FOR_HUMAN_REVIEW` · **Branch:** `integration/r1-alpha.2` (local, NOT pushed) · **Base:** `origin/main` at `c906988582ea16085bb6ec0154559e5a30c770c6` · **Compare:** `7cd8b3fdce39d076bea4fef8c0c6e4a49c891f00` (67 commits ahead, includes R1 + R2.1 + R3.1)
+> **Status:** `READY_FOR_HUMAN_REVIEW` · **Branch:** `integration/r1-alpha.2` (local, NOT pushed) · **Base:** `origin/main` at `c906988582ea16085bb6ec0154559e5a30c770c6` · **Compare:** `8de4129727f44e1fb0b0bb7c08e0832e4e205cc7` (73 commits ahead, includes R1 + R2.1 + R3.1 + R3.1.1)
 
 ## Resumen
 
@@ -8,7 +8,7 @@ Integra 63 commits de trabajo local que cierran los gaps H1–H5 del reviewer y 
 
 | Gate | Resultado |
 |---|---|
-| `check` | 619/0/0/0 |
+| `check` | 623/0/0/0 (R3.1.1 added 4 tests) |
 | Mutation gate | 38/0/0 |
 | Certify | PASS — root SHA `d5f2c2cb7bbc9b901aba0d29c907d952f6fda8ea` sobre 91 archivos |
 | Release admission | **ADMISSIBLE** para `v0.3.0-alpha.2` (8 jars + SBOM) |
@@ -52,7 +52,7 @@ Integra 63 commits de trabajo local que cierran los gaps H1–H5 del reviewer y 
 
 1. **Cert anchor scope es root-only** — la falsificación R1.3.2 demostró que el SHA certificado no captura cambios en el módulo plugin. Decidido: NO extender en R1 (alpha.2); R4.2 extenderá el cert a todos los módulos distribuidos. **No se afirma cobertura completa de fuentes en este alpha.**
 2. **Provenance `NOT_ATTESTED`** — la firma cosign/Sigstore OIDC no se ha emitido; requiere login interactivo del propietario. Marcada como R3.4.
-3. **Compatibilidad SDK 0.48.0 — R3.1 PASS, MEDIDO en host vivo** — el plugin, compilado contra SDK 0.48.0, (1) `gradle assemble -PsdkVersion=0.48.0` BUILD SUCCESSFUL en 12s, (2) `dependencies --configuration runtimeClasspath` resuelve los 4 módulos del BOM a 0.48.0, (3) probe binario contra SDK 0.48.0 + plugin-all.jar descubre `PolicyCheckContributor` vía ServiceLoader (`Found 1 contributors.`), (4) `plugin-manifest.json` declara `apiRange: [0.47.0, 0.49.0)` que cubre 0.48.0 por contrato. Detalles en `docs/history/R3_1_SDK_0_48_0_LIVE_HOST.md`. Limitaciones honestas: probe vive en /tmp (R3.1.1 lo promoverá a `src/test/`); no se ejecutó un `policy.check` real contra bundle+dataset+emitters (R3.2/R3.3); cert anchor sigue root-only por diseño (R4.2 lo extenderá).
+3. **Compatibilidad SDK 0.48.0 — R3.1 PASS + R3.1.1 in-repo gate, MEDIDO en host vivo** — el plugin, compilado contra SDK 0.48.0, (1) `gradle assemble -PsdkVersion=0.48.0` BUILD SUCCESSFUL en 12s, (2) `dependencies --configuration runtimeClasspath` resuelve los 4 módulos del BOM a 0.48.0, (3) probe binario contra SDK 0.48.0 + plugin-all.jar descubre `PolicyCheckContributor` vía ServiceLoader (`Found 1 contributors.`), (4) `plugin-manifest.json` declara `apiRange: [0.47.0, 0.49.0)` que cubre 0.48.0 por contrato. **R3.1.1 promovió el probe a `src/test/` como `SdkApiRangeAgreementTest`** (4 tests: apiRange cubre SDK resuelto, apiRange cubre 0.48.0 por contrato, ServiceLoader descubre PolicyCheckContributor, falsificación del comparador). 4/4 PASS contra SDK 0.47.0 y 0.48.0. Detalles en `docs/history/R3_1_SDK_0_48_0_LIVE_HOST.md` y `docs/history/R3_1_1_SDK_API_RANGE_AGREEMENT_TEST.md`. Limitaciones honestas restantes: no se ejecutó un `policy.check` real contra bundle+dataset+emitters (R3.2/R3.3); cert anchor sigue root-only por diseño (R4.2 lo extenderá).
 4. **Replay hit/miss `NOT_MEASURED`** — la decisión ocurre en `DurableInvocationResolver` (fuera del repo). El fingerprint se verificó, pero el comportamiento real del host no. Marcado como R3.2.
 5. **H2.4 design fork (GLOBAL execution path) — RESUELTO, alternativa C** — `docs/history/R2_1_H24_DESIGN_FORK.md` recuperó 3 alternativas (A coarse, B per-rule, C refusal tipado). `docs/04-adrs/ADR-0017-h2.4-global-annotation.md` adopta C: GLOBAL queda como anotación forward-compat en el IR, `DatasetSpec.requiresGlobalIndex: Boolean` se preserva como DECLARACIÓN, el planner sigue rechazando GLOBAL con `PlanRefusal(GLOBAL_WITHOUT_INDEX)` (ley 12), el `StreamingEvaluator` no implementa la ruta GLOBAL. **Cero código tocado.** El seam `DatasetPlanner.plan() @Suppress("UnusedParameter") datasets` queda preservado para reabrir H2.4 si llega un caso de uso medido. La alternativa B sigue gateada en M3/M4 (FAIL documentado).
 
@@ -64,13 +64,15 @@ Integra 63 commits de trabajo local que cierran los gaps H1–H5 del reviewer y 
 - `docs/history/RELEASE_NOTES_v0.3.0-alpha.2.md` — release notes for v0.3.0-alpha.2
 - `docs/history/AUTO_VALIDATION_REPORT.md` — auto-validation of 9 reviewer gaps
 - `docs/history/REVIEWER_GAP_CLOSURES.md` — 9 gaps reconciled
-- `docs/history/H22_INSTALLED_CLI_EVIDENCE.md` — H2.2 GLOBAL refusal via real CLI
-- `docs/history/H31_JL_INSTALLED_CLI_EVIDENCE.md` — H3.1-JSONL strace evidence
+- `docs/history/R2_1_H24_DESIGN_FORK.md` — 3 alternatives for H2.4 (A coarse, B per-rule, C refusal), decision deferred
+- `docs/04-adrs/ADR-0017-h2.4-global-annotation.md` — ADR adopting C (zero code change)
+- `docs/history/R3_1_SDK_0_48_0_LIVE_HOST.md` — R3.1 SDK 0.48.0 live host load (4 evidence sources)
+- `docs/history/R3_1_1_SDK_API_RANGE_AGREEMENT_TEST.md` — R3.1.1: SdkApiRangeAgreementTest (4 tests, in-repo gate)
 
 ## Receipts (B6 cycle)
 
-- `docs/history/B6_CERTIFICATION.md` — HEAD `bf9d709`, source SHA `d5f2c2cb`, 619/0/0/0, 12 jars, JVM 21 / Kotlin 2.4.20
-- `docs/history/B6_RELEASE_ADMISSION.md` — HEAD `583036a`, ADMISSIBLE for `v0.3.0-alpha.2`
+- `docs/history/B6_CERTIFICATION.md` — HEAD `8de4129`, source SHA `d5f2c2cb` (unchanged), 623/0/0/0, 12 jars, JVM 21 / Kotlin 2.4.20
+- `docs/history/B6_RELEASE_ADMISSION.md` — HEAD `8de4129`, **ADMISSIBLE** for `v0.3.0-alpha.2` (8 jars, 622 SBOM coordinates, provenance NOT_ATTESTED)
 - `docs/history/B6_MUTATION_RECEIPT.log` — 38 killed, 0 survived, 0 invalid
 - `pipelinek-policy-cli/src/test/resources/cert/SHA.txt` — re-anchored `7873b723` → `d5f2c2cb` (post detekt fix, reason recorded)
 
