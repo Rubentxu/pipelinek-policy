@@ -69,7 +69,7 @@ La idea central es deliberadamente distinta de «OPA escrito en Kotlin» y de «
 
 ## Quickstart
 
-Estado: **v0.3.0-alpha.1** en el código. H1 está funcionalmente cerrado pero el
+Estado: **v0.3.0-alpha.2** en el código. H1 está funcionalmente cerrado pero el
 release sigue **BLOQUEADO por B6.10**; ver `ROADMAP.md` para el estado real por
 hito. Esta sección se corrigió el 2026-10-10: antes describía el quickstart de
 M0 («1 test class», «sin tipos de dominio») cuando el proyecto ya evaluaba
