@@ -224,6 +224,69 @@ class DatasetRuleIdentityProbeTest {
     }
 
     /**
+     * The invariant behind the R2 investigation, pinned directly.
+     *
+     * R2 showed that a rule missing from the per-row subset is still REPORTED
+     * and reported Passed forever, because `report()` walks the plan's LOCAL
+     * keys and reads `tallies[key]` rather than the per-row set. Two readings of
+     * that follow, and they deserve different treatment:
+     *
+     *  - If a rule can reach `plan.localRuleKeys` while missing from the
+     *    per-row set, that is a live law 12 defect -- a rule counted as
+     *    evaluated that never was.
+     *  - If the two are always derived from the same key expression over the
+     *    same policies, it is a latent fragility rather than a live defect, and
+     *    the honest response is a test that pins the agreement rather than a
+     *    roadmap row claiming a bug.
+     *
+     * Reading `localRules` and `localOnly` shows both build keys with
+     * `RuleKey.of(set.id, policy.id, rule.id)` over `set.policies`, so they
+     * should agree by construction. This asserts it does, across a mixed set
+     * where several rules share names AND shapes collide, so a future edit that
+     * changes one derivation is caught here instead of silently passing rules.
+     *
+     * Every planned LOCAL rule must report its own violation on a row that
+     * violates it. A rule silently dropped from the per-row subset reports
+     * Passed on that same row, which is what this is looking for.
+     */
+    @Test
+    fun `every planned LOCAL rule is genuinely evaluated, not merely reported`() {
+        val set = PolicySet(
+            "s",
+            listOf(
+                Policy("alpha", listOf(localRule("check"), localRule("audit"))),
+                Policy("beta", listOf(aggregateRule("check"), aggregateRule("audit"))),
+            ),
+        )
+
+        // Both LOCAL rules require n == 1, so a row of 2 violates each of them.
+        val plan = DatasetPlanner.plan(set, datasets) as DatasetPlan
+        val report = StreamingEvaluator.evaluate(set, plan, row(ValueNode.NumberValue(2)))
+
+        assertEquals(
+            setOf(RuleKey.of("s", "alpha", "check"), RuleKey.of("s", "alpha", "audit")),
+            plan.localRuleKeys,
+            "the plan must carry exactly the two LOCAL rules",
+        )
+
+        plan.localRuleKeys.forEach { key ->
+            assertTrue(
+                report.results[key] is StreamingEvaluator.RuleOutcome.Violated,
+                "$key was planned LOCAL but reported ${report.results[key]}; a Passed " +
+                    "here means it never reached the per-row evaluator",
+            )
+        }
+
+        // No unplanned rule may appear: the report must not carry verdicts for
+        // rules the planner refused to classify.
+        assertEquals(
+            plan.localRuleKeys + plan.aggregateRuleKeys,
+            report.results.keys,
+            "the report must cover the planned rules exactly",
+        )
+    }
+
+    /**
      * Two LOCAL rules sharing a name must BOTH be evaluated.
      *
      * The pre-fix `localOnlySet` filtered with `it.id in plan.localRuleIds`, so a

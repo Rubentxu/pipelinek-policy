@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 1bc74a781a25614db1a96ff016be7c708e7d6cef
+certified-sha: 8d7326484ef0f18271eedf2a5856ec670aadec27
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -222,8 +222,8 @@ baseline-suites: 42
 # slides and silently truncates the document). N2 survived its first version
 # because every fixture fit inside one 8 KiB window, so the slide path never
 # ran; raising the fixture to 100_000 rows killed it.
-# H2.1 moved certified-sha 2d43f5bb... -> 1bc74a78... and baseline-tests
-# 596 -> 601: five new tests in DatasetRuleIdentityProbeTest, all in the root
+# H2.1 moved certified-sha 2d43f5bb... -> 8d732648... and baseline-tests
+# 596 -> 602: six new tests in DatasetRuleIdentityProbeTest, all in the root
 # module's hashed scope, plus the RuleKey identity fix they hold down.
 #   - DatasetShape.Result was Map<String, DatasetShape> keyed by the bare rule
 #     id, and the planner and both streaming consumers selected rules by bare
@@ -235,7 +235,7 @@ baseline-suites: 42
 #     unfolded aggregate rather than a fold.
 #   - PlanRefusal.offendingRules was List<String>, so a refusal could not name
 #     WHICH rule offended when two policies shared an id. It is now List<RuleKey>.
-#   - Five tests: the LOCAL/AGGREGATE collision, both declaration orders
+#   - Six tests: the LOCAL/AGGREGATE collision, both declaration orders
 #     agreeing (order independence as a property, not one direction), two
 #     same-named LOCAL rules both evaluated, a mixed LOCAL+AGGREGATE fixture
 #     that forces the localOnly branch to run, and a violating-row test.
@@ -254,4 +254,16 @@ baseline-suites: 42
 #     reported Passed forever. Asserting `containsKey` passed while the rule was
 #     never evaluated. Only feeding a VIOLATING row separates the two cases.
 #     That silent-passing shape is law 12 territory and deserves its own row.
-baseline-tests: 601
+#   - CORRECTION, recorded because the first reading overstated it. A sixth test
+#     pins the invariant DIRECTLY: every planned LOCAL rule must report its own
+#     violation on a row that violates it, and the report must cover the planned
+#     rules exactly. It passes on clean source, which is the measurement that
+#     matters: `localRules` and `localOnly` build keys with the same expression
+#     over the same policies, so a rule CANNOT reach plan.localRuleKeys while
+#     missing the per-row set today. The silent-passing is therefore a LATENT
+#     fragility in report() -- it would report Passed for a rule it never
+#     evaluated -- not a live defect, and no law 12 violation is claimed here.
+#     R2 reaches it only by mutating the membership test. With the sixth test in
+#     place R2 kills two tests rather than one, and the surviving signal is
+#     explicit: "was planned LOCAL but reported Passed".
+baseline-tests: 602
