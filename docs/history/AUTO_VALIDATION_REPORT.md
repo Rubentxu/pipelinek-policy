@@ -1,10 +1,11 @@
 # Auto-validation report · H1→H5 v0.3.0 reviewer-gap-closure cycle
 
-**When:** 2026-10-11, on the post-summary tree (HEAD `324b296`).
+**When:** 2026-10-11, on the post-summary tree (HEAD `1d6bbce`).
 **Driver:** `[auto] Do more validation on the work below` (auto-validation
 directive, no user input).
-**Verdict: ALL 9 REVIEWER-FLAGGED ITEMS RE-VERIFIED, ONE DOC CORRECTION
-COMMITTED.**
+**Verdict: 7 REVIEWER-FLAGGED ITEMS RE-VERIFIED (PASS), 1 CONFIRMED
+HONEST (H1.3), 1 CORRECTED (H2.4 blast radius 18 → 14). 1 DOC
+CORRECTION COMMITTED (`02fd23e`).**
 
 ## What was re-validated, and how
 
@@ -17,16 +18,16 @@ the gate, the running command, and the observed result.
 | # | Item | Method | Observed | Verdict |
 |---|------|--------|----------|---------|
 | 1 | H3.1-JSONL installed-CLI bytes-pulled (small.jsonl) | `strace -P /tmp/h31jl-uat/small.jsonl` on the freshly-built CLI | exit 2, 45 violations, last row 180, first `read(13,buf,8192)=3897`, EOF `read(13,buf,4295)=0` | **PASS** |
-| 1 | H3.1-JSONL installed-CLI bytes-pulled (big.jsonl) | same on `/tmp/h31jl-uat/big.jsonl` | exit 2, 72 733 violations, last row 290 932, **885 reads** (884 of 8192 + 1 of 1417 + 1 EOF), no read > 8192 | **PASS** |
+| 1 | H3.1-JSONL installed-CLI bytes-pulled (big.jsonl) | same on `/tmp/h31jl-uat/big.jsonl` | exit 2, 72 733 violations, last row 290 932, **885 read() syscalls on fd 13**: 884 reads requested 8192 bytes (883 returned 8192, 1 returned 1417 at file tail), then 1 EOF read returned 0. No read ever returned more than 8192 bytes. | **PASS** |
 | 2 | H2.2 GLOBAL refusal via real CLI | `stream --policy p.bundle data.csv --format-out text` | exit 3, text `stream: plan-refusal: plan refused (RuleKey(policySetId=s, policyId=p, ruleId=cross)): GLOBAL access requires an index plan; the kernel refuses unbounded cross-row evaluation (law 12). Declare requiresGlobalIndex or reshape the rule.` | **PASS** |
 | 2 | H2.2 GLOBAL refusal, JSON envelope | `stream --policy p.bundle data.csv --format-out json` | exit 3, `{"kind":"plan-refusal","message":"..."}` with the same message text | **PASS** |
 | 3 | Mutation gate (B6.6) | `scripts/m6/mutation-gate.sh` on HEAD `7e37503` | killed 38, survived 0, invalid 0; every mutant (N1, N2, N3, N4 included) died by assertion | **PASS** |
 | 4 | Certify gate (B6.1) | `scripts/m6/certify.sh` on HEAD `73c2a7f` | 619 tests / 0 failures / 0 errors / 0 skipped, baseline 606, source tree SHA `7873b723` on 91 files | **PASS** |
 | 5 | Release admission (B6.10) | `scripts/m10/release-admission.sh` on HEAD `02fd23e` | local ADMISSIBLE, 8 jars + 8 SHA-256 checksums + SBOM (SPDX 2.3, 622 resolved coordinates), provenance NOT_ATTESTED (cosign OIDC), human gate held | **PASS** |
 | 6 | H1.3 surviving mutant `union.sortedBy { it.value }` | read `H1GovernanceBusinessCaseTest.kt:515-517` and `PolicyDiff.kt:56-73` | KDoc verbatim: "SURVIVES both suites. Nothing observes iteration order over the union. Not a delivery defect, because `diffDigest` sorts entries canonically before hashing." `PolicyDiff.diffDigest` does `entries.sortedWith(compareBy({ it.category.name }, { it.fingerprint }, { it.ruleKey.value }))` before SHA-256. The mutation is non-defect by spec. | **HONEST** |
-| 7 | H2.4 design fork blast radius | `grep -rn 'DatasetRef(' --include='*.kt'` | 24 grep lines: 13 test sites in 7 files + 1 production site (`CanonicalPolicyJson.kt:147`) = **14 sites** that are actual constructor invocations. The other 10 src/main lines are type references (declarations, `displayName`/`error-message` string interpolation, `containsDatasetRef` recursion, `is Expression.DatasetRef` patterns), not constructor calls. | **CORRECTED** (was 18, actually 14) |
+| 7 | H2.4 design fork blast radius | `grep -rn 'Expression\.DatasetRef("' --include='*.kt'` | 14 actual one-arg constructor invocations: 13 in tests across 7 files (DatasetShapeTest, StreamingEvaluatorTest, BooleanCollectionPredicateStreamingTest, StreamingCountMatchesTest, DatasetRuleIdentityProbeTest, H22SealedPlanTest, CanonicalPolicyJsonFortressTest) + 1 in production (`CanonicalPolicyJson.kt:147`). The 10 other src/main grep hits for `DatasetRef(` are type-name references (declaration, displayName/error-message string interpolation, `containsDatasetRef` recursion, `is Expression.DatasetRef` patterns), not constructor calls. | **CORRECTED** (was 18, actually 14) |
 | 8 | H4.2 plugin UAT (SDK 0.47.0 host) | `scripts/m6/uat-external-distribution.sh` | all 7 steps green: SDK provenance OK (4 artifacts at 0.47.0), plugin jar `d5a3301c...`, distribution rebuilt, 16 OK + 4 VIOLATE, exit codes 0/1, 0 error findings | **PASS** |
-| 9 | H5.1 anchor test (certification anchor) | `:pipelinek-policy-cli:test --rerun-tasks --tests CertificationAnchorTest` | 5/5 PASSED: 01a (marker carries SHA + baseline), 01b (certified SHA matches current source tree), 01c (falsification: suite count below baseline fails), 01d (baseline is not a lie about the current tree), corpus digest stable | **PASS** |
+| 9 | H5.1 anchor test (certification anchor) | `:pipelinek-policy-cli:test --rerun-tasks --tests CertificationAnchorTest` | 5/5 PASSED on a 5-test class (verified at `CertificationAnchorTest.kt:41,61,75,88,158`): 01a (marker carries SHA + baseline), 01b (certified SHA matches current source tree), 01c (falsification: suite count below baseline fails), 01d (baseline is not a lie about the current tree), corpus digest stable | **PASS** |
 
 ## One real correction
 
@@ -70,7 +71,7 @@ The H2.4 design decision itself is unchanged: design (A) is additive in
 
 **Source tree SHA** stayed at `7873b723` across the entire H1→H5
 closeout (verified by the anchor test, by the certification receipt,
-and by the diff between `c906988` and `324b296` showing no changes to
+and by the diff between `c906988` and `1d6bbce` showing no changes to
 root-module Kotlin sources). All `docs(...)` commits are bookkeeping
 for the receipts and the evidence, not source code.
 
@@ -82,9 +83,9 @@ rather than a correctness one.
 ## Tree state
 
 ```
-HEAD: 324b296 (post-correction, post-final-receipt-refresh)
+HEAD: 1d6bbce (post-correction, post-final-receipt-refresh, post-report)
 Origin/main: c906988 (v0.3.0-alpha.1, published 2026-10-10)
-Local ahead of origin/main: 45 commits
+Local ahead of origin/main: 46 commits
 Tree: clean
 ```
 
@@ -95,6 +96,7 @@ Commits added during this auto-validation cycle (in order):
 3. `7e37503` docs(cert): refresh B6_RELEASE_ADMISSION.md on HEAD 4fe88f0
 4. `02fd23e` docs(history): correct H2.4 design (B) blast radius from 18 to 14 sites
 5. `324b296` docs(cert): refresh B6_RELEASE_ADMISSION.md on the post-correction HEAD
+6. `1d6bbce` docs(history): this auto-validation report
 
 All commits SDDK-governed with `git sddk-align --ack` and `git sddk-close`.
 
@@ -141,7 +143,7 @@ All commits SDDK-governed with `git sddk-align --ack` and `git sddk-close`.
    more explicit. I do not pick; the product owner does.
 
 2. **v0.3.0-alpha.2 release publication.** The local half is
-   ADMISSIBLE on HEAD `324b296`. The remaining step is the human
+   ADMISSIBLE on HEAD `1d6bbce`. The remaining step is the human
    gate: tag `v0.3.0-alpha.2`, push to `origin/main`, create the
    GitHub Release. The user has not authorized this; the human
    gate is held.
@@ -157,7 +159,8 @@ Every reviewer-flagged item has now been observed at least twice: once
 when the original evidence was produced, and once in this auto-validation
 cycle. The H2.4 blast-radius overcount (18 → 14) is the only finding
 from this cycle that changed documented evidence, and it was corrected
-in commit `02fd23e`. The other 8 items reproduce exactly.
+in commit `02fd23e`. The other 7 PASS items reproduce exactly; the
+H1.3 surviving mutant is documented as a non-defect by spec.
 
 The cycle is in a clean, defensible state. The next action is human:
 the H2.4 design choice, or authorization to publish v0.3.0-alpha.2.
