@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 2d43f5bb2bde25d226e1c71c4dab5db09b97025a
+certified-sha: 1bc74a781a25614db1a96ff016be7c708e7d6cef
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -222,4 +222,36 @@ baseline-suites: 42
 # slides and silently truncates the document). N2 survived its first version
 # because every fixture fit inside one 8 KiB window, so the slide path never
 # ran; raising the fixture to 100_000 rows killed it.
-baseline-tests: 596
+# H2.1 moved certified-sha 2d43f5bb... -> 1bc74a78... and baseline-tests
+# 596 -> 601: five new tests in DatasetRuleIdentityProbeTest, all in the root
+# module's hashed scope, plus the RuleKey identity fix they hold down.
+#   - DatasetShape.Result was Map<String, DatasetShape> keyed by the bare rule
+#     id, and the planner and both streaming consumers selected rules by bare
+#     id as well. Two policies declaring a rule called `check` shared one map
+#     slot and the LAST declaration won, so the same policy set planned
+#     differently purely from declaration order. Observed RED before the fix:
+#     plan.localRuleIds=[], plan.aggregateRuleIds=[check], and evaluation
+#     reported `row_budget cap 10000000 reached after 10000000` -- a silently
+#     unfolded aggregate rather than a fold.
+#   - PlanRefusal.offendingRules was List<String>, so a refusal could not name
+#     WHICH rule offended when two policies shared an id. It is now List<RuleKey>.
+#   - Five tests: the LOCAL/AGGREGATE collision, both declaration orders
+#     agreeing (order independence as a property, not one direction), two
+#     same-named LOCAL rules both evaluated, a mixed LOCAL+AGGREGATE fixture
+#     that forces the localOnly branch to run, and a violating-row test.
+# Falsified by R1 (re-collapses the shape key to the rule id) and R2
+# (re-collapses the consumption-side membership test). The gate reports
+# 34 killed, 0 survived, 0 invalid.
+# Worth recording, because R2 took three attempts and each failure was real:
+#   - mutating the `keep` lookup changed nothing observable, because the
+#     following filter re-derives the key with the real policy id;
+#   - the corrected version was an EQUIVALENT mutant, because `localOnly`
+#     skips the whole branch when the plan holds no AGGREGATE rules, so an
+#     all-LOCAL fixture never executed the line;
+#   - the original assertion could not detect a dropped rule at all. `report()`
+#     walks the plan's LOCAL keys and reads tallies[key], so a rule dropped from
+#     the per-row subset still gets a report entry, accumulates nothing, and is
+#     reported Passed forever. Asserting `containsKey` passed while the rule was
+#     never evaluated. Only feeding a VIOLATING row separates the two cases.
+#     That silent-passing shape is law 12 territory and deserves its own row.
+baseline-tests: 601
