@@ -4,7 +4,6 @@ import com.pipelinek.policy.kernel.value.ValueNode
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /** M8 REQ 04 · JsonlSource streaming (04a/04b/04c). */
 class JsonlSourceTest {
@@ -70,24 +69,10 @@ class JsonlSourceTest {
         assertThrows<JsonlRefusal> { source.next() }
     }
 
-    @Test
-    fun `06b - flat memory over many rows (Runtime delta, no fork)`() {
-        val sb = StringBuilder()
-        repeat(100_000) { sb.append("{\"n\":").append(it).append("}\n") }
-        val bytes = sb.toString().toByteArray()
-
-        System.gc()
-        val before = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
-        val source = JsonlSource(bytes)
-        var count = 0L
-        while (source.next() != null) count++
-        System.gc()
-        val after = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
-
-        assertEquals(100_000L, count)
-        assertTrue(
-            after - before < 64L * 1024 * 1024,
-            "streaming delta ${after - before} bytes looks like full materialization",
-        )
-    }
+    // H3.1 · the pre-existing `06b - flat memory over a large input` test was
+    // structurally blind: it built the ByteArray BEFORE taking the memory
+    // baseline, so the payload was never inside the measured window. The same
+    // defect that closed for CSV in B6.6. Replaced by JsonlRowStreamSourceTest,
+    // which counts bytes pulled off the stream (deterministic) rather than
+    // measuring Runtime deltas over short windows (noisy and easy to game).
 }
