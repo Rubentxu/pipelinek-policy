@@ -758,6 +758,45 @@ mutate \
   'R2 the LOCAL subset must be rebuilt with the full rule key' \
   '*DatasetRuleIdentityProbeTest*'
 
+# T1: H2.2 — the planner must not emit a decorative InMemoryIndex.
+#
+# Pre-fix, the planner emitted `IndexPlan.InMemoryIndex(dataset, column)` whenever
+# ANY dataset declared `requiresGlobalIndex = true`, even though
+# `StreamingEvaluator` never read `plan.indexPlan`. The field was decorative and
+# the value was carried into every plan regardless of access shape. The fix
+# restricted the planner to `IndexPlan.SinglePass` because there is no bounded
+# GLOBAL executor yet (H2.4's job). The mutation re-introduces the conditional
+# emission exactly as it stood before the fix; the test that kills it pins the
+# invariant that `requiresGlobalIndex` alone does not produce an index plan.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/DatasetPlanner.kt \
+  '        val indexPlan: IndexPlan = IndexPlan.SinglePass' \
+  '        val indexPlan: IndexPlan = if (datasets.values.any { it.requiresGlobalIndex }) {
+                val entry = datasets.entries.first { it.value.requiresGlobalIndex }
+                IndexPlan.InMemoryIndex(entry.key, column = "id")
+            } else {
+                IndexPlan.SinglePass
+            }' \
+  'T1 the planner must not emit a decorative InMemoryIndex' \
+  '*H22SealedPlanTest*'
+
+# T2: H2.2 — the planner must REFUSE GLOBAL access, not silently plan it.
+#
+# The planner's law-12 contract is to refuse any rule the analyzer classified
+# GLOBAL with a typed `PlanRefusal`, named by the offending rules' RuleKey.
+# Dropping the refusal branch and falling through would silently weaken law 12
+# — the same GLOBAL rule would plan as a streaming aggregate, which the
+# streaming evaluator cannot execute without an index, and the report would
+# claim success on something the kernel never ran. The mutation is the smallest
+# edit that produces that: a literal `false` short-circuit that bypasses the
+# refusal.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/DatasetPlanner.kt \
+  '        if (global.isNotEmpty()) {' \
+  '        if (false && global.isNotEmpty()) {' \
+  'T2 a GLOBAL rule must be refused, not silently planned' \
+  '*H22SealedPlanTest*'
+
 echo
 echo "== B6.6 mutation summary"
 echo "   killed:     $KILLS"

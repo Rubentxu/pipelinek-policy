@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 8d7326484ef0f18271eedf2a5856ec670aadec27
+certified-sha: 1fa50a458dad3234964dfa15db7b110539ecc66b
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -266,4 +266,42 @@ baseline-suites: 42
 #     R2 reaches it only by mutating the membership test. With the sixth test in
 #     place R2 kills two tests rather than one, and the surviving signal is
 #     explicit: "was planned LOCAL but reported Passed".
+# H2.2 moved certified-sha 8d732648... -> 1fa50a45... with baseline-tests UNCHANGED
+# at 602: the three new H22SealedPlanTest tests are the whole change inside the
+# root module's hashed scope, plus the sealed-return refactor in DatasetPlanner
+# they pin down. The refactor sealed plan/refusal into a single PlanResult
+# return type, removed the unchecked `as DatasetPlan` / `is PlanRefusal` casts
+# at every call site, and dropped the decorative `InMemoryIndex` branch that
+# was emitted whenever a dataset declared `requiresGlobalIndex` even though
+# `StreamingEvaluator` never read `plan.indexPlan`. The new tests:
+#   - `plan return is a closed type` pins that DatasetPlanner.plan now returns
+#     `DatasetPlanner.PlanResult` and that the only two members are `DatasetPlan`
+#     and `PlanRefusal`. The pre-existing API returned `Any` and required an
+#     unchecked cast.
+#   - `refusal is part of the same closed type` pins that a rule the analyzer
+#     classifies GLOBAL (a free-floating `Expression.DatasetRef`) is refused via
+#     the SAME sealed return, and the assertion reaches the branch through
+#     exhaustive `when`. Before the refactor the refusal was a sibling data
+#     class, not a member of the planner's return type.
+#   - `planner does not emit InMemoryIndex unless a real GLOBAL execution path
+#     exists` pins that the planner no longer emits a decorative index branch
+#     that nothing consumes. The seam is preserved (H2.4 will revisit GLOBAL
+#     semantics), but no value is emitted into a field nothing reads.
+# Falsified: this change is a type refactor, so the equivalent-mutant audit is
+# what matters. Three classes of equivalent mutants exist for the previous code
+# and the new tests must catch them:
+#   - reverting `plan(...): PlanResult` to `plan(...): Any` while keeping the
+#     sealed members -> the `result is DatasetPlanner.PlanResult` line fails to
+#     compile, killing it deterministically;
+#   - re-introducing the decorative `if (datasets.values.any { ... })
+#     InMemoryIndex(...)` branch on a non-GLOBAL fixture -> test 3 fails
+#     because the plan carries an `IndexPlan.InMemoryIndex` that the test
+#     forbids;
+#   - moving `PlanRefusal` back to a sibling data class (not : PlanResult) ->
+#     the exhaustive `when` does not compile, killing it deterministically.
+# Baseline 602 is a FLOOR, not a claim about what this change added: the fresh
+# certify.sh run reported 605 executed, 0 failures, 0 errors, 0 skipped. The
+# 3 above the floor are the H2.2 tests in the root module's hashed scope.
+# Recorded here so the gap between floor and executed is not mistaken for an
+# unaccounted module.
 baseline-tests: 602
