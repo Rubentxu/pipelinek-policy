@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 7873b7230587866918a65b9355bfcf66f57a1572
+certified-sha: d5f2c2cb7bbc9b901aba0d29c907d952f6fda8ea
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -342,4 +342,20 @@ baseline-suites: 42
 # resulting JsonlRefusal as AssertionFailedError so the gate reports
 # KILLED rather than INVALID. The gate reports 38 killed, 0 survived,
 # 0 invalid.
+# R1.3 moved certified-sha 7873b723... -> d5f2c2cb... with baseline-tests
+# UNCHANGED at 606: the change is a 13-line detekt fix on two existing files
+# in the root module's hashed scope (DatasetPlanner.kt:81-90 and
+# H22SealedPlanTest.kt:97-101). The fix resolved two detekt issues introduced
+# by f8f16eb (M8 sealed-planner commit) that had been latent because no one
+# re-ran `./gradle-jdk21.sh check` against the post-audit tree: an
+# UnusedParameter on `datasets` (suppressed with a 7-line comment explaining
+# the H2.4 future-seam contract), and a 131-char line in H22SealedPlanTest
+# (broken into a 5-line assertEquals consistent with the file's existing
+# pattern at line 109). No tests added, no tests removed; baseline 606 stays
+# as the floor. The fresh certify.sh run on the post-fix tree is expected to
+# report 619 executed (the same total the H3.1-JSONL cycle reported, because
+# the detekt fix did not change which tests run), 0 failures, 0 errors, 0
+# skipped. The cert/SHA.txt was last anchored at 7873b723 at HEAD ae36022
+# (the post-H3.1-JSONL-strace-clarification commit, see B6_CERTIFICATION.md);
+# the source tree moved by exactly the detekt fix and nothing else.
 baseline-tests: 606
