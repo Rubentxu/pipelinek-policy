@@ -91,9 +91,15 @@ read(13, "7}\n{\"temp\":\"ok\",\"n\":290878}\n{\"te"..., 8192)    = 1417
 read(13, "", 6775)                                              = 0
 ```
 
-884 reads of `8192` bytes + 1 read of `1417` bytes (the tail) + 1 EOF.
-**Total bytes pulled: 7 234 953 = file size** (all 290 933 rows processed).
-**No read returns more than 8 192 bytes**, on a file 884× the window.
+885 read() syscalls on fd 13 total. Of the 884 reads that request 8192
+bytes, 883 return 8192 bytes and 1 (the tail) returns 1417 bytes — the
+kernel gets less than 8192 because the file is exhausted. Then 1 read
+returns 0 (EOF, on a buffer sized 6775 — strace's remainder). The 1417
+is a *return* value, not a *request* size; the request size is always
+exactly 8192 (or whatever bytes the strace remainder requested on the
+EOF probe). **Total bytes pulled before EOF: 884 × 8192 + 1417 = 7 234 953
+= file size** (all 290 933 rows processed). **No read returns more than
+8192 bytes** on a file 884× the window.
 
 ## Claim
 
