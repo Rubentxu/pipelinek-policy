@@ -93,6 +93,7 @@ module_for_pattern() {
     *StreamCmdTest*)   echo ":pipelinek-policy-cli:" ;;
     *StreamCmdLocalRuleRealPathTest*) echo ":pipelinek-policy-cli:" ;;
     *CsvRowStreamSourceTest*) echo ":policy-decoders-csv:" ;;
+    *JsonlRowStreamSourceTest*) echo ":policy-decoders-json:" ;;
     *CompileBundleTestTest*) echo ":pipelinek-policy-cli:" ;;
     *CheckCmdTest*)    echo ":pipelinek-policy-cli:" ;;
     *MutationGateTest*)    echo ":" ;;
@@ -709,6 +710,37 @@ mutate \
   '                        Unit' \
   'N2 a full window must slide instead of truncating the document' \
   '*CsvRowStreamSourceTest*'
+
+# N3: H3.1-JSONL -- the streamed cursor must actually stream, just like CSV.
+# Same defect class as N1, same lesson: the streaming entry point existed to
+# stop the materialising read, and the smallest way to fake it is to keep the
+# public signature and route the stream through readBytes inside the companion.
+# The pre-existing 06b test allocated the payload BEFORE the before
+# measurement, which is the same blind spot N1 had, and was deleted with it.
+# JsonlRowStreamSourceTest 01 uses a CountingInputStream that throws on
+# readAllBytes/skip, so this mutation dies by assertion in compileCheck or in
+# the directed test rather than by incidental exception.
+mutate \
+  policy-decoders-json/src/main/kotlin/com/pipelinek/policy/decoders/json/JsonlSource.kt \
+  '        fun open(stream: InputStream): JsonlSource =
+            JsonlSource(JsonlByteSource.Windowed(stream), stream)' \
+  '        fun open(stream: InputStream): JsonlSource =
+            JsonlSource(JsonlByteSource.Array(stream.readBytes()), null)' \
+  'N3 a streamed JSONL cursor must not materialise the document' \
+  '*JsonlRowStreamSourceTest*'
+
+# N4: H3.1-JSONL -- the window must slide, not stop refilling. Same defect class
+# as N2, applied to the JSONL source. With slide() replaced by Unit, the
+# JsonlByteSource.Windowed cursor reports EOF once the 8 KiB buffer fills, and
+# only the rows that happened to fit are emitted. The test that kills it is 02
+# (100k rows, all in order, stream fully consumed): a 64 KiB document with one
+# row per byte MUST NOT stop at row 8192.
+mutate \
+  policy-decoders-json/src/main/kotlin/com/pipelinek/policy/decoders/json/JsonlSource.kt \
+  '            buf.copyInto(buf, 0, at, bufLen)' \
+  '            Unit' \
+  'N4 a full JSONL window must slide instead of truncating the document' \
+  '*JsonlRowStreamSourceTest*'
 
 # R1: the LOCAL/AGGREGATE split must key on IDENTITY, not on a name.
 #
