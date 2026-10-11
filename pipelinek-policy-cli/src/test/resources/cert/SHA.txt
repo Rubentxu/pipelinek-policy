@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: 1fa50a458dad3234964dfa15db7b110539ecc66b
+certified-sha: 7873b7230587866918a65b9355bfcf66f57a1572
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -266,7 +266,7 @@ baseline-suites: 42
 #     R2 reaches it only by mutating the membership test. With the sixth test in
 #     place R2 kills two tests rather than one, and the surviving signal is
 #     explicit: "was planned LOCAL but reported Passed".
-# H2.2 moved certified-sha 8d732648... -> 1fa50a45... with baseline-tests UNCHANGED
+# H2.2 moved certified-sha 8d732648... -> 7873b723... with baseline-tests UNCHANGED
 # at 602: the three new H22SealedPlanTest tests are the whole change inside the
 # root module's hashed scope, plus the sealed-return refactor in DatasetPlanner
 # they pin down. The refactor sealed plan/refusal into a single PlanResult
