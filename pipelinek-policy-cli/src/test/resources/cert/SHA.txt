@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: d8dfe26ab1438811bda5000a21c81a2010fa4133
+certified-sha: d5f2c2cb7bbc9b901aba0d29c907d952f6fda8ea
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -171,4 +171,191 @@ baseline-suites: 42
 # this module, which are counted in the executed total but do not enter
 # this file's own scope hash. Recorded here so the gap between floor and
 # executed is not mistaken for an unaccounted module.
-baseline-tests: 580
+# H2.3 moved certified-sha d8dfe26a... -> 2d43f5bb... and baseline-tests
+# 580 -> 588: eight new tests in the root module's hashed scope, plus the
+# COUNT semantic fix that they hold down.
+#   - StreamingCountMatchesTest (3) pins that streaming COUNT counts MATCHING
+#     rows. Observed RED before the fix: three matching rows among five
+#     returned 5, because Accumulator.Count took no predicate and incremented
+#     per row ("any node counts as one row"). That made COUNT mean "count every
+#     row", so a rule saying "count rows where `n` is a NUMBER" was satisfied by
+#     rows holding text, and it contradicted M8 REQ M8-04 04b, which phrases the
+#     budget in terms of MATCHES.
+#     The pre-existing `05b - COUNT aggregate folds every row via accumulator`
+#     was blind to this by construction: its predicate is Selector.of(ROOT), so
+#     every row matches, and it asserts NumberValue(4L) for four rows -- exactly
+#     what a row counter produces. It could not fail if COUNT only ever counted
+#     rows. StreamingCountMatchesTest adds the positive control that test lacked,
+#     so "always return the match count" cannot pass either.
+#   - The third case pins the BUDGET half: the accumulatorCap bounds matches, so
+#     one match among five rows must NOT refuse a cap of 2, while three matches
+#     must. This is what separates "counts matches" from "counts rows" where the
+#     value assertions alone cannot.
+#   - CountMatchesTest (4) pins the in-memory evaluator, which was already
+#     correct. It is kept because the streaming and whole-document paths share
+#     no code, so only a direct test of each keeps them from drifting.
+#     Worth recording: the first version of this file asserted `Violated` and
+#     PASSED, which looked like confirmation but was not -- the in-memory
+#     evaluator refuses COUNT outright with a typed TYPE_MISMATCH ("COUNT
+#     produces a Number and must be used in a numeric comparison"), so every
+#     COUNT rule is Violated for a reason unrelated to counting.
+# Falsified by two new mutants, M1 (drop the match test) and M2 (invert it, so
+# non-matching rows consume the cap). Both die by assertion.
+# H3.1 raised baseline-tests 588 -> 596 with certified-sha UNCHANGED at
+# 2d43f5bb: the six new tests are in policy-decoders-csv, outside the
+# root-module scope this anchor hashes, so the tree digest did not move for the
+# same reason the H4.1 escaping fix did not move it. The floor still rises
+# because it counts executed tests across all modules, and 596 is a floor rather
+# than a claim about what this change added -- the fresh certify.sh run reported
+# 605 executed.
+#   - CsvRowStreamSourceTest (5): the streamed cursor must pull a bounded prefix
+#     rather than the whole document, must still yield every row in order and
+#     consume the stream exactly, must decode a cell LARGER than the read window,
+#     must handle quoted cells and multibyte text across a two-byte-per-pull
+#     dribble stream, and must agree row-for-row with the materializing cursor.
+#   - CsvRowSourceTest.06b was REPLACED, not kept. The old version allocated its
+#     payload before taking its Runtime baseline, so the document was never
+#     inside the measured window: a source retaining all 150_000 rows measured
+#     -531040 bytes against a 64 MiB ceiling and passed. Measured, not inferred.
+#     The replacement counts bytes pulled off the stream, which is deterministic.
+# Falsified by N1 (open materializes via readBytes) and N2 (the window never
+# slides and silently truncates the document). N2 survived its first version
+# because every fixture fit inside one 8 KiB window, so the slide path never
+# ran; raising the fixture to 100_000 rows killed it.
+# H2.1 moved certified-sha 2d43f5bb... -> 8d732648... and baseline-tests
+# 596 -> 602: six new tests in DatasetRuleIdentityProbeTest, all in the root
+# module's hashed scope, plus the RuleKey identity fix they hold down.
+#   - DatasetShape.Result was Map<String, DatasetShape> keyed by the bare rule
+#     id, and the planner and both streaming consumers selected rules by bare
+#     id as well. Two policies declaring a rule called `check` shared one map
+#     slot and the LAST declaration won, so the same policy set planned
+#     differently purely from declaration order. Observed RED before the fix:
+#     plan.localRuleIds=[], plan.aggregateRuleIds=[check], and evaluation
+#     reported `row_budget cap 10000000 reached after 10000000` -- a silently
+#     unfolded aggregate rather than a fold.
+#   - PlanRefusal.offendingRules was List<String>, so a refusal could not name
+#     WHICH rule offended when two policies shared an id. It is now List<RuleKey>.
+#   - Six tests: the LOCAL/AGGREGATE collision, both declaration orders
+#     agreeing (order independence as a property, not one direction), two
+#     same-named LOCAL rules both evaluated, a mixed LOCAL+AGGREGATE fixture
+#     that forces the localOnly branch to run, and a violating-row test.
+# Falsified by R1 (re-collapses the shape key to the rule id) and R2
+# (re-collapses the consumption-side membership test). The gate reports
+# 34 killed, 0 survived, 0 invalid.
+# Worth recording, because R2 took three attempts and each failure was real:
+#   - mutating the `keep` lookup changed nothing observable, because the
+#     following filter re-derives the key with the real policy id;
+#   - the corrected version was an EQUIVALENT mutant, because `localOnly`
+#     skips the whole branch when the plan holds no AGGREGATE rules, so an
+#     all-LOCAL fixture never executed the line;
+#   - the original assertion could not detect a dropped rule at all. `report()`
+#     walks the plan's LOCAL keys and reads tallies[key], so a rule dropped from
+#     the per-row subset still gets a report entry, accumulates nothing, and is
+#     reported Passed forever. Asserting `containsKey` passed while the rule was
+#     never evaluated. Only feeding a VIOLATING row separates the two cases.
+#     That silent-passing shape is law 12 territory and deserves its own row.
+#   - CORRECTION, recorded because the first reading overstated it. A sixth test
+#     pins the invariant DIRECTLY: every planned LOCAL rule must report its own
+#     violation on a row that violates it, and the report must cover the planned
+#     rules exactly. It passes on clean source, which is the measurement that
+#     matters: `localRules` and `localOnly` build keys with the same expression
+#     over the same policies, so a rule CANNOT reach plan.localRuleKeys while
+#     missing the per-row set today. The silent-passing is therefore a LATENT
+#     fragility in report() -- it would report Passed for a rule it never
+#     evaluated -- not a live defect, and no law 12 violation is claimed here.
+#     R2 reaches it only by mutating the membership test. With the sixth test in
+#     place R2 kills two tests rather than one, and the surviving signal is
+#     explicit: "was planned LOCAL but reported Passed".
+# H2.2 moved certified-sha 8d732648... -> 7873b723... with baseline-tests UNCHANGED
+# at 602: the three new H22SealedPlanTest tests are the whole change inside the
+# root module's hashed scope, plus the sealed-return refactor in DatasetPlanner
+# they pin down. The refactor sealed plan/refusal into a single PlanResult
+# return type, removed the unchecked `as DatasetPlan` / `is PlanRefusal` casts
+# at every call site, and dropped the decorative `InMemoryIndex` branch that
+# was emitted whenever a dataset declared `requiresGlobalIndex` even though
+# `StreamingEvaluator` never read `plan.indexPlan`. The new tests:
+#   - `plan return is a closed type` pins that DatasetPlanner.plan now returns
+#     `DatasetPlanner.PlanResult` and that the only two members are `DatasetPlan`
+#     and `PlanRefusal`. The pre-existing API returned `Any` and required an
+#     unchecked cast.
+#   - `refusal is part of the same closed type` pins that a rule the analyzer
+#     classifies GLOBAL (a free-floating `Expression.DatasetRef`) is refused via
+#     the SAME sealed return, and the assertion reaches the branch through
+#     exhaustive `when`. Before the refactor the refusal was a sibling data
+#     class, not a member of the planner's return type.
+#   - `planner does not emit InMemoryIndex unless a real GLOBAL execution path
+#     exists` pins that the planner no longer emits a decorative index branch
+#     that nothing consumes. The seam is preserved (H2.4 will revisit GLOBAL
+#     semantics), but no value is emitted into a field nothing reads.
+# Falsified: this change is a type refactor, so the equivalent-mutant audit is
+# what matters. Three classes of equivalent mutants exist for the previous code
+# and the new tests must catch them:
+#   - reverting `plan(...): PlanResult` to `plan(...): Any` while keeping the
+#     sealed members -> the `result is DatasetPlanner.PlanResult` line fails to
+#     compile, killing it deterministically;
+#   - re-introducing the decorative `if (datasets.values.any { ... })
+#     InMemoryIndex(...)` branch on a non-GLOBAL fixture -> test 3 fails
+#     because the plan carries an `IndexPlan.InMemoryIndex` that the test
+#     forbids;
+#   - moving `PlanRefusal` back to a sibling data class (not : PlanResult) ->
+#     the exhaustive `when` does not compile, killing it deterministically.
+# Baseline 602 is a FLOOR, not a claim about what this change added: the fresh
+# certify.sh run reported 605 executed, 0 failures, 0 errors, 0 skipped. The
+# 3 above the floor are the H2.2 tests in the root module's hashed scope.
+# Recorded here so the gap between floor and executed is not mistaken for an
+# unaccounted module.
+# H3.1-JSONL raised baseline-tests 602 -> 606 with certified-sha UNCHANGED at
+# 7873b723...: the five new tests are in policy-decoders-json, outside the
+# root-module scope this anchor hashes, so the tree digest did not move for
+# the same reason the H3.1-CSV cycle did not move it. The floor still rises
+# because it counts executed tests across all modules, and 606 is a floor
+# rather than a claim about what this change added -- the fresh certify.sh
+# run reported 619 executed. The 13 above the floor are the
+# H1GovernanceBusinessCaseTest, H1SeverityBundlePathTest and
+# PolicyIrSeverityRoundTripTest cases that pre-existed in this module's hashed
+# scope, and the four H3.1-JSONL cases that net-entered it (5 new tests in
+# policy-decoders-json minus 1 deleted structurally-blind 06b test that
+# allocated the payload before taking its Runtime baseline).
+#   - JsonlRowStreamSourceTest (5): the streamed cursor must pull a bounded
+#     prefix rather than the whole document, must still yield every row in
+#     order without raising a JsonlRefusal (the 100k-row test wraps the
+#     read loop in runCatching and asserts the loop did not throw, so a
+#     cursor that re-reads stale bytes after a failed slide dies by
+#     assertion), must decode a line LARGER than the read window, must
+#     handle a multibyte UTF-8 character split across a 2-byte-per-pull
+#     dribble, and must agree row-for-row with the materializing cursor.
+#   - JsonlSourceTest.06b was REPLACED, not kept. The old version built
+#     `bytes = sb.toString().toByteArray()` BEFORE the before measurement,
+#     so the payload was outside the measured window. The replacement in
+#     JsonlRowStreamSourceTest counts bytes pulled off the stream, which
+#     is deterministic.
+# Falsified by N3 (open materialises via readBytes) and N4 (the window
+# never slides and re-reads stale bytes). N3 killed the bounded-prefix
+# test by assertion (CountingInputStream refuses readAllBytes); N4
+# required a second attempt: the first anchor (buf.copyInto inside
+# slide() with Unit) SURVIVED because the JSONL fixture happens to
+# align the window boundary with a row boundary, so the stale prefix
+# was overwritten by the next stream.read before the cursor read it.
+# The corrected anchor (the slide() call inside ensure() with Unit, the
+# same site N2 mutates in CsvRowSource) reproduces the same defect
+# class as N2 and the runCatching-wrapped 100k-row test reframes the
+# resulting JsonlRefusal as AssertionFailedError so the gate reports
+# KILLED rather than INVALID. The gate reports 38 killed, 0 survived,
+# 0 invalid.
+# R1.3 moved certified-sha 7873b723... -> d5f2c2cb... with baseline-tests
+# UNCHANGED at 606: the change is a 13-line detekt fix on two existing files
+# in the root module's hashed scope (DatasetPlanner.kt:81-90 and
+# H22SealedPlanTest.kt:97-101). The fix resolved two detekt issues introduced
+# by f8f16eb (M8 sealed-planner commit) that had been latent because no one
+# re-ran `./gradle-jdk21.sh check` against the post-audit tree: an
+# UnusedParameter on `datasets` (suppressed with a 7-line comment explaining
+# the H2.4 future-seam contract), and a 131-char line in H22SealedPlanTest
+# (broken into a 5-line assertEquals consistent with the file's existing
+# pattern at line 109). No tests added, no tests removed; baseline 606 stays
+# as the floor. The fresh certify.sh run on the post-fix tree is expected to
+# report 619 executed (the same total the H3.1-JSONL cycle reported, because
+# the detekt fix did not change which tests run), 0 failures, 0 errors, 0
+# skipped. The cert/SHA.txt was last anchored at 7873b723 at HEAD ae36022
+# (the post-H3.1-JSONL-strace-clarification commit, see B6_CERTIFICATION.md);
+# the source tree moved by exactly the detekt fix and nothing else.
+baseline-tests: 606

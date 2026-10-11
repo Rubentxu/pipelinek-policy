@@ -72,8 +72,10 @@ object StreamingEvaluator {
         // B5.5: flatten WHILE KEEPING the owning policy id. The previous
         // `flatMap { it.rules }` threw the policy identity away, so every later
         // map keyed by bare rule.id could not tell two same-named rules apart.
-        val localRules = rulesByKey(set).filter { (_, _, rule) -> rule.id in plan.localRuleIds }
-        val aggregateRules = rulesByKey(set).filter { (_, _, rule) -> rule.id in plan.aggregateRuleIds }
+        // H2.1: match on the full RuleKey. Matching on rule.id let a rule of the
+        // same name in another policy be classified by someone else's plan.
+        val localRules = rulesByKey(set).filter { (key, _, _) -> key in plan.localRuleKeys }
+        val aggregateRules = rulesByKey(set).filter { (key, _, _) -> key in plan.aggregateRuleKeys }
         val localOnlySet = localOnly(set, plan, aggregateRules.map { it.third })
         val tallies = localRules.associate { (key, _, _) -> key to LocalTally() }
         // B6.6: `accumulatorFor` returns null for boolean collection
@@ -150,7 +152,12 @@ object StreamingEvaluator {
         PolicySet(
             id = set.id,
             policies = set.policies
-                .map { policy -> Policy(policy.id, policy.rules.filter { it.id in plan.localRuleIds }) }
+                .map { policy ->
+                    val keep = policy.rules
+                        .map { RuleKey.of(set.id, policy.id, it.id) }
+                        .filter { it in plan.localRuleKeys }
+                    Policy(policy.id, policy.rules.filter { rule -> RuleKey.of(set.id, policy.id, rule.id) in keep })
+                }
                 .filter { it.rules.isNotEmpty() },
         )
     }
@@ -318,7 +325,7 @@ object StreamingEvaluator {
     private fun accumulatorFor(rule: Rule, plan: DatasetPlan): Accumulator? {
         val predicate = rule.expression as? Expression.CollectionPredicate ?: return null
         return when (predicate.op) {
-            Expression.CollectionOp.COUNT -> Accumulator.Count(plan.accumulatorCap)
+            Expression.CollectionOp.COUNT -> Accumulator.Count(predicate.predicate, plan.accumulatorCap)
             Expression.CollectionOp.ALL,
             Expression.CollectionOp.ANY,
             Expression.CollectionOp.NONE,

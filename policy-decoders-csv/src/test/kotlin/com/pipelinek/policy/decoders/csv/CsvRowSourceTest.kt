@@ -66,33 +66,59 @@ class CsvRowSourceTest {
         assertThrows<CsvRowRefusal> { source.next() }
     }
 
+    /**
+     * H3.1 · The memory claim is measured against a byte counter, not the heap.
+     *
+     * This replaces `06b - flat memory over a large input (Runtime delta, no
+     * fork)`, which was deleted rather than kept. It is worth recording why,
+     * because it looked like exactly the test this feature needed:
+     *
+     *     val bytes = sb.toString().toByteArray()   // allocated HERE
+     *     val before = ...totalMemory()...          // measured HERE
+     *     val source = CsvRowSource(bytes)          // nothing after
+     *
+     * The payload is allocated BEFORE the baseline, so the document is never
+     * inside the measured window, and a source that retains all 150_000 rows
+     * still measured -531040 bytes against its 64 MiB ceiling. Measured, not
+     * inferred: a fully materializing variant passed that test. A green 06b
+     * therefore proved nothing, and a Runtime delta over a short window is
+     * dominated by GC timing regardless.
+     *
+     * CsvRowStreamSourceTest replaces it with a byte counter on the source
+     * stream, which is deterministic: it pins that the cursor pulls at most one
+     * window before yielding its first row, and it fails if the cursor ever
+     * reaches for `readAllBytes`.
+     */
     @Test
-    fun `06b - flat memory over a large input (Runtime delta, no fork)`() {
-        // ~150k rows, ~1.1 MiB — enough to catch a materializing regression
-        // (full-materialize allocates ~1000x this delta in similar tests).
+    fun `06b - a streamed cursor pulls a bounded prefix, not the whole document`() {
         val sb = StringBuilder("v\n")
-        repeat(150_000) { sb.append(it).append('\n') }
-        val bytes = sb.toString().toByteArray()
+        repeat(200_000) { sb.append(it).append('\n') }
+        val payload = sb.toString().toByteArray()
 
-        System.gc()
-        val before = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
-        val source = CsvRowSource(bytes)
-        var count = 0L
-        var checksum = 0L
-        while (true) {
-            val row = source.next() ?: break
-            checksum += (row.entries["v"] as ValueNode.TextValue).text.length
-            count++
+        val counting = object : java.io.InputStream() {
+            var pulled = 0L
+                private set
+            private var pos = 0
+
+            override fun read(): Int = if (pos >= payload.size) -1 else payload[pos++].toInt() and 0xFF
+
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                if (pos >= payload.size) return -1
+                val n = minOf(len.toLong(), (payload.size - pos).toLong()).toInt()
+                payload.copyInto(b, off, pos, pos + n)
+                pos += n
+                pulled += n
+                return n
+            }
+
+            override fun readAllBytes(): ByteArray = error("materializing read is not permitted")
         }
-        System.gc()
-        val after = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
 
-        assertEquals(150_000L, count)
-        // Streaming keeps retained memory ~O(row); allow generous headroom.
-        val deltaBytes = after - before
+        CsvRowSource.open(counting).next()
+
         assertTrue(
-            deltaBytes < 64L * 1024 * 1024,
-            "streaming delta $deltaBytes bytes looks like full materialization",
+            counting.pulled <= 16L * 1024,
+            "pulled ${counting.pulled} bytes of ${payload.size} before the first row",
         )
     }
 }

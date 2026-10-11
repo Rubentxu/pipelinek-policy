@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
  * fields and a three-int constructor.
  *
  * That makes a prerelease tag unrepresentable in the plugin manifest. Building
- * `v0.3.0-alpha.1` publishes `"releaseVersion": "0.3.0"` in
+ * `v0.3.0-alpha.2` publishes `"releaseVersion": "0.3.0"` in
  * `META-INF/pipelinek/plugin-manifest.json`, so an alpha artifact is admitted
  * by the runtime as the final release. The exact tag still survives in the
  * release properties, the jar manifest and the step descriptor.
