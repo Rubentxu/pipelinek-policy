@@ -732,16 +732,28 @@ mutate \
 
 # R2: the same collision on the consumption side.
 #
-# `localOnly` rebuilds the per-row policy set from the plan's keys. If it keys
-# that lookup by rule id alone, the plan is correct while the evaluation that
-# consumes it silently drops rules -- the defect moves from classification to
-# consumption, which is exactly the shape of bug H2.1 describes. This mutation
-# drops the policy from the lookup key; the same-named-LOCAL test dies because
-# the report comes back with no `check` verdict at all instead of two.
+# `localOnly` rebuilds the per-row policy set from the plan's keys, and it
+# derives that key in TWO places: once to build `keep` and once to filter. If
+# either derives it from the rule id alone, the plan is correct while the
+# evaluation that consumes it silently drops rules -- the defect moves from
+# classification to consumption, which is the shape H2.1 describes.
+#
+# Two attempts at this mutant SURVIVED before it bit, and both failures were
+# worth recording:
+#
+#  1. Rewriting the `.map` that builds `keep` did nothing observable, because
+#     the subsequent `.filter` re-derives the key with the real `policy.id`. The
+#     corrupted `keep` matched nothing, which is indistinguishable from an empty
+#     policy set. Mutating the expression that decides membership is the edit
+#     that bites.
+#  2. Even then it survived, because `localOnly` skips the whole branch when the
+#     plan holds no AGGREGATE rules -- a fixture of only LOCAL rules never
+#     executes the line at all. That was an equivalent mutant, not a weak test,
+#     and the fixture has to mix a LOCAL and an AGGREGATE rule sharing a name.
 mutate \
   src/main/kotlin/com/pipelinek/policy/kernel/dataset/StreamingEvaluator.kt \
-  '                        .map { RuleKey.of(set.id, policy.id, it.id) }' \
-  '                        .map { RuleKey.of(set.id, "", it.id) }' \
+  'Policy(policy.id, policy.rules.filter { rule -> RuleKey.of(set.id, policy.id, rule.id) in keep })' \
+  'Policy(policy.id, policy.rules.filter { rule -> RuleKey.of(set.id, "", rule.id) in keep })' \
   'R2 the LOCAL subset must be rebuilt with the full rule key' \
   '*DatasetRuleIdentityProbeTest*'
 

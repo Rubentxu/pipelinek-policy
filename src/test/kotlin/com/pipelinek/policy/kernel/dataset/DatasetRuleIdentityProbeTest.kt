@@ -137,6 +137,81 @@ class DatasetRuleIdentityProbeTest {
     }
 
     /**
+     * The consumption side, and the fixture that R2 actually needs.
+     *
+     * `localOnly` rebuilds the per-row policy set by testing each rule key for
+     * membership in the plan's LOCAL set. That whole branch is skipped when the
+     * plan holds no AGGREGATE rules, so a fixture with only LOCAL rules never
+     * executes it: the first attempt at mutant R2 mutated that line and the
+     * whole probe class stayed green, because the mutant was unreachable rather
+     * than because the test was wrong.
+     *
+     * So the fixture must mix shapes -- a same-named LOCAL rule in one policy
+     * and a same-named AGGREGATE rule in another. That forces the AGGREGATE
+     * policy out of the per-row set while keeping both LOCAL `check` rules in
+     * it. Collapsing the key to the bare rule id then drops the LOCAL rule whose
+     * policy name does not match, which is the observable difference.
+     */
+    @Test
+    fun `a same-named LOCAL rule survives alongside a same-named AGGREGATE rule`() {
+        val set = PolicySet(
+            "s",
+            listOf(
+                Policy("alpha", listOf(localRule("check"))),
+                Policy("beta", listOf(aggregateRule("check"))),
+            ),
+        )
+
+        val plan = DatasetPlanner.plan(set, datasets) as DatasetPlan
+        val report = StreamingEvaluator.evaluate(set, plan, row(ValueNode.NumberValue(1)))
+
+        val localKey = RuleKey.of("s", "alpha", "check")
+        assertEquals(setOf(localKey), plan.localRuleKeys, "only the LOCAL rule belongs to the per-row set")
+        assertEquals(setOf(RuleKey.of("s", "beta", "check")), plan.aggregateRuleKeys, "the AGGREGATE rule must not be evaluated per row")
+        assertTrue(
+            report.results.containsKey(localKey),
+            "the LOCAL rule must still be evaluated per row; got ${report.results.keys}",
+        )
+    }
+
+    /**
+     * The observable consequence, which is what R2 finally detects.
+     *
+     * `report()` walks the plan's LOCAL keys and reads a tally per key, so a rule
+     * that is dropped from the per-row subset still gets an entry -- it just
+     * never accumulates anything and is reported Passed forever. Asserting only
+     * `containsKey` therefore passes even when the LOCAL rule is not evaluated
+     * at all, which is why the first two versions of this mutant survived.
+     *
+     * Feeding a row that VIOLATES the rule is what separates the two cases: a
+     * genuinely evaluated rule reports Violated, while a rule that fell out of
+     * the per-row set reports Passed on the same row. Asserting the verdict, not
+     * merely its presence, is the check that bites.
+     */
+    @Test
+    fun `a same-named LOCAL rule still counts its violations next to a same-named AGGREGATE rule`() {
+        val set = PolicySet(
+            "s",
+            listOf(
+                Policy("alpha", listOf(localRule("check"))),
+                Policy("beta", listOf(aggregateRule("check"))),
+            ),
+        )
+
+        // The rule requires n == 1, so a row of 2 violates it.
+        val plan = DatasetPlanner.plan(set, datasets) as DatasetPlan
+        val report = StreamingEvaluator.evaluate(set, plan, row(ValueNode.NumberValue(2)))
+
+        val localKey = RuleKey.of("s", "alpha", "check")
+        assertTrue(
+            report.results[localKey] is StreamingEvaluator.RuleOutcome.Violated,
+            "the LOCAL rule must be evaluated per row and report its violation; " +
+                "got ${report.results[localKey]} (a Passed here means the rule was " +
+                "silently dropped from the per-row subset rather than evaluated)",
+        )
+    }
+
+    /**
      * Two LOCAL rules sharing a name must BOTH be evaluated.
      *
      * The pre-fix `localOnlySet` filtered with `it.id in plan.localRuleIds`, so a
