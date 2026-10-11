@@ -304,4 +304,42 @@ baseline-suites: 42
 # 3 above the floor are the H2.2 tests in the root module's hashed scope.
 # Recorded here so the gap between floor and executed is not mistaken for an
 # unaccounted module.
-baseline-tests: 602
+# H3.1-JSONL raised baseline-tests 602 -> 606 with certified-sha UNCHANGED at
+# 7873b723...: the five new tests are in policy-decoders-json, outside the
+# root-module scope this anchor hashes, so the tree digest did not move for
+# the same reason the H3.1-CSV cycle did not move it. The floor still rises
+# because it counts executed tests across all modules, and 606 is a floor
+# rather than a claim about what this change added -- the fresh certify.sh
+# run reported 619 executed. The 13 above the floor are the
+# H1GovernanceBusinessCaseTest, H1SeverityBundlePathTest and
+# PolicyIrSeverityRoundTripTest cases that pre-existed in this module's hashed
+# scope, and the four H3.1-JSONL cases that net-entered it (5 new tests in
+# policy-decoders-json minus 1 deleted structurally-blind 06b test that
+# allocated the payload before taking its Runtime baseline).
+#   - JsonlRowStreamSourceTest (5): the streamed cursor must pull a bounded
+#     prefix rather than the whole document, must still yield every row in
+#     order without raising a JsonlRefusal (the 100k-row test wraps the
+#     read loop in runCatching and asserts the loop did not throw, so a
+#     cursor that re-reads stale bytes after a failed slide dies by
+#     assertion), must decode a line LARGER than the read window, must
+#     handle a multibyte UTF-8 character split across a 2-byte-per-pull
+#     dribble, and must agree row-for-row with the materializing cursor.
+#   - JsonlSourceTest.06b was REPLACED, not kept. The old version built
+#     `bytes = sb.toString().toByteArray()` BEFORE the before measurement,
+#     so the payload was outside the measured window. The replacement in
+#     JsonlRowStreamSourceTest counts bytes pulled off the stream, which
+#     is deterministic.
+# Falsified by N3 (open materialises via readBytes) and N4 (the window
+# never slides and re-reads stale bytes). N3 killed the bounded-prefix
+# test by assertion (CountingInputStream refuses readAllBytes); N4
+# required a second attempt: the first anchor (buf.copyInto inside
+# slide() with Unit) SURVIVED because the JSONL fixture happens to
+# align the window boundary with a row boundary, so the stale prefix
+# was overwritten by the next stream.read before the cursor read it.
+# The corrected anchor (the slide() call inside ensure() with Unit, the
+# same site N2 mutates in CsvRowSource) reproduces the same defect
+# class as N2 and the runCatching-wrapped 100k-row test reframes the
+# resulting JsonlRefusal as AssertionFailedError so the gate reports
+# KILLED rather than INVALID. The gate reports 38 killed, 0 survived,
+# 0 invalid.
+baseline-tests: 606

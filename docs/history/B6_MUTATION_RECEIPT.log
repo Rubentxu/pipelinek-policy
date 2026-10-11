@@ -97,6 +97,12 @@
 == mutant: N2 a full window must slide instead of truncating the document
     module: :policy-decoders-csv: · target: *CsvRowStreamSourceTest*
     KILLED: assertion failure in TEST-com.pipelinek.policy.decoders.csv.CsvRowStreamSourceTest.xml
+== mutant: N3 a streamed JSONL cursor must not materialise the document
+    module: :policy-decoders-json: · target: *JsonlRowStreamSourceTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.decoders.json.JsonlRowStreamSourceTest.xml
+== mutant: N4 a full JSONL window must slide instead of truncating the document
+    module: :policy-decoders-json: · target: *JsonlRowStreamSourceTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.decoders.json.JsonlRowStreamSourceTest.xml
 == mutant: R1 rule identity must include the policy, not just the rule id
     module: : · target: *DatasetRuleIdentityProbeTest*
     KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.DatasetRuleIdentityProbeTest.xml
@@ -111,7 +117,7 @@
     KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.H22SealedPlanTest.xml
 
 == B6.6 mutation summary
-   killed:     36
+   killed:     38
    survived:   0
    invalid:    0
    PASS: every mutant compiled, died by assertion, and restored green
