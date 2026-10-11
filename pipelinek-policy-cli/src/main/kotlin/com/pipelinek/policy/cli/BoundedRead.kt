@@ -173,6 +173,43 @@ object BoundedRead {
     }
 
     /**
+     * H3.1 · Check the budget WITHOUT reading, for callers that stream.
+     *
+     * A caller that opens the file as an [InputStream] cannot use [read], which
+     * returns bytes, and should not be pushed back onto the materializing path
+     * just to get a size check. The filesystem answers `File.length()` without
+     * touching content, so the admission decision is free here -- an oversized
+     * file is still refused before a single byte is read.
+     *
+     * Returns the refusal that was reported, or null when the file fits.
+     *
+     * What is GIVEN UP compared to [read]: the growth guard. [read] reads one
+     * byte past the budget and refuses if the stream really did produce more, so
+     * a file that grows between the stat and the read is caught. A streaming
+     * caller bounds itself with a read window instead, so peak heap stays flat
+     * even though total bytes are not bounded by this call. A racing writer is
+     * therefore read rather than refused, and the row budget is what eventually
+     * stops it.
+     *
+     * That is a real weakening of the ingress boundary and is recorded as such
+     * in ROADMAP.md. It is taken deliberately: the alternative was refusing to
+     * stream at all, which leaves the budget check and the memory bound
+     * mutually exclusive on this path.
+     */
+    fun checkLength(
+        file: File,
+        label: String,
+        out: (String) -> Unit,
+        budget: Long = LIMITS.maxBundleBytes.toLong(),
+    ): ReadRefusal? {
+        val declared = file.length()
+        if (declared <= budget) return null
+        val refusal = ReadRefusal.TooLarge(file.path, declared, budget)
+        out("$label: file too large (${refusal.bytes} bytes, budget ${refusal.limit})")
+        return refusal
+    }
+
+    /**
      * Command-shaped convenience: return the bytes, or report the refusal to
      * [out] with [label] and return null.
      *

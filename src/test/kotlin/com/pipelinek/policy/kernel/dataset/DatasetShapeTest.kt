@@ -3,6 +3,7 @@ package com.pipelinek.policy.kernel.dataset
 import com.pipelinek.policy.kernel.expression.Expression
 import com.pipelinek.policy.kernel.path.DocumentPath
 import com.pipelinek.policy.kernel.policy.Policy
+import com.pipelinek.policy.kernel.evaluator.RuleKey
 import com.pipelinek.policy.kernel.policy.PolicySet
 import com.pipelinek.policy.kernel.policy.Rule
 import com.pipelinek.policy.kernel.value.ValueNode
@@ -50,8 +51,8 @@ class DatasetShapeTest {
     fun `02a - per-row rules classify as LOCAL`() {
         val set = PolicySet("s", listOf(Policy("p", listOf(localRule("a"), localRule("b")))))
         val result = DatasetShapeAnalyzer.analyze(set)
-        assertEquals(DatasetShape.LOCAL, result.shapesByRule["a"])
-        assertEquals(DatasetShape.LOCAL, result.shapesByRule["b"])
+        assertEquals(DatasetShape.LOCAL, result.shapeOf(RuleKey.of("s", "p", "a")))
+        assertEquals(DatasetShape.LOCAL, result.shapeOf(RuleKey.of("s", "p", "b")))
         assertEquals(DatasetShape.LOCAL, result.worst)
     }
 
@@ -72,7 +73,7 @@ class DatasetShapeTest {
         )
         val set = PolicySet("s", listOf(Policy("p", listOf(aggregateRule))))
         val result = DatasetShapeAnalyzer.analyze(set)
-        assertEquals(DatasetShape.AGGREGATE, result.shapesByRule["count-hot"])
+        assertEquals(DatasetShape.AGGREGATE, result.shapeOf(RuleKey.of("s", "p", "count-hot")))
         assertEquals(DatasetShape.AGGREGATE, result.worst)
     }
 
@@ -89,7 +90,7 @@ class DatasetShapeTest {
         )
         val set = PolicySet("s", listOf(Policy("p", listOf(globalRule))))
         val result = DatasetShapeAnalyzer.analyze(set)
-        assertEquals(DatasetShape.GLOBAL, result.shapesByRule["cross-row"])
+        assertEquals(DatasetShape.GLOBAL, result.shapeOf(RuleKey.of("s", "p", "cross-row")))
         assertEquals(DatasetShape.GLOBAL, result.worst)
         assertTrue(result.worst > DatasetShape.AGGREGATE, "enum order documents the budget ladder")
     }

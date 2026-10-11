@@ -1,0 +1,123 @@
+== B6.5 mutation gate (authentic: compile → die by assertion → restore green)
+
+== mutant: A1 appliesWhen false must be NotApplicable, not Passed
+    module: : · target: *MutationGateTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.evaluator.MutationGateTest.xml
+== mutant: A2 a malformed appliesWhen must be Error, not silently NotApplicable
+    module: : · target: *RuleEvaluationTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.policy.RuleEvaluationTest.xml
+== mutant: A3 the main expression verdict must be honoured, not short-circuited
+    module: : · target: *MutationGateTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.evaluator.MutationGateTest.xml
+== mutant: B1 JSON float must keep BigDecimal precision, not Double
+    module: :pipelinek-policy-cli: · target: *PropertyFuzzTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.cli.cert.PropertyFuzzTest.xml
+== mutant: B2 JSON duplicate keys must refuse, not last-wins
+    module: :pipelinek-policy-cli: · target: *PropertyFuzzTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.cli.cert.PropertyFuzzTest.xml
+== mutant: C1 canonical form must sort mapping keys
+    module: : · target: *CanonicalDigestTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.value.CanonicalDigestTest.xml
+== mutant: C2 canonical form must preserve sequence order
+    module: : · target: *CanonicalDigestTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.value.CanonicalDigestTest.xml
+== mutant: D1 declared severity must be encoded, not dropped in transit
+    module: : · target: *PolicyIrSeverityRoundTripTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.ir.PolicyIrSeverityRoundTripTest.xml
+== mutant: D3 severity must survive pack verifyPacked evaluate, not just the codec
+    module: : · target: *H1SeverityBundlePathTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.ir.H1SeverityBundlePathTest.xml
+== mutant: D2 an unknown severity must be refused, never silently degraded to absent
+    module: : · target: *PolicyIrSeverityRoundTripTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.ir.PolicyIrSeverityRoundTripTest.xml
+== mutant: E1 supersession must be covered by a host grant, never self-asserted
+    module: : · target: *H1GovernanceBusinessCaseTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.policy.H1GovernanceBusinessCaseTest.xml
+== mutant: E2 waiver routing must select on the subject path, not on list order
+    module: : · target: *H1GovernanceBusinessCaseTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.policy.H1GovernanceBusinessCaseTest.xml
+== mutant: E3 an evaluation error must outrank a violation under SHADOW
+    module: : · target: *H1GovernanceBusinessCaseTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.policy.H1GovernanceBusinessCaseTest.xml
+== mutant: F1 the plugin must run the shared governance service, not evaluate inline
+    module: :pipelinek-policy-parity: · target: *GovernanceJourneyParityTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.parity.GovernanceJourneyParityTest.xml
+
+== mutant: G1 a boolean predicate verdict must not be inverted
+    module: : · target: *BooleanCollectionPredicateStreamingTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.BooleanCollectionPredicateStreamingTest.xml
+== mutant: G2 a truncated run must be marked incomplete, not passed
+    module: : · target: *RowBudgetOutcomeTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.RowBudgetOutcomeTest.xml
+== mutant: G3 the row budget boundary must be inclusive
+    module: : · target: *RowBudgetOutcomeTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.RowBudgetOutcomeTest.xml
+== mutant: H1 every emitted string must go through the escaper
+    module: :pipelinek-policy-cli: · target: *JsonEscapingTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.cli.JsonEscapingTest.xml
+== mutant: H2 C0 control characters must not be emitted raw into a JSON string
+    module: :pipelinek-policy-cli: · target: *JsonEscapingTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.cli.JsonEscapingTest.xml
+== mutant: I1 a present null must resolve to Present, never to Missing
+    module: : · target: *SelectorTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.selector.SelectorTest.xml
+== mutant: I2 a type mismatch must be reported, never silently passed through
+    module: : · target: *SelectorTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.selector.SelectorTest.xml
+== mutant: J1 a bundle with the wrong magic must be refused
+    module: : · target: *PolicyBundleAdmissionFortressTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.bundle.PolicyBundleAdmissionFortressTest.xml
+== mutant: J2 the violation exit code must stay distinct from the evaluation error
+    module: :pipelinek-policy-cli: · target: *HelpAndExitCodesTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.cli.HelpAndExitCodesTest.xml
+== mutant: K1 an unpinned waiver must still waive by subject and rule
+    module: : · target: *WaiversTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.policy.WaiversTest.xml
+== mutant: K2 a fingerprint-pinned waiver must not waive every violation
+    module: : · target: *WaiversTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.policy.WaiversTest.xml
+== mutant: L1 an admission refusal must not be reported as a usage error
+    module: :pipelinek-policy-cli: · target: *HelpAndExitCodesTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.cli.HelpAndExitCodesTest.xml
+== mutant: L2 a rejected policy source must not be reported as a bundle refusal
+    module: :pipelinek-policy-cli: · target: *HelpAndExitCodesTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.cli.HelpAndExitCodesTest.xml
+== mutant: L3 success must never be reported as a usage error
+    module: :pipelinek-policy-cli: · target: *HelpAndExitCodesTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.cli.HelpAndExitCodesTest.xml
+== mutant: M1 COUNT must count matching rows, not every row
+    module: : · target: *StreamingCountMatchesTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.StreamingCountMatchesTest.xml
+== mutant: M2 non-matching rows must not consume the COUNT cap
+    module: : · target: *StreamingCountMatchesTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.StreamingCountMatchesTest.xml
+== mutant: N1 a streamed cursor must not materialize the document
+    module: :policy-decoders-csv: · target: *CsvRowStreamSourceTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.decoders.csv.CsvRowStreamSourceTest.xml
+== mutant: N2 a full window must slide instead of truncating the document
+    module: :policy-decoders-csv: · target: *CsvRowStreamSourceTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.decoders.csv.CsvRowStreamSourceTest.xml
+== mutant: N3 a streamed JSONL cursor must not materialise the document
+    module: :policy-decoders-json: · target: *JsonlRowStreamSourceTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.decoders.json.JsonlRowStreamSourceTest.xml
+== mutant: N4 a full JSONL window must slide instead of truncating the document
+    module: :policy-decoders-json: · target: *JsonlRowStreamSourceTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.decoders.json.JsonlRowStreamSourceTest.xml
+== mutant: R1 rule identity must include the policy, not just the rule id
+    module: : · target: *DatasetRuleIdentityProbeTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.DatasetRuleIdentityProbeTest.xml
+== mutant: R2 the LOCAL subset must be rebuilt with the full rule key
+    module: : · target: *DatasetRuleIdentityProbeTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.DatasetRuleIdentityProbeTest.xml
+== mutant: T1 the planner must not emit a decorative InMemoryIndex
+    module: : · target: *H22SealedPlanTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.H22SealedPlanTest.xml
+== mutant: T2 a GLOBAL rule must be refused, not silently planned
+    module: : · target: *H22SealedPlanTest*
+    KILLED: assertion failure in TEST-com.pipelinek.policy.kernel.dataset.H22SealedPlanTest.xml
+
+== B6.6 mutation summary
+   killed:     38
+   survived:   0
+   invalid:    0
+   PASS: every mutant compiled, died by assertion, and restored green

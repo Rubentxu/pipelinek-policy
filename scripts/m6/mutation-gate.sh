@@ -91,6 +91,9 @@ module_for_pattern() {
     *HelpAndExitCodesTest*) echo ":pipelinek-policy-cli:" ;;
     *WaiversTest*)         echo ":" ;;
     *StreamCmdTest*)   echo ":pipelinek-policy-cli:" ;;
+    *StreamCmdLocalRuleRealPathTest*) echo ":pipelinek-policy-cli:" ;;
+    *CsvRowStreamSourceTest*) echo ":policy-decoders-csv:" ;;
+    *JsonlRowStreamSourceTest*) echo ":policy-decoders-json:" ;;
     *CompileBundleTestTest*) echo ":pipelinek-policy-cli:" ;;
     *CheckCmdTest*)    echo ":pipelinek-policy-cli:" ;;
     *MutationGateTest*)    echo ":" ;;
@@ -653,6 +656,198 @@ mutate \
   '    const val OK: Int = 1' \
   'L3 success must never be reported as a usage error' \
   '*HelpAndExitCodesTest*'
+
+# M1: COUNT must count MATCHING rows, not every row. This is the H2.3 defect,
+# restored to its original form: `Count` took no predicate and incremented per
+# row, on the reasoning that "any node counts as one row". Reintroducing that
+# makes COUNT mean "count every row in the dataset", so an author writing "count
+# rows where `n` is a NUMBER" is satisfied by rows holding text -- and the
+# `accumulatorCap` bounds rows rather than the matches M8 REQ M8-04 04b names
+# ("cap 10 con 11 matches => refusal BUDGET_EXCEEDED").
+#
+# The mutation drops the match test, which is the smallest edit that reproduces
+# the measured defect: three matching rows among five returned 5.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/Accumulator.kt \
+  '            !matchesAt(value) -> Outcome.Accepted.also { seen++; outcome = it }' \
+  '            true -> Outcome.Accepted.also { seen++; outcome = it }' \
+  'M1 COUNT must count matching rows, not every row' \
+  '*StreamingCountMatchesTest*'
+
+# M2: the other direction. Making a non-match consume the COUNT cap would bound
+# reading rather than matching, so a long stream of rows that match nothing
+# refuses a COUNT rule that has counted nothing. The sibling test asserts one
+# match among five rows must not hit a cap of two; this mutation inverts it.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/Accumulator.kt \
+  '            !matchesAt(value) -> Outcome.Accepted.also { seen++; outcome = it }' \
+  '            matchesAt(value) -> Outcome.Accepted.also { seen++; outcome = it }' \
+  'M2 non-matching rows must not consume the COUNT cap' \
+  '*StreamingCountMatchesTest*'
+
+# N1: the streamed cursor must actually stream. This restores the H3.1 defect:
+# `open` materializes the stream into a byte array and hands that to the
+# array-backed cursor, which is exactly what the streaming entry point existed to
+# stop. The pre-existing `06b` memory test could not see this -- it allocated the
+# payload BEFORE taking its baseline, so a materializing cursor measured
+# -531040 bytes against a 64 MiB ceiling and passed. The new tests count bytes
+# pulled off the stream instead, which is deterministic.
+mutate \
+  policy-decoders-csv/src/main/kotlin/com/pipelinek/policy/decoders/csv/CsvRowSource.kt \
+  '            CsvRowSource(ByteSource.Windowed(stream), stream)' \
+  '            CsvRowSource(ByteSource.Array(stream.readBytes()), null)' \
+  'N1 a streamed cursor must not materialize the document' \
+  '*CsvRowStreamSourceTest*'
+
+# N2: the window must slide, not stop refilling. Replacing the slide with a
+# no-op makes the cursor give up once the window is full, so it reports EOF part
+# way through a document and silently evaluates only the rows that happened to
+# fit. The test that kills it asserts every row arrives and the stream is fully
+# consumed, which a truncated read satisfies for the prefix it did see.
+mutate \
+  policy-decoders-csv/src/main/kotlin/com/pipelinek/policy/decoders/csv/CsvRowSource.kt \
+  '                        slide()' \
+  '                        Unit' \
+  'N2 a full window must slide instead of truncating the document' \
+  '*CsvRowStreamSourceTest*'
+
+# N3: H3.1-JSONL -- the streamed cursor must actually stream, just like CSV.
+# Same defect class as N1, same lesson: the streaming entry point existed to
+# stop the materialising read, and the smallest way to fake it is to keep the
+# public signature and route the stream through readBytes inside the companion.
+# The pre-existing 06b test allocated the payload BEFORE the before
+# measurement, which is the same blind spot N1 had, and was deleted with it.
+# JsonlRowStreamSourceTest 01 uses a CountingInputStream that throws on
+# readAllBytes/skip, so this mutation dies by assertion in compileCheck or in
+# the directed test rather than by incidental exception.
+mutate \
+  policy-decoders-json/src/main/kotlin/com/pipelinek/policy/decoders/json/JsonlSource.kt \
+  '        fun open(stream: InputStream): JsonlSource =
+            JsonlSource(JsonlByteSource.Windowed(stream), stream)' \
+  '        fun open(stream: InputStream): JsonlSource =
+            JsonlSource(JsonlByteSource.Array(stream.readBytes()), null)' \
+  'N3 a streamed JSONL cursor must not materialise the document' \
+  '*JsonlRowStreamSourceTest*'
+
+# N4: H3.1-JSONL -- the window must slide, not stop refilling. Same defect
+# class as N2, applied to the JSONL source. The smallest edit that reproduces
+# it is the same one N2 used in the CSV source: replace the call to slide()
+# inside ensure() with Unit. With the call no-op'd, the cursor's `at()` indexes
+# stay at the position they were at when the window filled, and the next
+# stream.read either lands on stale content (which parseRow then refuses) or
+# nothing at all (which the cursor then reports as EOF, after the partial
+# row has already been re-interpreted).
+#
+# The first attempt at this mutant targeted `buf.copyInto(buf, 0, at, bufLen)`
+# inside slide() itself -- the same line N2's mirror in CsvRowSource would
+# touch. That mutation SURVIVED the test suite. Measured: with the JSONL
+# fixture (100k rows of `{"n":N}\n` ≈ 10 bytes each), the 8 KiB window fills
+# exactly at a row boundary, so the post-slide bufLen is 0 and the next
+# stream.read fully overwrites the buffer before the cursor ever reads from
+# it. The stale bytes never get observed.
+#
+# JsonlRowStreamSourceTest 02 catches the mutation regardless: it wraps the
+# read loop in runCatching and asserts the loop did not throw. A cursor that
+# returns stale content throws JsonlRefusal from parseRow, which the
+# assertNull re-frames as an AssertionFailedError so the gate's `run_directed`
+# counts it as KILLED rather than INVALID.
+mutate \
+  policy-decoders-json/src/main/kotlin/com/pipelinek/policy/decoders/json/JsonlSource.kt \
+  '                    if (cursor > bufStart) {
+                        slide()
+                    } else {' \
+  '                    if (cursor > bufStart) {
+                        Unit
+                    } else {' \
+  'N4 a full JSONL window must slide instead of truncating the document' \
+  '*JsonlRowStreamSourceTest*'
+
+# R1: the LOCAL/AGGREGATE split must key on IDENTITY, not on a name.
+#
+# `DatasetShape.Result` was `Map<String, DatasetShape>` keyed by the bare rule id,
+# and the planner and the streaming consumer selected rules by bare id as well.
+# Two policies that each declare a rule called `check` shared one map slot, and
+# the rule declared last won: declaring the aggregate second planned it as LOCAL,
+# declaring it first planned it as AGGREGATE. The measured pre-fix failure was an
+# empty local set plus `row_budget cap 10000000 reached after 10000000` -- a
+# silently unfolded aggregate rather than a fold.
+#
+# The mutation re-collapses the key to the rule id, the smallest edit that
+# reproduces the collision with every type intact. The tests that kill it assert
+# one direction of the plan, BOTH declaration orders agreeing, and two same-named
+# LOCAL rules both reaching the report.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/DatasetShape.kt \
+  '                shapes[RuleKey.of(set.id, policy.id, rule.id)] = ruleShape(rule)' \
+  '                shapes[RuleKey.of(set.id, "", rule.id)] = ruleShape(rule)' \
+  'R1 rule identity must include the policy, not just the rule id' \
+  '*DatasetRuleIdentityProbeTest*'
+
+# R2: the same collision on the consumption side.
+#
+# `localOnly` rebuilds the per-row policy set from the plan's keys, and it
+# derives that key in TWO places: once to build `keep` and once to filter. If
+# either derives it from the rule id alone, the plan is correct while the
+# evaluation that consumes it silently drops rules -- the defect moves from
+# classification to consumption, which is the shape H2.1 describes.
+#
+# Two attempts at this mutant SURVIVED before it bit, and both failures were
+# worth recording:
+#
+#  1. Rewriting the `.map` that builds `keep` did nothing observable, because
+#     the subsequent `.filter` re-derives the key with the real `policy.id`. The
+#     corrupted `keep` matched nothing, which is indistinguishable from an empty
+#     policy set. Mutating the expression that decides membership is the edit
+#     that bites.
+#  2. Even then it survived, because `localOnly` skips the whole branch when the
+#     plan holds no AGGREGATE rules -- a fixture of only LOCAL rules never
+#     executes the line at all. That was an equivalent mutant, not a weak test,
+#     and the fixture has to mix a LOCAL and an AGGREGATE rule sharing a name.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/StreamingEvaluator.kt \
+  'Policy(policy.id, policy.rules.filter { rule -> RuleKey.of(set.id, policy.id, rule.id) in keep })' \
+  'Policy(policy.id, policy.rules.filter { rule -> RuleKey.of(set.id, "", rule.id) in keep })' \
+  'R2 the LOCAL subset must be rebuilt with the full rule key' \
+  '*DatasetRuleIdentityProbeTest*'
+
+# T1: H2.2 — the planner must not emit a decorative InMemoryIndex.
+#
+# Pre-fix, the planner emitted `IndexPlan.InMemoryIndex(dataset, column)` whenever
+# ANY dataset declared `requiresGlobalIndex = true`, even though
+# `StreamingEvaluator` never read `plan.indexPlan`. The field was decorative and
+# the value was carried into every plan regardless of access shape. The fix
+# restricted the planner to `IndexPlan.SinglePass` because there is no bounded
+# GLOBAL executor yet (H2.4's job). The mutation re-introduces the conditional
+# emission exactly as it stood before the fix; the test that kills it pins the
+# invariant that `requiresGlobalIndex` alone does not produce an index plan.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/DatasetPlanner.kt \
+  '        val indexPlan: IndexPlan = IndexPlan.SinglePass' \
+  '        val indexPlan: IndexPlan = if (datasets.values.any { it.requiresGlobalIndex }) {
+                val entry = datasets.entries.first { it.value.requiresGlobalIndex }
+                IndexPlan.InMemoryIndex(entry.key, column = "id")
+            } else {
+                IndexPlan.SinglePass
+            }' \
+  'T1 the planner must not emit a decorative InMemoryIndex' \
+  '*H22SealedPlanTest*'
+
+# T2: H2.2 — the planner must REFUSE GLOBAL access, not silently plan it.
+#
+# The planner's law-12 contract is to refuse any rule the analyzer classified
+# GLOBAL with a typed `PlanRefusal`, named by the offending rules' RuleKey.
+# Dropping the refusal branch and falling through would silently weaken law 12
+# — the same GLOBAL rule would plan as a streaming aggregate, which the
+# streaming evaluator cannot execute without an index, and the report would
+# claim success on something the kernel never ran. The mutation is the smallest
+# edit that produces that: a literal `false` short-circuit that bypasses the
+# refusal.
+mutate \
+  src/main/kotlin/com/pipelinek/policy/kernel/dataset/DatasetPlanner.kt \
+  '        if (global.isNotEmpty()) {' \
+  '        if (false && global.isNotEmpty()) {' \
+  'T2 a GLOBAL rule must be refused, not silently planned' \
+  '*H22SealedPlanTest*'
 
 echo
 echo "== B6.6 mutation summary"
