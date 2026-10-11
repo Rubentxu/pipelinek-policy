@@ -80,6 +80,14 @@ object DatasetPlanner {
 
     fun plan(
         set: PolicySet,
+        // The `datasets` map is part of the planner's public contract. H2.4 will
+        // require it: when `requiresGlobalIndex` becomes meaningful, the planner
+        // must consult the dataset spec to decide whether to emit InMemoryIndex.
+        // Today the GLOBAL execution path is not implemented (law 12) and the
+        // planner refuses any GLOBAL-shaped rule before touching this map, so
+        // the parameter is intentionally unused. Suppress detekt UnusedParameter
+        // until H2.4 lands and the parameter becomes load-bearing.
+        @Suppress("UnusedParameter")
         datasets: Map<String, DatasetSpec>,
         rowBudget: Long = DEFAULT_ROW_BUDGET,
         accumulatorCap: Long = DEFAULT_ACCUMULATOR_CAP,

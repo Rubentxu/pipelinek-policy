@@ -94,7 +94,11 @@ class H22SealedPlanTest {
             is DatasetPlan -> "plan"
             is PlanRefusal -> "refusal"
         }
-        assertEquals("refusal", outcome, "the analyzer must classify the free DatasetRef as GLOBAL and the planner must refuse it")
+        assertEquals(
+            "refusal",
+            outcome,
+            "the analyzer must classify the free DatasetRef as GLOBAL and the planner must refuse it",
+        )
     }
 
     @Test
