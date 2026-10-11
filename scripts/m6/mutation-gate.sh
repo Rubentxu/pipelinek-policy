@@ -729,16 +729,36 @@ mutate \
   'N3 a streamed JSONL cursor must not materialise the document' \
   '*JsonlRowStreamSourceTest*'
 
-# N4: H3.1-JSONL -- the window must slide, not stop refilling. Same defect class
-# as N2, applied to the JSONL source. With slide() replaced by Unit, the
-# JsonlByteSource.Windowed cursor reports EOF once the 8 KiB buffer fills, and
-# only the rows that happened to fit are emitted. The test that kills it is 02
-# (100k rows, all in order, stream fully consumed): a 64 KiB document with one
-# row per byte MUST NOT stop at row 8192.
+# N4: H3.1-JSONL -- the window must slide, not stop refilling. Same defect
+# class as N2, applied to the JSONL source. The smallest edit that reproduces
+# it is the same one N2 used in the CSV source: replace the call to slide()
+# inside ensure() with Unit. With the call no-op'd, the cursor's `at()` indexes
+# stay at the position they were at when the window filled, and the next
+# stream.read either lands on stale content (which parseRow then refuses) or
+# nothing at all (which the cursor then reports as EOF, after the partial
+# row has already been re-interpreted).
+#
+# The first attempt at this mutant targeted `buf.copyInto(buf, 0, at, bufLen)`
+# inside slide() itself -- the same line N2's mirror in CsvRowSource would
+# touch. That mutation SURVIVED the test suite. Measured: with the JSONL
+# fixture (100k rows of `{"n":N}\n` ≈ 10 bytes each), the 8 KiB window fills
+# exactly at a row boundary, so the post-slide bufLen is 0 and the next
+# stream.read fully overwrites the buffer before the cursor ever reads from
+# it. The stale bytes never get observed.
+#
+# JsonlRowStreamSourceTest 02 catches the mutation regardless: it wraps the
+# read loop in runCatching and asserts the loop did not throw. A cursor that
+# returns stale content throws JsonlRefusal from parseRow, which the
+# assertNull re-frames as an AssertionFailedError so the gate's `run_directed`
+# counts it as KILLED rather than INVALID.
 mutate \
   policy-decoders-json/src/main/kotlin/com/pipelinek/policy/decoders/json/JsonlSource.kt \
-  '            buf.copyInto(buf, 0, at, bufLen)' \
-  '            Unit' \
+  '                    if (cursor > bufStart) {
+                        slide()
+                    } else {' \
+  '                    if (cursor > bufStart) {
+                        Unit
+                    } else {' \
   'N4 a full JSONL window must slide instead of truncating the document' \
   '*JsonlRowStreamSourceTest*'
 

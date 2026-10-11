@@ -6,6 +6,7 @@ import java.io.ByteArrayInputStream
 import java.io.InputStream
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -123,12 +124,25 @@ class JsonlRowStreamSourceTest {
         val source = JsonlSource.open(stream)
 
         val seen = mutableListOf<Long>()
-        while (true) {
-            val row = source.next() ?: break
-            seen += (row.entries["n"] as ValueNode.NumberValue).number.toLong()
-        }
+        val refusal = runCatching {
+            while (true) {
+                val row = source.next() ?: break
+                seen += (row.entries["n"] as ValueNode.NumberValue).number.toLong()
+            }
+        }.exceptionOrNull()
+
         source.closeQuietly()
 
+        // A cursor that re-reads stale bytes after a failed slide surfaces the
+        // stale content as a JsonlRefusal from parseRow. The gate's
+        // `run_directed` requires the failure to be an AssertionError, not an
+        // incidental exception; re-frame the refusal as a die-by-assertion so
+        // a windowed cursor that never advances the buffer is detected.
+        assertNull(
+            refusal,
+            "cursor raised ${refusal?.javaClass?.simpleName} after ${seen.size} rows; " +
+                "a window that never slides re-reads stale content and breaks the parser",
+        )
         assertEquals(100_000, seen.size)
         assertEquals(0L, seen.first())
         assertEquals(99_999L, seen.last())
