@@ -1,6 +1,6 @@
 # Pull Request: R1 v0.3.0-alpha.2 reconciliation
 
-> **Status:** `READY_FOR_HUMAN_REVIEW` · **Branch:** `integration/r1-alpha.2` (local, NOT pushed) · **Base:** `origin/main` at `c906988582ea16085bb6ec0154559e5a30c770c6` · **Compare:** `8de4129727f44e1fb0b0bb7c08e0832e4e205cc7` (73 commits ahead, includes R1 + R2.1 + R3.1 + R3.1.1)
+> **Status:** `AUTHORIZED_FOR_PUBLICATION` · **Branch:** `integration/r1-alpha.2` · **Base preflight:** `origin/main` at `c906988582ea16085bb6ec0154559e5a30c770c6` · **Measured prepublication candidate:** `1b2e923bd050f66299ef67799c72d0a0ce44a1c6`. Fresh gates and packaging safeguards: `docs/history/R1_5_PUBLICATION_PREPARATION.md`. Exact PR head is the remote branch ref, not this historical measurement SHA.
 
 ## Resumen
 
@@ -109,4 +109,4 @@ Una vez aprobado el merge a `origin/main` (R1.5 step 3, human-gated):
 3. Crear el GitHub Release como **prerelease** con los 8 assets + SBOM.
 4. Descargar los 8 assets publicados con `gh release download` y re-hashearlos con SHA-256 para verificar byte-by-byte.
 
-**R1.5 step 3+ (push, merge, tag, release) está halted awaiting human authorization explícita.**
+**R1.5 step 3+ autorizado explícitamente el 2026-10-11T22:22:26.808Z.** No se afirma publicación hasta verificar merge, tag, release y descarga. La publicación añadirá jar raíz + ZIP CLI completo y checksums planos. El SPDX JSON se declara inventario de jars, no cobertura de 622 dependencias. Véase `R1_5_PUBLICATION_PREPARATION.md`.

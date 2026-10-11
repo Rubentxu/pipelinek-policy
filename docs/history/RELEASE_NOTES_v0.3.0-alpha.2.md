@@ -1,6 +1,8 @@
 # v0.3.0-alpha.2 — Release notes
 
-**Estado:** `READY_FOR_HUMAN_GATE` (alpha.2)
+**Registro histórico preintegración.** Los SHA, métricas y limitaciones de este documento describen su candidato original, no el HEAD final publicado. La preparación autorizada y las correcciones posteriores están en `R1_5_PUBLICATION_PREPARATION.md`, ADR-0017 y los informes R3.1/R3.1.1. El gate humano fue autorizado el `2026-10-11T22:22:26.808Z`. Las notas de la GitHub prerelease y su recibo final identificarán el SHA integrado y los assets realmente publicados.
+
+**Estado histórico:** `READY_FOR_HUMAN_GATE` (alpha.2)
 **Fecha:** 2026-10-11
 **SHA candidato (local):** `583036a908ae09567c1ac0eaade4117fd32c58f7`
 **SHA candidato (a verificar en remoto):** `c906988582ea16085bb6ec0154559e5a30c770c6` (origin/main — to be advanced by the merge in R1.5)
