@@ -67,14 +67,14 @@ The falsification test (`apiRange comparator rejects a version outside the decla
 
 ## Evidence
 
-1. `./gradlew :pipelinek-policy-plugin:test` → **11/11 tests pass** (4 new + 7 prior). Time: 4.7s.
+1. `./gradlew :pipelinek-policy-plugin:test` → **65/65 tests pass** (4 new + 61 prior), según los 12 XML de suites de certify en `98807a2`.
 2. Same command, with `-PsdkVersion=0.48.0` → **4/4 pass** in `SdkApiRangeAgreementTest`. Time: 3.5s.
 3. The test file is 163 lines, all under `pipelinek-policy-plugin/src/test/`, all in the repo.
-4. The full `./gradlew check` on the integration branch HEAD (after this commit) will be re-run to confirm the cert SHA unchanged.
+4. Certify en `98807a2` ejecutó 623 tests verdes. El SHA root-only permaneció `d5f2c2cb`: incluye `src/main/kotlin` y `src/test/kotlin` del módulo raíz, pero excluye todas las fuentes del módulo plugin.
 
 ## Honest limitations
 
-- **None functional.** All 4 tests pass against both SDK 0.47.0 (default, what `scripts/m6/certify.sh` exercises) and SDK 0.48.0 (what the R3.1 /tmp probe exercised).
+- **Alcance limitado.** Estas pruebas verifican contrato y ServiceLoader en el classpath de tests. No equivalen a instalar el fat jar ni a ejecutar `policy.check` en un host completo. El wiring ya existía en `PolicyPluginWiringTest`. La aportación nueva es el acuerdo de apiRange con la versión observada.
 - **Comparator is intentionally narrow.** It only handles the range notation the plugin's v1 manifest emits (`[A.B.C, D.E.F)`). If the manifest schema ever changes to a richer range syntax (e.g. `^0.48.0`, `~0.48.0`), this test will fail with "apiRange is not in the form [A.B.C, D.E.F)" and the comparator will need extending. That is a feature, not a bug: the test is a tripwire against manifest schema drift.
 - **The plugin-manifest emission is not re-tested here.** `PluginVersionAgreementTest` already tests the manifest's measured release version, but does not assert the apiRange field. The new test is the only place that pins apiRange behaviour. If a future change drops the apiRange field from the manifest, the new test fails on the parse step; that is the intended tripwire.
 
