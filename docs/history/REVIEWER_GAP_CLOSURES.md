@@ -83,11 +83,21 @@ honest).** M8-05 05c reads:
 
 The two narrow designs (A) `indexedColumn: String?` on `DatasetSpec`
 and (B) `DatasetRef(name, column)` on `Expression` are still the only
-narrow options. The blast radius of (B) — `grep -rn 'DatasetRef('`
-across the codebase — is 14 test call sites plus 4 production call
-sites (Expression declaration, Evaluator error message, DatasetShape
-analysis, CanonicalPolicyJson parser), 18 sites total. The (A)
-option is additive in `DatasetSpec` only.
+narrow options. **The blast radius of (B) is 14 sites, not 18**:
+`grep -rn 'DatasetRef(' --include='*.kt'` returns 24 lines, but only
+14 are constructor calls that would need to grow a parameter — 13 in
+tests (7 files: DatasetShapeTest, StreamingEvaluatorTest,
+BooleanCollectionPredicateStreamingTest, StreamingCountMatchesTest,
+DatasetRuleIdentityProbeTest, H22SealedPlanTest,
+CanonicalPolicyJsonFortressTest) and **1 in production**
+(`CanonicalPolicyJson.kt:147`, the JSON parser call
+`Expression.DatasetRef(value.req("name").asString())`).
+The other 10 lines in `src/main` are *references* to the type
+(`is Expression.DatasetRef` patterns, `containsDatasetRef` recursion,
+`displayName` interpolation, error-message string interpolation), not
+constructor calls. Design (A) is additive in `DatasetSpec` only.
+The (B) blast radius is real but smaller than first tallied; the
+overcount came from conflating the type name with the constructor call.
 
 **Status: parked, honest, no decision made. Awaiting product-owner
 choice (A) or (B) before implementation.**
@@ -156,7 +166,7 @@ publication half is intentionally not taken.
 | H3.1-JSONL installed-CLI bytes-pulled      | **CLOSED**  | commit 6eef871, docs/history/H31_JL_INSTALLED_CLI_EVIDENCE.md                                     |
 | H2.2 GLOBAL refusal surfaced via real CLI  | **CLOSED**  | commit 5417746, docs/history/H22_INSTALLED_CLI_EVIDENCE.md                                        |
 | H1.3 surviving mutant `union.sortedBy`     | **HONEST**  | already documented on ROADMAP H1.3 row + PolicyDiff.kt:56-73 diffDigest canonicalizes            |
-| H2.4 design fork                           | **HONEST**  | parked, two narrow designs A/B with bounded blast radius (B: 18 sites)                            |
+| H2.4 design fork                           | **HONEST**  | parked, two narrow designs A/B with bounded blast radius (B: 14 sites: 13 test + 1 production constructor)  |
 | H4.2 plugin UAT on SDK 0.47.0              | **PASSING** | uat-external-distribution.sh: 16 OK, 4 VIOLATE, exit codes 0/1, no errors                         |
 | H5.1 anchor test                            | **PASSING** | CertificationAnchorTest 01a/01b/01c/01d + corpus-digest all green, SHA 7873b723 on 91 files     |
 | H3.1-JSONL mutation gate scope              | **CLOSED**  | 38/0/0 covers the full post-H3.1-JSONL surface; N3 + N4 added in commits 56d160e and aa356dc      |
