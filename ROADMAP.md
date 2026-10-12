@@ -2,7 +2,63 @@
 
 **Autoridad:** este fichero es la única fuente de secuenciación del proyecto.
 
-## Estado inicial
+## Secuencia vigente de cierre RC · 2026-10-12
+
+Esta sección y la tabla de releases reconciliada prevalecen sobre estados históricos
+que aparecen más abajo. Los receipts históricos no se reescriben ni certifican el
+candidato actual por herencia.
+
+**Baseline observado:** `main` y la referencia local `origin/main` apuntan a
+`865966504f428208c9544001567418b28f4160ce`; existen tags `v0.3.0-alpha.1` y
+`v0.3.0-alpha.2`. La publicación alpha.2 está confirmada por el coordinador.
+Esto no demuestra certificación de RC ni de estable. El siguiente objetivo
+es **`v0.3.0-rc.1` directamente**, sin publicar un beta intermedio.
+
+### Bloqueantes RC medidos y unidades acotadas
+
+| Unidad | Hallazgo / contrato de cierre | Ownership |
+|---|---|---|
+| RC-S1 | Streaming admite agregados anidados que `accumulatorFor` no ejecuta y luego omite la regla. Rechazar antes de consumir: solo `CollectionPredicate` de nivel superior, `DatasetRef` directo y `appliesWhen == null`; ninguna RuleKey desaparece. GLOBAL sigue rechazado con o sin `requiresGlobalIndex`, sin sugerir habilitación inexistente. | Worker semántico, kernel/dataset y negativos CLI |
+| RC-S2 | `PolicyDiff` emite severidad `CRITICAL -> null` pese a contrato bilateral y waiver-aware borra cambios de severidad sin waivers. Exigir A/B no-null distintos, conservar cambio neutral y precedencia de una entrada. | Worker semántico, kernel/policy |
+| RC-S3 | `DiffCmd` descarta corpus usando el primer documento y `StreamCmd` no garantiza cierre de cursor. Rechazo explícito de multicorpus, sin nueva feature, y cierre en adaptador tras EOF/budget/error, nunca I/O en evaluador. | Worker semántico, CLI |
+| RC-A1 | Ancla cubre solo root y deja fuera 82 ficheros Kotlin de módulos según auditoría delegada. Scope explícito `kotlin-included-modules-v1`: Kotlin main/test de root y todos los módulos incluidos; excluir outputs y spike FIR no incluido. SHA revisado manualmente con razón. Build configs se vinculan separadamente por HEAD/estado tracked/comparación final o digest explícito. | Worker módulos/Gradle/anchor |
+| RC-A2 | Construir manifest real de artefactos y dependencias resueltas; identificar RC atómicamente en root, CLI, plugin y contratos. Parity se certifica como módulo de tests, no se publica como runtime jar. | Worker módulos/Gradle/anchor |
+| RC-G1 | Certificación registra override SDK sin pasarlo al build. Propagarlo, ejecutar build real y tests frescos, consumir manifest del productor y digests completos. | Worker scripts m6/m10 |
+| RC-G2 | Receipt HEAD inválido con `git diff ... || true` admite código sin certificar; selección excluye rootjar vigente, incluye parity, SBOM es inventario propio y matriz permite celda SDK ausente/reference skips. Fallar cerrado y representar dependencias resueltas reales con relaciones/digests. | Worker scripts m6/m10 |
+
+### Orden obligatorio y gate de salida
+
+1. Contratos externos acotados y commit de este plan por el coordinador, antes de
+   integrar fixes. Ningún estado SDDK ni artefacto de planificación entra al repo.
+2. RC-S1/RC-S2/RC-S3 con RED antes, GREEN después y mutantes que compilan y mueren
+   por la aserción prevista, restauración GREEN. No ampliar semántica agregada.
+3. RC-A1/RC-A2: productor Gradle/helper y schema acordado con scripts. RC-S y RC-A
+   son scopes disjuntos; solo worktree primario, integración serial en main.
+4. RC-G1/RC-G2 sobre manifest real: negativas de receipt inválido/diff fallido,
+   rootjar ausente/parity, SDK override/celda ausente y skips de referencia.
+5. Integración: `check` completo fresco, build real, certificación, matriz,
+   mutaciones críticas y UAT Step instalado sobre SHA candidato exacto. Comparar
+   estado tracked antes/después y manifest/checksums; no reutilizar XML/receipts.
+6. Observar replay host real miss/hit/invalidation de recurso y bundle, o registrar
+   **BLOCK/DEFERRED** con causa y alcance. Fingerprint unitario no es replay PASS.
+7. Admitir/publicar RC solo tras gates aplicables y excepciones explícitas. Verificar
+   igualdad main/remoto y bytes descargados si se publica. `v0.3.0` sigue pendiente.
+
+**Exclusiones legítimas, no éxitos implícitos:** M4 FIR mantiene **FAIL documentado**,
+Opción C y spike conservado. Per-node trace y compilación `.kts`/FIR pueden seguir
+como exclusiones de diseño no bloqueantes del RC, declaradas, sin afirmar soporte.
+Firma puede permanecer **NOT_ATTESTED** solo si admisión RC permite la excepción
+explícita. Timeout/provenance `--yes` ya corregido no se reabre como defecto.
+Pureza del evaluador, ValueTree/PolicyIR como autoridades, costura pública del
+plugin y prohibición de bytecode arbitrario siguen vinculantes.
+
+**Estado de planificación:** RC ABIERTO, implementación y aceptación aún pendientes.
+La publicación alpha.2 no cierra M8/GLOBAL ni B6 del RC; los cierres históricos son
+propios del SHA medido. Registrar resultados nuevos tras evidencia, no al escribir
+este plan. Cleanup integrado ya realizado: conservar main y `m4-fir-spike` no
+mergeada; no borrar la spike ni crear worktrees/ramas competidoras.
+
+## Estado inicial histórico (no snapshot actual)
 
 ```text
 M0  Grounding / bootstrap                    DONE · fixture-import DEFERRED (license/PII)
@@ -650,15 +706,15 @@ nadie arranca. H1 no se cierra: se cierra **cableando** ese gobierno por la
 costura pública de plugin (ley 11) y verificando el recorrido entre los dos
 adaptadores.
 
-### Los cinco releases
+### Releases reconciliados (secuencia vigente 2026-10-12)
 
 | Hito | Release | Estado | Bloqueante medido |
 |---|---|---|---|
 | H1 | `v0.3.0-alpha.1` | **PUBLICADO** | H1.1, H1.2 y H1.3 están CERRADOS y verificados: el motor de gobierno (`LayerComposer`, `WaiverMatcher`, `AuthorityRegistry`) se ejecuta desde ambas entradas reales mediante `PolicyGovernance.decide()`, con el bypass del plugin falsificado por un mutante que muere por aserción. Las seis UAT-H1 y la AAT-H1 están `PASS` y **reverificadas** (6/6 + 12/12 + 2/2). Gates desde árbol limpio: `check` verde, `certify.sh` 550/0, mutación 14 matados / 0 sobrevividos / 0 inválidos (medición de H1; la suite ha crecido después a 563/0 y 17/0/0 al cerrar B6.6). **Pero la fila decía antes `LISTO PARA RELEASE` y era FALSA:** razonaba por las UAT de H1, que no son la puerta de admisión. B6.10 se cerró después de esta fila: se Approbó la puerta humana y se publicó con verificación remota 8/8. B6.6, B6.7 y B6.9 están **CERRADOS** desde el 2026-10-10 (`ef218e3` cierra B6.9). B6.8 queda **PARCIALMENTE MEDIDO**: el fingerprint se verificó, pero el hit/miss real sigue `NOT_MEASURED` porque la decisión ocurre en `DurableInvocationResolver`, fuera de este repositorio. B6.10 sigue abierto. Push, tag anotado y GitHub Release hechos el 2026-10-10, con los 8 digests de artefacto verificados descargándolos de vuelta. La versión ya está en `0.3.0-alpha.1` en las cuatro fuentes, con dos derivadas del root y la tercera fijada por test. |
-| H2 | `v0.3.0-alpha.2` | ABIERTO | H2.1 cerrado; queda el resto de H2 |
-| H3 | `v0.3.0-beta.1` | ABIERTO | H3.1 materializa en `ByteArray` |
-| H4 | `v0.3.0-rc.1` | ABIERTO | Procedencia del SDK sin fijar |
-| H5 | `v0.3.0` | ABIERTO | Ancla no cubre submódulos |
+| H2 | `v0.3.0-alpha.2` | **PUBLICADO** (coordinador, 2026-10-12) | Baseline `8659665`; no extrapolar a aceptación RC |
+| H3 | Sin tag intermedio | Integrado en cierre RC acotado | Streaming no ejecutable se rechaza; GLOBAL/indexing no implementado permanece explícito |
+| H4 | `v0.3.0-rc.1` | **ABIERTO** | RC-S1/S2/S3, RC-A1/A2 y RC-G1/G2 antes de gates frescos y replay real o BLOCK/DEFERRED |
+| H5 | `v0.3.0` | **PENDIENTE**, no certificado | RC no equivale a certificación estable |
 
 ### Orden de ejecución derivado de la medición
 
