@@ -199,3 +199,45 @@ tasks.named("check") {
     dependsOn(architectureFitnessGuard)
     dependsOn("detekt")
 }
+
+// RC-I · release evidence manifest.
+//
+// The certification scope is computed by `scripts/lib/certification_source_scope.py`,
+// not by Gradle, because the cert contract (settings-authoritative module list,
+// per-module SHA-1, legacy root-only SHA-1) lives in that script and Gradle
+// should not re-implement it. The task is a thin shim: resolve the script,
+// run it, fail the build if the cert cannot be canonicalised. The default
+// output path is `<root>/build/reports/certification/source-scope.json`,
+// which `certify.sh` and `release-admission.sh` already know how to read.
+//
+// RC-I deliberately keeps this task off the `:check` chain. The cert is a
+// release artefact, not a build invariant, and emitting it on every
+// `gradle build` would write a 176-entry JSON into `build/` that no test
+// asserts against. Run it explicitly (`gradle releaseEvidenceManifest`)
+// before `certify.sh`, or accept the implicit write inside
+// `certify.sh` if you trust that flow.
+tasks.register<Exec>("releaseEvidenceManifest") {
+    group = "verification"
+    description = "Emit the settings-authoritative source-scope manifest under build/reports/certification/."
+
+    val output = providers.gradleProperty("certificationOutput")
+        .getOrElse("build/reports/certification/source-scope.json")
+    val script = file("scripts/lib/certification_source_scope.py")
+
+    inputs.file(script)
+    inputs.file("settings.gradle.kts")
+    outputs.file(output)
+
+    doFirst {
+        // Inputs are hashed by Gradle via inputs.file/outputs.file, so the
+        // up-to-date check is exact: any change to settings.gradle.kts or
+        // the helper invalidates the task and re-runs the script.
+        commandLine(
+            "python3",
+            script.absolutePath,
+            "snapshot",
+            "--root", project.rootDir.absolutePath,
+            "--out", file(output).absolutePath,
+        )
+    }
+}

@@ -269,6 +269,19 @@ $SDK_DIGESTS
 artifacts before walking the installed Step, so a republished or stale SDK fails
 the UAT instead of being silently certified.
 
+## Per-module source scope (RC-I)
+
+This is the per-module digest a reader would otherwise have to grep for.
+The settings include() block is the source of truth, so adding or removing
+a module here is a single change. The legacy root-only SHA at the top of
+this receipt is the value \`CertificationAnchorTest.01b\` checks, and the
+\`root\` row here MUST equal it; the section below is computed and
+self-checked by the same run, so a stale manifest cannot pass the cert.
+
+\`\`\`
+$(python3 scripts/lib/certification_source_scope.py print --root . 2>/dev/null)
+\`\`\`
+
 ## How to read this
 
 \`$SOURCE_SHA\` is the value \`CertificationAnchorTest.01b\` asserts against

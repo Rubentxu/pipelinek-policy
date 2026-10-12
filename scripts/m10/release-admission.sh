@@ -98,6 +98,33 @@ CERT_TESTS="$(grep -oE '\*\*tests actually executed\*\*:[[:space:]]*[0-9]+' docs
 CERT_FAILS="$(grep -oE '\*\*tests actually executed\*\*:[[:space:]]*[0-9]+[^)]*' docs/history/B6_CERTIFICATION.md | head -1 || true)"
 CERT_TREE="$(grep -oE '\*\*source tree SHA\*\*:[[:space:]]*`[0-9a-f]{40}`' docs/history/B6_CERTIFICATION.md | grep -oE '[0-9a-f]{40}' | head -1 || true)"
 CERT_HEAD="$(grep -oE '\*\*git HEAD\*\*:[[:space:]]*`[0-9a-f]{40}`' docs/history/B6_CERTIFICATION.md | grep -oE '[0-9a-f]{40}' | head -1 || true)"
+
+# RC-I · per-module source scope. The cert now carries a settings-authoritative
+# digest per included module. We refuse admission if the receipt's per-module
+# section is missing (a pre-RC-I cert, or a re-run that bypassed the
+# `releaseEvidenceManifest` Gradle task) OR if the receipt's `root` row
+# disagrees with the marker. The marker is the falsifiable contract; the
+# per-module row is the surface; both must agree with the run.
+if ! grep -q '## Per-module source scope (RC-I)' docs/history/B6_CERTIFICATION.md; then
+    fail "certification receipt is missing the per-module source scope (RC-I); re-run certify.sh"
+fi
+CERT_ROOT_SCOPE="$(python3 -c '
+import json, pathlib, re, sys
+text = pathlib.Path("docs/history/B6_CERTIFICATION.md").read_text()
+m = re.search(r"## Per-module source scope \(RC-I\)\s*\n.*?\`\`\`\n(.*?)\n\`\`\`", text, re.S)
+if not m:
+    sys.exit(2)
+data = json.loads(m.group(1))
+root = next((m for m in data["modules"] if m["module"] == "root"), None)
+if root is None:
+    sys.exit(3)
+print(root["sha1"])
+' 2>/dev/null)" || fail "per-module source scope is present but unreadable"
+[ -n "$CERT_ROOT_SCOPE" ] || fail "per-module source scope is missing the `root` row"
+if [ "$CERT_ROOT_SCOPE" != "$CERT_SHA" ]; then
+    fail "per-module source scope root sha ($CERT_ROOT_SCOPE) disagrees with marker ($CERT_SHA); a stale manifest slipped through"
+fi
+log "· per-module source scope: root=$CERT_ROOT_SCOPE agrees with marker"
 [ -n "$CERT_TESTS" ] || fail "certification receipt does not report executed tests"
 [ -n "$CERT_TREE" ]  || fail "certification receipt does not report a source tree SHA"
 case "$CERT_FAILS" in
