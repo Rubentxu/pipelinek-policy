@@ -38,6 +38,19 @@ object DiffCmd {
             out("diff: needs a resource to evaluate both bundles against (--corpus <res> or positional)")
             return ExitCodes.USAGE
         }
+        if (corpus.size > 1) {
+            // RC-S6 (D-M9-3): the previous behaviour selected `corpus.first()`
+            // and silently dropped every other resource. That is silent
+            // truncation: a multi-resource diff would emit a single-corpus
+            // digest, and a caller that asked for the union would be told the
+            // result is complete. The CLI now refuses until N-resource diff
+            // semantics exist.
+            out(
+                "diff: multiple resources are not supported in this release. " +
+                    "Pass a single --corpus or positional; multi-resource diff is deferred to a later release.",
+            )
+            return ExitCodes.EVALUATION_ERROR
+        }
         val resource = corpus.first()
         val doc = decodeOne(resource, out) ?: return ExitCodes.ADMISSION_ERROR
 
@@ -96,7 +109,24 @@ object DiffCmd {
                     out("diff: decode refused: ${decoded.refusal.code}")
                     null
                 }
-                is DecodeResult.Ok -> decoded.documents.firstOrNull()
+                is DecodeResult.Ok -> {
+                    // RC-S6: the decoder may return multiple documents (YAML
+                    // multi-doc, JSON Lines adapters, etc.). The previous
+                    // `firstOrNull()` silently dropped every document after
+                    // the first. We refuse explicitly here so the failure is
+                    // observable and the caller can split the corpus, mirroring
+                    // the multi-resource refusal above.
+                    val docs = decoded.documents
+                    if (docs.size > 1) {
+                        out(
+                            "diff: decoded corpus contains ${docs.size} documents; " +
+                                "multi-document diff is not supported in this release.",
+                        )
+                        null
+                    } else {
+                        docs.firstOrNull()
+                    }
+                }
             }
         }
 

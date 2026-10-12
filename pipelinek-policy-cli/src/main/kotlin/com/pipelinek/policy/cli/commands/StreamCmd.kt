@@ -14,6 +14,7 @@ import com.pipelinek.policy.kernel.dataset.DatasetPlanner
 import com.pipelinek.policy.kernel.dataset.DatasetSpec
 import com.pipelinek.policy.kernel.dataset.PlanRefusal
 import com.pipelinek.policy.kernel.dataset.StreamingEvaluator
+import com.pipelinek.policy.kernel.value.ValueNode
 import java.io.File
 
 /**
@@ -91,6 +92,28 @@ object StreamCmd {
         var lastViolationRow = -1L
         val sb = StringBuilder()
 
+        // RC-S7: a borrowed stream is the loader's responsibility, and the
+        // command must release it on every exit path: clean EOF, decoded
+        // refusal, decode exception, or row-budget stop. The previous cursor
+        // wrapper only closed on EOF, and a budget stop or decode refusal
+        // leaked the underlying stream to process-exit cleanup. `run()` is
+        // reusable in tests and as a library entry point, so the lifecycle
+        // cannot rely on the process exiting.
+        val ownedRows = try {
+            rowSupplierFor(resources.first(), out)
+        } catch (csv: CsvRowRefusal) {
+            out(msg(jsonOut, "decode-refusal", "csv refused: ${csv.anchor}"))
+            return ExitCodes.ADMISSION_ERROR
+        } catch (jsonl: JsonlRefusal) {
+            out(msg(jsonOut, "decode-refusal", "jsonl refused: ${jsonl.anchor}"))
+            return ExitCodes.ADMISSION_ERROR
+        }
+        if (ownedRows == null) {
+            out(msg(jsonOut, "refusal", "no streaming source for .${File(resources.first()).extension.lowercase()} (csv|jsonl)"))
+            return ExitCodes.ADMISSION_ERROR
+        }
+
+        var report: StreamingEvaluator.StreamingReport? = null
         try {
             for (resource in resources) {
                 val file = File(resource)
@@ -98,14 +121,15 @@ object StreamCmd {
                     out(msg(jsonOut, "refusal", "dataset not found: $resource"))
                     return ExitCodes.ADMISSION_ERROR
                 }
-                val rows = rowSupplierFor(file, out)
-                    ?: run {
-                        out(msg(jsonOut, "refusal", "no streaming source for .${
-                            file.extension.lowercase()
-                        } (csv|jsonl)"))
+                val rows = if (resource == resources.first()) {
+                    ownedRows
+                } else {
+                    rowSupplierFor(file, out) ?: run {
+                        out(msg(jsonOut, "refusal", "no streaming source for .${file.extension.lowercase()} (csv|jsonl)"))
                         return ExitCodes.ADMISSION_ERROR
                     }
-                val report = StreamingEvaluator.evaluate(policySet, plan, rows)
+                }
+                report = StreamingEvaluator.evaluate(policySet, plan, rows)
                 // B6.6: the row budget is now a typed outcome in the report, not
                 // a thrown BudgetExceededException. The CLI still refuses with
                 // `budget-exceeded` and EVALUATION_ERROR, but it reads the
@@ -141,6 +165,12 @@ object StreamCmd {
         } catch (jsonl: JsonlRefusal) {
             out(msg(jsonOut, "decode-refusal", "jsonl refused: ${jsonl.anchor}"))
             return ExitCodes.ADMISSION_ERROR
+        } finally {
+            // RC-S7: release the cursor on every exit path. The supplier
+            // adapter holds the only reference; closing it closes the
+            // underlying stream, even when the run budget-stopped or
+            // short-circuited on a rule error.
+            closeQuietly(ownedRows)
         }
 
         if (!jsonOut && sb.isNotEmpty()) out(sb.toString().trimEnd())
@@ -193,20 +223,14 @@ object StreamCmd {
             // ONE cursor for the whole fold, opened once. Building it per call
             // would re-read the header on every row, which is both slower and a
             // different failure mode from the materializing path.
-            //
-            // The cursor borrows the stream, so it cannot be constructed inside a
-            // `use` block. It is closed by `closeQuietly` when the fold ends;
-            // `RowSupplier` has no lifecycle hook, so the stream is closed when
-            // the cursor is exhausted rather than by the command, and a run that
-            // refuses on the row budget leaves it to the process exit. That is
-            // acceptable for a CLI that is about to terminate, and it is noted
-            // rather than papered over: adding a lifecycle hook to RowSupplier is
-            // the real fix and is out of scope here.
             val cursor = CsvRowSource.open(file.inputStream())
-            StreamingEvaluator.RowSupplier {
-                val row = cursor.next()
-                if (row == null) cursor.closeQuietly()
-                row
+            object : StreamingEvaluator.RowSupplier, RowSupplierWithCursor {
+                override val cursor: Any = cursor
+                override fun next(): ValueNode? {
+                    val row = cursor.next()
+                    if (row == null) cursor.closeQuietly()
+                    row
+                }
             }
         }
         "jsonl", "ndjson" -> {
@@ -217,10 +241,13 @@ object StreamCmd {
             val refusal = BoundedRead.checkLength(file, "stream source", out, BoundedRead.DEFAULT_RESOURCE_BUDGET)
             if (refusal != null) return null
             val cursor = JsonlSource.open(file.inputStream())
-            StreamingEvaluator.RowSupplier {
-                val row = cursor.next()
-                if (row == null) cursor.closeQuietly()
-                row
+            object : StreamingEvaluator.RowSupplier, RowSupplierWithCursor {
+                override val cursor: Any = cursor
+                override fun next(): ValueNode? {
+                    val row = cursor.next()
+                    if (row == null) cursor.closeQuietly()
+                    row
+                }
             }
         }
         else -> null
@@ -229,4 +256,31 @@ object StreamCmd {
     private fun msg(json: Boolean, kind: String, message: String): String =
         if (json) "{\"kind\":${JsonString.str(kind)},\"message\":${JsonString.str(message)}}"
         else "stream: $kind: $message"
+
+    /**
+     * RC-S7: best-effort close of a streaming row supplier. The supplier is
+     * the kernel-side facade over a CSV/JSONL cursor that borrows the
+     * underlying stream. The cursor is the only thing that can close it.
+     * [CsvRowSource] and [JsonlSource] both expose a no-throw `closeQuietly`,
+     * so a missing close is reported only when the cursor's `close()` itself
+     * fails. We deliberately swallow that single throwable: the report has
+     * already been produced, and leaking the file handle is worse than a
+     * second `try { }` around the `out` call.
+     */
+    private fun closeQuietly(supplier: StreamingEvaluator.RowSupplier) {
+        try {
+            when (val cursor = (supplier as? RowSupplierWithCursor)?.cursor) {
+                is com.pipelinek.policy.decoders.csv.CsvRowSource -> cursor.closeQuietly()
+                is com.pipelinek.policy.decoders.json.JsonlSource -> cursor.closeQuietly()
+                else -> Unit
+            }
+        } catch (_: Throwable) {
+            // Intentional: closing must not throw out of a finally block.
+        }
+    }
+
+    /** Marker interface implemented by the adapters that own a real cursor. */
+    interface RowSupplierWithCursor {
+        val cursor: Any
+    }
 }
