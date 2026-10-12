@@ -1,7 +1,9 @@
 package com.pipelinek.policy.kernel.dataset
 
 import com.pipelinek.policy.kernel.evaluator.RuleKey
+import com.pipelinek.policy.kernel.expression.Expression
 import com.pipelinek.policy.kernel.policy.PolicySet
+import com.pipelinek.policy.kernel.policy.Rule
 
 /**
  * M8 WU-5 · Plan-time refusal. The planner REJECTS what it cannot execute
@@ -96,12 +98,35 @@ object DatasetPlanner {
         val global = analysis.shapesByRule.filterValues { it == DatasetShape.GLOBAL }.keys.toList()
         if (global.isNotEmpty()) {
             return PlanRefusal(
-                reason = "GLOBAL access requires an index plan; the kernel refuses unbounded " +
-                    "cross-row evaluation (law 12). Declare requiresGlobalIndex or reshape the rule.",
+                // RC-S1: GLOBAL is refused unconditionally. `requiresGlobalIndex`
+                // is a future seam and not a runtime enabler; promising the
+                // opposite would invite the same silent omission RC-S1 exists to
+                // close. The plan is honest about why and what to do next.
+                reason = "GLOBAL access is not executable in the current kernel (law 12). " +
+                    "Reshape the rule as a top-level CollectionPredicate over a DatasetRef, " +
+                    "or split it into local predicates.",
                 offendingRules = global,
             )
         }
-        val aggregate = analysis.shapesByRule.filterValues { it == DatasetShape.AGGREGATE }.keys.toSet()
+        val aggregateKeys = analysis.shapesByRule.filterValues { it == DatasetShape.AGGREGATE }.keys
+        // RC-S1: every AGGREGATE-shaped rule must be in the *executable* subset
+        // before any row is pulled. `accumulatorFor` only folds the four
+        // accumulator-friendly shapes (top-level CollectionPredicate with a
+        // direct DatasetRef and no `appliesWhen`); anything else would either
+        // be silently dropped from the report (the bug) or widen the executor
+        // surface beyond what was certified. The preconsumo check refuses
+        // the unsupported shape with the rule identity so the caller can act
+        // on it. No planned rule disappears from the result.
+        val unsuportedAggregates = aggregateKeys.filterNot { isExecutableAggregate(it, set) }
+        if (unsuportedAggregates.isNotEmpty()) {
+            return PlanRefusal(
+                reason = "AGGREGATE shape is not executable: only top-level CollectionPredicate " +
+                    "over a direct DatasetRef with no appliesWhen is currently foldable. " +
+                    "Reshape the rule or move it to a whole-document evaluator.",
+                offendingRules = unsuportedAggregates,
+            )
+        }
+        val aggregate = aggregateKeys.toSet()
         val local = analysis.shapesByRule.filterValues { it == DatasetShape.LOCAL }.keys.toSet()
 
         // H2.2 · The planner only emits an IndexPlan variant that has an
@@ -124,5 +149,32 @@ object DatasetPlanner {
             rowBudget = rowBudget,
             accumulatorCap = accumulatorCap,
         )
+    }
+
+    /**
+     * RC-S1 · The executable subset of AGGREGATE.
+     *
+     * The streaming fold (StreamingEvaluator.accumulatorFor) admits exactly
+     * one shape today: a top-level [Expression.CollectionPredicate] whose
+     * source is a direct [Expression.DatasetRef] and whose rule has no
+     * `appliesWhen` (the gate is not folded). Every other AGGREGATE-shaped
+     * rule — a COUNT inside a Comparison, a Not over ANY, a nested source,
+     * or an aggregate gate with a non-Literal main — would be silently
+     * omitted from the report because the fold branch returns null and
+     * `report()` skips it. That silence is the law-12 violation this guard
+     * removes.
+     *
+     * Refusing before any row is pulled keeps the kernel pure and the
+     * authority over what is runnable with the planner, which is where the
+     * shape was classified to begin with.
+     */
+    private fun isExecutableAggregate(key: RuleKey, set: PolicySet): Boolean {
+        val rule = set.policies.firstOrNull { it.id == key.policyId }
+            ?.rules?.firstOrNull { it.id == key.ruleId } ?: return false
+        if (rule.appliesWhen != null) return false
+        val expr = rule.expression
+        if (expr !is Expression.CollectionPredicate) return false
+        if (expr.source !is Expression.DatasetRef) return false
+        return true
     }
 }
