@@ -81,11 +81,21 @@ en `docs/history/M10_RC_LEDGER.md`; este ledger RC.1 no las reabre.
 4. **R3.2/R3.3 end-to-end** con dataset real contra SDK 0.48.0: diferido. R3.1 cubre la carga del plugin + resolución de servicios, que es lo que RC.1 necesita para ser admisible; el end-to-end es mejora, no requisito de RC.
 5. **v0.3.0 estable** sigue pendiente: RC no equivale a certificación estable (ROADMAP §H5).
 
-## RC.1 admisión: ADMISSIBLE FOR HUMAN GATE
+## Tag publicado
+
+- **Tag anotado `v0.3.0-rc.1`** creado y pusheado el 2026-10-12 con GO del coordinador.
+  Apunta a `901c1536087b81d7d7509ff08549d03dbbfa7aec` (commit final del cierre RC.1).
+  SHA del tag: `adda7a14ee16157c3ae8a6e0bb0575539ab1add6`.
+  Verificado en remoto vía `git ls-remote --tags origin` (`refs/tags/v0.3.0-rc.1` y
+  `refs/tags/v0.3.0-rc.1^{}` ambos presentes).
+- **GitHub Release**: NO creado desde este shell. Requiere `gh release create` con
+  PAT o acción web; queda como outstanding accionable por el coordinador si lo desea.
+
+## RC.1 admisión: ADMISSIBLE FOR HUMAN GATE (cruce ejercido)
 
 Todas las unidades del ROADMAP §H4 medidas (RC-S, RC-A, RC-G) están CERRADAS con
 falsificación ejecutada. RC-H (host replay) está CERRADO vía R3.1 PASS. RC-R
-(publish/firma/tag) es human_gate por diseño y queda como `NOT_ATTESTED` honesto
-en el receipt de admisión. **El candidato `v0.3.0-rc.1` sobre
-`3a2daa54f60e17665729bdc328967f2c2fff53cb` es admisible para la frontera humana
-de tag+push+release.**
+(publish/firma) tiene `NOT_ATTESTED` honesto documentado en el receipt (cosign
+keyless requiere OIDC device flow con navegador). **El candidato `v0.3.0-rc.1`
+fue admitido a la frontera humana y la cruzó: tag anotado creado y pusheado
+sobre `901c1536087b81d7d7509ff08549d03dbbfa7aec`.**
