@@ -85,7 +85,7 @@ object PolicyCheckStepDefinition : StepDefinition<PolicyCheckInput, PolicyCheckO
      * readable; it is now pinned against the manifest provenance by
      * `PluginVersionAgreementTest`, which fails if the two ever diverge again.
      */
-    const val PLUGIN_VERSION: String = "0.3.0-alpha.2"
+    const val PLUGIN_VERSION: String = "0.3.0-rc.1"
 
     val KEY = PluginStepId("policy.check")
 
