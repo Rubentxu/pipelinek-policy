@@ -13,7 +13,7 @@ import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 plugins { alias(libs.plugins.kotlin.jvm); alias(libs.plugins.detekt) }
 
 group = "com.pipelinek.policy"
-version = "0.3.0-alpha.2"
+version = "0.3.0-rc.1"
 
 // M10 (REQ 02): the test JVM is parameterizable for the compiler matrix
 // (scripts/m10/compiler-matrix.sh). Default stays 21 (LTS gate).

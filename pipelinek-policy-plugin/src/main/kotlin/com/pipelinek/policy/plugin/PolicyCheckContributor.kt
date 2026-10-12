@@ -42,7 +42,7 @@ object PolicyPluginDeclaration {
      * The plugin declares its release identity, and the SDK's `SemVer` has
      * NO prerelease field (major/minor/patch only, verified against
      * pipeline-domain 0.47.0). So a `-alpha.1` tag is DROPPED here and the
-     * manifest publishes `0.3.0` for an artifact built from `0.3.0-alpha.2`.
+     * manifest publishes `0.3.0` for an artifact built from `0.3.0-rc.1`.
      *
      * That is not a bug in this file, it is a limit of the manifest format,
      * and it is silent: an alpha build would be admitted as if it were the
