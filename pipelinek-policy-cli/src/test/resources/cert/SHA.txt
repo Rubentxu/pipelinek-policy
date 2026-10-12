@@ -14,7 +14,7 @@
 # Scope: the root module's src/{main,test}/kotlin only. The digest answers one
 # question — does the certified code still match the marked code — and does not
 # claim to be a git tree hash.
-certified-sha: d5f2c2cb7bbc9b901aba0d29c907d952f6fda8ea
+certified-sha: 2de9283af2d1238aa1406b2adbc840c8601d1dda
 baseline-suites: 42
 # Tests GRADLE ACTUALLY EXECUTED, counted from freshly written JUnit XML by
 # scripts/m6/certify.sh, not from a count of files on disk. The old value (273)
@@ -358,4 +358,16 @@ baseline-suites: 42
 # skipped. The cert/SHA.txt was last anchored at 7873b723 at HEAD ae36022
 # (the post-H3.1-JSONL-strace-clarification commit, see B6_CERTIFICATION.md);
 # the source tree moved by exactly the detekt fix and nothing else.
-baseline-tests: 606
+# RC.1 moved certified-sha d5f2c2cb... -> 2de9283af... and baseline-tests
+# 606 -> 639: 16 new tests covering the RC.1 semantic defects (RC-S1
+# aggregate plan admission, RC-S2 PolicyDiff bilateral severity,
+# RC-S6 DiffCmd multi-corpus refusal, RC-S7 StreamCmd cursor lifecycle)
+# plus the suppression-rule fix on PolicyDiff that makes a waiver-driven
+# verdict change produce WAIVER_EFFECT_CHANGED exactly once. The fresh
+# `test` run on the post-fix tree reported 639 executed, 0 failures,
+# 0 errors, 0 skipped. The delta is observable: the 8 R-S1 tests
+# (AggregatePlanAdmissionTest) and 3 R-S2 severity tests
+# (PolicyDiffSeverityTest) were observed RED before the fix and are now
+# the only thing standing between an aggregate plan and a silently-folded
+# GLOBAL.
+baseline-tests: 639

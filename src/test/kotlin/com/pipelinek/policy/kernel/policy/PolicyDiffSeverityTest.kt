@@ -110,4 +110,63 @@ class PolicyDiffSeverityTest {
         assertEquals(DiffCategory.RESOLVED_VIOLATION, entry.category)
         assertTrue(set(RuleSeverity.INFO).results.isNotEmpty(), "sanity: both reports carry results")
     }
+
+    // --- RC-S2: severity declaration is bilateral. The original guard
+    // accepted (CRITICAL, null) and emitted a fabricated change. The new
+    // guard requires BOTH sides to declare a severity, mirroring T4-b on the
+    // other side. ---
+
+    @Test
+    fun `RC-S2 mirror unilateral severity CRITICAL to null yields no SEVERITY_CHANGED entry`() {
+        val a = report(RuleSeverity.CRITICAL)
+        val b = report(null)
+
+        val diff = PolicyDiff.of(a, b)
+
+        val categories = diff.entries.map { it.category }
+        assertTrue(
+            DiffCategory.SEVERITY_CHANGED !in categories,
+            "severity declared on one side only must not be reported as changed; got $categories",
+        )
+    }
+
+    @Test
+    fun `RC-S2 waiver-aware with empty applications preserves a severity-only change`() {
+        // Plain diff sees a severity change. Waiver-aware diff with empty
+        // applications on both sides MUST observe the same severity entry;
+        // the waiver overload must not erase declared severity changes.
+        val a = report(RuleSeverity.WARNING)
+        val b = report(RuleSeverity.ERROR)
+
+        val plainEntry = PolicyDiff.of(a, b).entries.single()
+        assertEquals(DiffCategory.SEVERITY_CHANGED, plainEntry.category)
+
+        val waiverEntry = PolicyDiff.of(
+            a,
+            b,
+            WaiverApplication.EMPTY,
+            WaiverApplication.EMPTY,
+        ).entries.single()
+
+        assertEquals(DiffCategory.SEVERITY_CHANGED, waiverEntry.category)
+        assertEquals(plainEntry.ruleKey, waiverEntry.ruleKey)
+    }
+
+    @Test
+    fun `RC-S2 unchanged waiver effect preserves severity-only diff with no WAIVER_EFFECT_CHANGED entry`() {
+        val a = report(RuleSeverity.WARNING)
+        val b = report(RuleSeverity.ERROR)
+
+        val diff = PolicyDiff.of(
+            a,
+            b,
+            WaiverApplication.EMPTY,
+            WaiverApplication.EMPTY,
+        )
+
+        // Single entry: SEVERITY_CHANGED. The previous blanket filter
+        // produced an empty diff here.
+        assertEquals(1, diff.entries.size, "expected one entry, got ${diff.entries}")
+        assertEquals(DiffCategory.SEVERITY_CHANGED, diff.entries.single().category)
+    }
 }
