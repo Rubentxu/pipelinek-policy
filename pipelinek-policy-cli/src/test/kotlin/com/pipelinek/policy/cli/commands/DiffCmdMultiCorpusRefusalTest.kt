@@ -1,6 +1,7 @@
 package com.pipelinek.policy.cli.commands
 
 import com.pipelinek.policy.bundle.PolicyBundle
+import com.pipelinek.policy.cli.CliArgs
 import com.pipelinek.policy.cli.ExitCodes
 import com.pipelinek.policy.ir.PolicyIrLowerer.lower
 import com.pipelinek.policy.kernel.expression.Expression

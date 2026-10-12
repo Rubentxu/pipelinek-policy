@@ -101,9 +101,25 @@ data class PolicyDiff(
             // POST-waiver verdict (a state change driven by the waiver) rather
             // than the raw verdict, so a severity-only change in the base
             // diff survives the waiver-aware overload with empty applications.
+            //
+            // Suppression rule: when the raw verdict is identical (the only
+            // thing the waiver could have flipped is the verdict itself), the
+            // base diff is not allowed to claim the change — it goes to
+            // `waiverEntries` as WAIVER_EFFECT_CHANGED, and a duplicate
+            // RESOLVED_VIOLATION/NEW_VIOLATION entry would inflate the digest.
+            // A severity-only change is also raw-identical in the verdict, so
+            // the same suppression would apply; the test
+            // `waiver-aware with empty applications preserves a severity-only
+            // change` covers that path by relying on the bilateral severity
+            // guard inside `diffStates` (the base slice) rather than the
+            // suppression here.
             val base = diffStates(a, b) { ruleId ->
-                stateOf(a, ruleId, waivedAByRule[ruleId] ?: false) to
-                    stateOf(b, ruleId, waivedBByRule[ruleId] ?: false)
+                val rawA = stateOf(a, ruleId)
+                val rawB = stateOf(b, ruleId)
+                if (rawA == rawB) rawA to rawB
+                else
+                    stateOf(a, ruleId, waivedAByRule[ruleId] ?: false) to
+                        stateOf(b, ruleId, waivedBByRule[ruleId] ?: false)
             }
             val waiverEntries = a.results.keys.union(b.results.keys).mapNotNull { ruleId ->
                 val wa = waivedAByRule[ruleId] ?: false

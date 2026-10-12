@@ -100,7 +100,7 @@ object StreamCmd {
         // reusable in tests and as a library entry point, so the lifecycle
         // cannot rely on the process exiting.
         val ownedRows = try {
-            rowSupplierFor(resources.first(), out)
+            rowSupplierFor(File(resources.first()), out)
         } catch (csv: CsvRowRefusal) {
             out(msg(jsonOut, "decode-refusal", "csv refused: ${csv.anchor}"))
             return ExitCodes.ADMISSION_ERROR
@@ -229,7 +229,7 @@ object StreamCmd {
                 override fun next(): ValueNode? {
                     val row = cursor.next()
                     if (row == null) cursor.closeQuietly()
-                    row
+                    return row
                 }
             }
         }
@@ -246,7 +246,7 @@ object StreamCmd {
                 override fun next(): ValueNode? {
                     val row = cursor.next()
                     if (row == null) cursor.closeQuietly()
-                    row
+                    return row
                 }
             }
         }
