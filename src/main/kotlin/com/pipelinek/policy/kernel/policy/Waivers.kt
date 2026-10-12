@@ -171,6 +171,11 @@ data class WaiverApplication(
     val activeFingerprints: Set<ViolationFingerprint> = outcomes
         .filter { it !is ViolationWaiverOutcome.Waived }
         .mapTo(mutableSetOf()) { it.fingerprint }
+
+    companion object {
+        /** No waivers applied. Used by tests and by callers that opt out of waiver handling. */
+        val EMPTY: WaiverApplication = WaiverApplication(emptyList())
+    }
 }
 
 /**

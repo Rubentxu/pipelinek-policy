@@ -93,19 +93,18 @@ data class PolicyDiff(
             requireSameCorpus(a, b)
             val waivedAByRule = indexWaivedByRule(a, waivedA)
             val waivedBByRule = indexWaivedByRule(b, waivedB)
-            // Rules whose RAW states are identical: any effective-state change
-            // comes ONLY from the waiver application, so they are reported
-            // exclusively as WAIVER_EFFECT_CHANGED below (no double count).
-            val rawIdentical = a.results.keys.union(b.results.keys)
-                .filter { ruleId -> stateOf(a, ruleId) == stateOf(b, ruleId) }
-                .toSet()
+            // RC-S2: only rules whose effective verdict actually changes because
+            // of the waiver are reported as WAIVER_EFFECT_CHANGED. A blanket
+            // "raw states identical => drop the base entry" filter previously
+            // erased declared severity changes too, because severity lives
+            // outside the verdict comparison. The filter now considers the
+            // POST-waiver verdict (a state change driven by the waiver) rather
+            // than the raw verdict, so a severity-only change in the base
+            // diff survives the waiver-aware overload with empty applications.
             val base = diffStates(a, b) { ruleId ->
                 stateOf(a, ruleId, waivedAByRule[ruleId] ?: false) to
                     stateOf(b, ruleId, waivedBByRule[ruleId] ?: false)
             }
-            val baseEntries = base.entries
-                .filterNot { it.ruleKey in rawIdentical }
-            // Waiver-only changes: same raw states, different waiver effect.
             val waiverEntries = a.results.keys.union(b.results.keys).mapNotNull { ruleId ->
                 val wa = waivedAByRule[ruleId] ?: false
                 val wb = waivedBByRule[ruleId] ?: false
@@ -117,7 +116,7 @@ data class PolicyDiff(
                     null
                 }
             }
-            return PolicyDiff(baseEntries + waiverEntries)
+            return PolicyDiff(base.entries + waiverEntries)
         }
 
         private fun requireSameCorpus(a: PolicyReport, b: PolicyReport) {
@@ -140,8 +139,16 @@ data class PolicyDiff(
                 // `sa == sb` short-circuit below. Otherwise the one and only
                 // thing this slice exists to report is swallowed by the state
                 // comparison and `SEVERITY_CHANGED` stays permanently dead.
-                val severityChanged = severityOf(a, ruleId) != null &&
-                    severityOf(a, ruleId) != severityOf(b, ruleId)
+                // RC-S2: SEVERITY_CHANGED is bilateral. A one-sided declaration
+                // is not a change: the author of the side that stayed silent
+                // never claimed one, so there is no second value to have
+                // changed from. The guard was previously
+                // `severityOf(a) != null && severityOf(a) != severityOf(b)`,
+                // which accepted (CRITICAL, null) and emitted a fabricated
+                // change.
+                val severityA = severityOf(a, ruleId)
+                val severityB = severityOf(b, ruleId)
+                val severityChanged = severityA != null && severityB != null && severityA != severityB
                 if (sa == sb && !severityChanged) return@flatMap emptyList()
                 val fp = fingerprintOf(if (a.results.containsKey(ruleId)) a else b, ruleId)
                 val category = when {
